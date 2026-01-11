@@ -10,12 +10,11 @@
     <style>
         body { font-family: 'Inter', sans-serif; }
         .scrollbar-hide::-webkit-scrollbar { display: none; }
-        @keyframes radar-pulse {
-          0% { transform: scale(0.95); opacity: 0.5; }
-          50% { transform: scale(1.1); opacity: 0.2; }
-          100% { transform: scale(0.95); opacity: 0.5; }
+        @keyframes pulse-soft {
+          0%, 100% { transform: scale(1); opacity: 1; }
+          50% { transform: scale(1.05); opacity: 0.8; }
         }
-        .radar-ring { animation: radar-pulse 2s infinite ease-in-out; }
+        .animate-pulse-soft { animation: pulse-soft 2s infinite ease-in-out; }
     </style>
 <script type="importmap">
 {
@@ -30,14 +29,14 @@
     "dexie": "https://esm.sh/dexie@^4.2.1",
     "tesseract.js": "https://esm.sh/tesseract.js@5.1.1",
     "pako": "https://esm.sh/pako@^2.1.0",
-    "qrcode": "https://esm.sh/qrcode@^1.5.3",
-    "vite": "https://esm.sh/vite@^7.3.1",
-    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2"
+    "qrcode": "https://esm.sh/qrcode@^1.5.3"
   }
 }
 </script>
 </head>
 <body class="bg-slate-50 text-slate-900">
     <div id="root"></div>
+    <!-- The entry point script for Vite/ESM -->
+    <script type="module" src="/index.tsx"></script>
 </body>
 </html>
