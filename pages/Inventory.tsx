@@ -69,7 +69,7 @@ const Inventory: React.FC<InventoryProps> = ({ setView }) => {
           stock_qty: Number(formData.stock_qty)
         });
       } else {
-        // Fix: Explicitly use the transaction method on the db instance.
+        // Fix: Use inherited transaction method from Dexie to ensure atomic updates of stock levels and audit logs.
         await db.transaction('rw', [db.products, db.inventory_logs], async () => {
           const newId = await db.products.add({
             ...formData,
@@ -196,7 +196,6 @@ const Inventory: React.FC<InventoryProps> = ({ setView }) => {
     reader.readAsDataURL(file);
   };
 
-  // Fix: Removed unused parameter 'p' to match call site and avoid shadowing loop variable.
   const importMigrationData = async () => {
     for (const p of migrationData) {
       await db.products.add(p);

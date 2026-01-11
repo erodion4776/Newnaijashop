@@ -26,10 +26,10 @@ import {
   Store,
   RefreshCw,
   Loader2,
-  AlertTriangle
+  AlertTriangle,
+  Terminal
 } from 'lucide-react';
 
-// Explicitly define Props and State interfaces for ErrorBoundary
 interface ErrorBoundaryProps {
   children?: ReactNode;
 }
@@ -39,8 +39,8 @@ interface ErrorBoundaryState {
   error: Error | null;
 }
 
-// Fix: Use named Component import and remove 'override' to ensure TypeScript correctly recognizes the inheritance and property visibility.
-class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+// Fix: Explicitly use React.Component to ensure props and state are correctly inherited and recognized by the TypeScript compiler.
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   public state: ErrorBoundaryState = { hasError: false, error: null };
 
   constructor(props: ErrorBoundaryProps) {
@@ -56,7 +56,6 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   }
 
   render() {
-    // Fix: Inheritance is now properly recognized, allowing access to this.state and this.props.
     const { hasError, error } = this.state;
     const { children } = this.props;
 
@@ -84,7 +83,8 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
               <button 
                 onClick={async () => {
                   if(confirm("Clear local storage? This will delete your data.")) {
-                    // Fix: db.delete() is now correctly recognized via the base Dexie class fix in db.ts.
+                    localStorage.clear();
+                    // Fix: db.delete() is correctly inherited and recognized after switching to named import in db.ts
                     await db.delete();
                     window.location.reload();
                   }
@@ -111,6 +111,10 @@ const AppContent: React.FC = () => {
   const [loginPassword, setLoginPassword] = useState('');
   const [onboardingSuccess, setOnboardingSuccess] = useState<string | null>(null);
   const [selectedStaffId, setSelectedStaffId] = useState<number | 'admin' | ''>('');
+  
+  // Persistence for Staff Terminal Mode
+  const [isStaffDevice, setIsStaffDevice] = useState(() => localStorage.getItem('isStaffDevice') === 'true');
+  const [invitedStaffName, setInvitedStaffName] = useState(() => localStorage.getItem('invitedStaffName') || '');
 
   const [setupData, setSetupData] = useState({ shopName: '', adminName: '', adminPin: '' });
 
@@ -129,20 +133,40 @@ const AppContent: React.FC = () => {
         if (onboardingData) {
           try {
             const decoded = JSON.parse(atob(onboardingData));
+            
+            // 1. Add/Update Staff Record
+            let staffId;
             const existing = await db.staff.where('name').equals(decoded.name).first();
             if (!existing) {
-              await db.staff.add({
+              staffId = await db.staff.add({
                 name: decoded.name,
                 role: decoded.role,
                 password: decoded.password,
                 status: 'Active',
                 created_at: Date.now()
               });
+            } else {
+              staffId = existing.id;
             }
-            setOnboardingSuccess('Staff Account Activated!');
+
+            // 2. Set Device Metadata persistently
+            localStorage.setItem('isStaffDevice', 'true');
+            localStorage.setItem('invitedStaffName', decoded.name);
+            setIsStaffDevice(true);
+            setInvitedStaffName(decoded.name);
+            
+            // 3. Configure Local Settings for Staff Device to skip setup
+            await db.settings.update('app_settings', {
+              shop_name: decoded.shop || 'NaijaShop',
+              is_setup_complete: true,
+              license_key: 'STAFF-TERMINAL-ACTIVE' // Bypass license check for staff
+            });
+
+            setOnboardingSuccess('Terminal Access Activated!');
+            // Clean URL
             window.history.replaceState({}, document.title, window.location.pathname);
           } catch (e) {
-            console.error("Magic link decode failed", e);
+            console.error("Magic link processing failed:", e);
           }
         }
         
@@ -155,8 +179,18 @@ const AppContent: React.FC = () => {
     start();
   }, []);
 
+  // Pre-select staff on Staff Devices once the list is loaded
   useEffect(() => {
-    if (isInitialized && settings && settings.is_setup_complete) {
+    if (isStaffDevice && staffList.length > 0 && selectedStaffId === '') {
+      const staff = staffList.find(s => s.name === invitedStaffName);
+      if (staff) {
+        setSelectedStaffId(staff.id!);
+      }
+    }
+  }, [isStaffDevice, staffList, invitedStaffName, selectedStaffId]);
+
+  useEffect(() => {
+    if (isInitialized && settings && settings.is_setup_complete && !isStaffDevice) {
       const { valid, error } = validateLicense(settings.license_key, settings.last_used_timestamp);
       if (!valid) {
         setLicenseError(error || 'Invalid License');
@@ -168,11 +202,12 @@ const AppContent: React.FC = () => {
         return () => clearInterval(interval);
       }
     }
-  }, [isInitialized, settings?.license_key, settings?.last_used_timestamp, settings?.is_setup_complete]);
+  }, [isInitialized, settings?.license_key, settings?.last_used_timestamp, settings?.is_setup_complete, isStaffDevice]);
 
   const resetSystem = async () => {
     if (confirm("DANGER: This will delete ALL local data. Proceed?")) {
-      // Fix: db.delete() is now correctly recognized via the base Dexie class fix in db.ts.
+      localStorage.clear();
+      // Fix: db.delete() is correctly inherited and recognized after switching to named import in db.ts
       await db.delete();
       window.location.reload();
     }
@@ -218,7 +253,7 @@ const AppContent: React.FC = () => {
     );
   }
 
-  if (settings && !settings.is_setup_complete) {
+  if (settings && !settings.is_setup_complete && !isStaffDevice) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
         <div className="w-full max-w-sm space-y-8 animate-in fade-in zoom-in duration-500">
@@ -263,7 +298,7 @@ const AppContent: React.FC = () => {
     );
   }
 
-  if (licenseError) {
+  if (licenseError && !isStaffDevice) {
     return (
       <div className="fixed inset-0 bg-slate-950 flex items-center justify-center p-6 z-[1000]">
         <div className="max-w-md w-full bg-white rounded-[3rem] p-12 text-center space-y-8 shadow-2xl animate-in zoom-in duration-300">
@@ -306,6 +341,11 @@ const AppContent: React.FC = () => {
                 <span className="text-white text-4xl font-black italic">NS</span>
              </div>
              <h1 className="text-3xl font-black text-slate-900 tracking-tight">{settings?.shop_name || 'NaijaShop'}</h1>
+             {isStaffDevice && (
+               <div className="inline-flex items-center gap-2 bg-emerald-50 text-emerald-700 px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border border-emerald-100">
+                 <Terminal size={12} /> Staff Terminal Mode
+               </div>
+             )}
           </div>
 
           <form onSubmit={(e) => {
@@ -327,10 +367,16 @@ const AppContent: React.FC = () => {
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Account</label>
                 <div className="relative">
                   <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={20} />
-                  <select required className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 font-bold appearance-none" value={selectedStaffId} onChange={(e) => setSelectedStaffId(e.target.value === 'admin' ? 'admin' : Number(e.target.value))}>
-                    <option value="">Select Account</option>
-                    <option value="admin">{settings?.admin_name} (Admin)</option>
+                  <select 
+                    required 
+                    className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 font-bold appearance-none disabled:opacity-50" 
+                    value={selectedStaffId} 
+                    onChange={(e) => setSelectedStaffId(e.target.value === 'admin' ? 'admin' : Number(e.target.value))}
+                  >
+                    {!isStaffDevice && <option value="">Select Account</option>}
+                    {!isStaffDevice && <option value="admin">{settings?.admin_name} (Admin)</option>}
                     {staffList.map(s => <option key={s.id} value={s.id}>{s.name} ({s.role})</option>)}
+                    {isStaffDevice && staffList.length === 0 && <option value="">No Staff Found</option>}
                   </select>
                 </div>
               </div>
@@ -344,9 +390,11 @@ const AppContent: React.FC = () => {
             </div>
             <button type="submit" className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-xl hover:bg-emerald-700 transition-all shadow-xl shadow-emerald-600/30 flex items-center justify-center gap-2 group active:scale-95">Log In <ChevronRight /></button>
           </form>
-          <div className="text-center">
-            <button onClick={resetSystem} className="flex items-center justify-center gap-2 mx-auto px-4 py-2 text-[10px] font-black text-slate-300 uppercase tracking-widest hover:text-rose-500 transition-colors bg-white/50 rounded-full border border-slate-100"><RefreshCw size={12} /> Reset Terminal</button>
-          </div>
+          {!isStaffDevice && (
+            <div className="text-center">
+              <button onClick={resetSystem} className="flex items-center justify-center gap-2 mx-auto px-4 py-2 text-[10px] font-black text-slate-300 uppercase tracking-widest hover:text-rose-500 transition-colors bg-white/50 rounded-full border border-slate-100"><RefreshCw size={12} /> Reset Terminal</button>
+            </div>
+          )}
         </div>
       </div>
     );
