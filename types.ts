@@ -79,6 +79,7 @@ export interface Settings {
   account_number: string;
   account_name: string;
   last_used_timestamp: number;
+  last_synced_timestamp: number;
 }
 
 export type View = 'dashboard' | 'pos' | 'inventory' | 'inventory-ledger' | 'debts' | 'settings' | 'ai-insights' | 'transfer-station' | 'sync' | 'staff-management';

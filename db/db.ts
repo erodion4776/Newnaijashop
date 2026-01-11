@@ -1,6 +1,6 @@
 
-// Fix: Use named import for Dexie to ensure proper prototype inheritance and type resolution in TypeScript
-import { Dexie, type Table } from 'dexie';
+// Fix: Use default import for Dexie to ensure proper prototype inheritance and type resolution in TypeScript
+import Dexie, { type Table } from 'dexie';
 import { Product, Sale, Debt, Settings, ParkedSale, InventoryLog, Staff } from '../types';
 
 /**
@@ -19,7 +19,7 @@ export class NaijaShopDB extends Dexie {
   constructor() {
     super('NaijaShopDB');
     
-    // Fix: Using this.version is now correctly recognized by switching to the named import of the Dexie class.
+    // Fix: Using this.version is now correctly recognized by switching to the default import of the Dexie class.
     this.version(6).stores({
       products: '++id, name, category, barcode',
       sales: '++id, timestamp, sync_status, payment_method',
@@ -47,7 +47,8 @@ export const initSettings = async () => {
       bank_name: 'Access Bank',
       account_number: '0123456789',
       account_name: 'NAIJA RETAIL STORE',
-      last_used_timestamp: Date.now()
+      last_used_timestamp: Date.now(),
+      last_synced_timestamp: 0
     });
   }
 };

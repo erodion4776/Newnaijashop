@@ -15,7 +15,8 @@ import {
   Coins,
   Briefcase,
   Layers,
-  Staff
+  Staff,
+  RefreshCw
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
@@ -24,34 +25,35 @@ interface DashboardProps {
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ currentUser }) => {
-  // Sales staff cannot toggle sensitive data, it's always hidden
   const isSales = currentUser?.role === 'Sales';
   const [showSensitiveData, setShowSensitiveData] = useState(!isSales);
+
+  const settings = useLiveQuery(() => db.settings.get('app_settings'));
+  const sales = useLiveQuery(() => db.sales.toArray()) || [];
+  const products = useLiveQuery(() => db.products.toArray()) || [];
+  const debts = useLiveQuery(() => db.debts.toArray()) || [];
+
+  const lastSyncText = useMemo(() => {
+    if (!settings?.last_synced_timestamp) return "Never Synced";
+    const diff = Date.now() - settings.last_synced_timestamp;
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return "Just now";
+    if (mins < 60) return `${mins}m ago`;
+    return new Date(settings.last_synced_timestamp).toLocaleTimeString();
+  }, [settings?.last_synced_timestamp]);
 
   useEffect(() => {
     if (isSales) setShowSensitiveData(false);
   }, [isSales]);
 
-  const sales = useLiveQuery(() => db.sales.toArray()) || [];
-  const products = useLiveQuery(() => db.products.toArray()) || [];
-  const debts = useLiveQuery(() => db.debts.toArray()) || [];
-
-  // Filter today's sales
   const todaySales = useMemo(() => {
     const today = new Date().setHours(0, 0, 0, 0);
     return sales.filter(s => s.timestamp >= today);
   }, [sales]);
 
-  // Metric Calculations
   const totalSalesToday = todaySales.reduce((acc, curr) => acc + curr.total_amount, 0);
-  
-  const totalStockValue = useMemo(() => {
-    return products.reduce((acc, p) => acc + (p.cost_price * p.stock_qty), 0);
-  }, [products]);
-
-  const expectedProfitOnStock = useMemo(() => {
-    return products.reduce((acc, p) => acc + ((p.price - p.cost_price) * p.stock_qty), 0);
-  }, [products]);
+  const totalStockValue = products.reduce((acc, p) => acc + (p.cost_price * p.stock_qty), 0);
+  const expectedProfitOnStock = products.reduce((acc, p) => acc + ((p.price - p.cost_price) * p.stock_qty), 0);
 
   const todaysInterest = useMemo(() => {
     let profit = 0;
@@ -87,11 +89,17 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser }) => {
 
   return (
     <div className="space-y-6">
-      {/* Header with Privacy Toggle */}
       <div className="flex items-center justify-between mb-2">
         <div>
           <h2 className="text-2xl font-black text-slate-800 tracking-tight">Shop Performance</h2>
-          <p className="text-slate-400 text-sm font-medium">Real-time terminal analytics</p>
+          <div className="flex items-center gap-2 mt-1">
+             <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${
+               settings?.last_synced_timestamp ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-amber-50 text-amber-600 border-amber-100'
+             }`}>
+                <RefreshCw size={10} className={settings?.last_synced_timestamp && (Date.now() - settings.last_synced_timestamp < 300000) ? '' : 'animate-pulse'} />
+                Sync: {lastSyncText}
+             </div>
+          </div>
         </div>
         {!isSales && (
           <button 
@@ -104,7 +112,6 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser }) => {
         )}
       </div>
 
-      {/* Primary Financial Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <StatCard 
           title="Total Sales (Today)" 
@@ -129,7 +136,6 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser }) => {
         />
       </div>
 
-      {/* Stock Value & Profit Grid - Restricted */}
       {showSensitiveData && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in slide-in-from-top-4 duration-300">
           <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white relative overflow-hidden shadow-2xl">
@@ -174,7 +180,6 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser }) => {
         </div>
       )}
 
-      {/* Alerts & Operational Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <StatCard 
           title="Unverified Transfers" 

@@ -39,8 +39,8 @@ interface ErrorBoundaryState {
   error: Error | null;
 }
 
-// Fix: Explicitly use React.Component to ensure props and state are correctly inherited and recognized by the TypeScript compiler.
-class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+// Fix: Use the imported Component class directly to ensure props and state are correctly inherited and recognized by the TypeScript compiler.
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   public state: ErrorBoundaryState = { hasError: false, error: null };
 
   constructor(props: ErrorBoundaryProps) {
@@ -84,7 +84,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
                 onClick={async () => {
                   if(confirm("Clear local storage? This will delete your data.")) {
                     localStorage.clear();
-                    // Fix: db.delete() is correctly inherited and recognized after switching to named import in db.ts
+                    // Fix: db.delete() is correctly inherited and recognized after fixing the inheritance in db.ts
                     await db.delete();
                     window.location.reload();
                   }
@@ -207,7 +207,7 @@ const AppContent: React.FC = () => {
   const resetSystem = async () => {
     if (confirm("DANGER: This will delete ALL local data. Proceed?")) {
       localStorage.clear();
-      // Fix: db.delete() is correctly inherited and recognized after switching to named import in db.ts
+      // Fix: db.delete() is correctly inherited and recognized after fixing the inheritance in db.ts
       await db.delete();
       window.location.reload();
     }
@@ -384,7 +384,7 @@ const AppContent: React.FC = () => {
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Password</label>
                 <div className="relative">
                   <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={20} />
-                  <input required type="password" placeholder="••••" className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 font-black tracking-widest text-lg" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} />
+                  <input required type="password" placeholder="••••" className="w-full pl-12 pr-4 py-4 bg-slate-100 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 font-black tracking-widest text-lg" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} />
                 </div>
               </div>
             </div>
@@ -405,11 +405,11 @@ const AppContent: React.FC = () => {
       case 'dashboard': return <Dashboard currentUser={currentUser} />;
       case 'pos': return <POS setView={setCurrentView} />;
       case 'transfer-station': return <TransferStation setView={setCurrentView} />;
-      case 'inventory': return <Inventory setView={setCurrentView} />;
+      case 'inventory': return <Inventory setView={setCurrentView} currentUser={currentUser} />;
       case 'inventory-ledger': return <InventoryLedger />;
       case 'debts': return <Debts />;
       case 'ai-insights': return <AIInsights />;
-      case 'sync': return <SyncStation />;
+      case 'sync': return <SyncStation currentUser={currentUser} />;
       case 'staff-management': return <StaffManagement />;
       case 'settings': return (
         <div className="max-w-4xl mx-auto space-y-6 pb-12">
