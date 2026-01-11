@@ -18,21 +18,25 @@ import {
   X,
   User,
   Phone,
-  ArrowRight
+  ArrowRight,
+  Camera
 } from 'lucide-react';
-import { Product, SaleItem, ParkedSale, View } from '../types';
+import { Product, SaleItem, ParkedSale, View, Staff } from '../types';
+import BarcodeScanner from '../components/BarcodeScanner';
 
 interface POSProps {
   setView: (view: View) => void;
+  currentUser?: Staff | null;
 }
 
-const POS: React.FC<POSProps> = ({ setView }) => {
+const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeCategory, setActiveCategory] = useState('All');
   const [cart, setCart] = useState<SaleItem[]>([]);
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [showParkedModal, setShowParkedModal] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
   
   // Checkout State
   const [paymentType, setPaymentType] = useState<'cash' | 'transfer' | 'pos' | 'split'>('cash');
@@ -77,6 +81,17 @@ const POS: React.FC<POSProps> = ({ setView }) => {
     }).filter(item => item.quantity > 0));
   };
 
+  const handleBarcodeScanned = (barcode: string) => {
+    const product = products.find(p => p.barcode === barcode);
+    if (product) {
+      addToCart(product);
+      setSearchTerm('');
+    } else {
+      setSearchTerm(barcode);
+    }
+    setShowScanner(false);
+  };
+
   const total = cart.reduce((acc, curr) => acc + (curr.price * curr.quantity), 0);
   const debtAmount = paymentType === 'split' ? Math.max(0, total - cashAmount) : 0;
 
@@ -112,7 +127,7 @@ const POS: React.FC<POSProps> = ({ setView }) => {
         payment_method: paymentType,
         cash_amount: paymentType === 'split' ? cashAmount : total,
         debt_amount: debtAmount,
-        staff_id: 'Admin',
+        staff_id: currentUser?.name || 'Terminal', 
         timestamp: Date.now(),
         sync_status: 'pending'
       });
@@ -136,7 +151,6 @@ const POS: React.FC<POSProps> = ({ setView }) => {
         }
       }
 
-      // Keep cart for summary then clear
       setShowCheckoutModal(false);
       setShowSuccessModal(true);
     } catch (err) {
@@ -153,6 +167,14 @@ const POS: React.FC<POSProps> = ({ setView }) => {
 
   return (
     <div className="h-full flex flex-col lg:flex-row gap-4">
+      {/* Barcode Scanner Modal Integration - Visible to all roles */}
+      {showScanner && (
+        <BarcodeScanner 
+          onScan={handleBarcodeScanned} 
+          onClose={() => setShowScanner(false)} 
+        />
+      )}
+
       {/* Left Side: Product Terminal */}
       <div className="flex-1 flex flex-col gap-4 overflow-hidden">
         {/* Top Controls */}
@@ -162,10 +184,17 @@ const POS: React.FC<POSProps> = ({ setView }) => {
             <input 
               type="text" 
               placeholder="Scan barcode or type name..." 
-              className="w-full pl-12 pr-4 py-4 bg-white border border-slate-200 rounded-2xl shadow-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none text-lg font-medium"
+              className="w-full pl-12 pr-16 py-4 bg-white border border-slate-200 rounded-2xl shadow-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none text-lg font-medium"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
+            <button 
+              onClick={() => setShowScanner(true)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 p-2 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-600 hover:text-white transition-all shadow-sm active:scale-90"
+              title="Start Scanner"
+            >
+              <Camera size={24} />
+            </button>
           </div>
           <button 
             onClick={() => setShowParkedModal(true)}
@@ -227,6 +256,12 @@ const POS: React.FC<POSProps> = ({ setView }) => {
               </div>
             </button>
           ))}
+          {filteredProducts.length === 0 && (
+            <div className="col-span-full py-20 text-center space-y-4">
+               <Package size={48} className="mx-auto text-slate-200" />
+               <p className="text-slate-400 font-bold italic">No matching products found...</p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -286,7 +321,7 @@ const POS: React.FC<POSProps> = ({ setView }) => {
           <div className="space-y-3">
             <div className="flex justify-between text-slate-400 text-[10px] font-black uppercase tracking-[0.2em]">
               <span>Order Summary</span>
-              <span>{cart.length} Products</span>
+              <span>{cart.length} Items</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-xl font-bold">Total Pay</span>

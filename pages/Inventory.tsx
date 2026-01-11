@@ -18,7 +18,8 @@ import {
   ClipboardList,
   AlertCircle,
   PackageCheck,
-  RefreshCw
+  RefreshCw,
+  Info
 } from 'lucide-react';
 import { Product, View, Staff } from '../types';
 import Tesseract from 'tesseract.js';
@@ -215,7 +216,7 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser }) => {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
             <input 
               type="text" 
-              placeholder="Search inventory..." 
+              placeholder="Search catalog..." 
               className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-2xl outline-none shadow-sm focus:ring-2 focus:ring-emerald-500 font-medium"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -255,15 +256,15 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser }) => {
         )}
       </div>
 
-      <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
+      <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden min-h-[400px] flex flex-col">
+        <div className="overflow-x-auto flex-1">
+          <table className="w-full text-left border-collapse">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
-                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Product Name</th>
+                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Product Details</th>
                 <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Category</th>
-                {!isSales && <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Pricing</th>}
-                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Units in Stock</th>
+                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Selling Price</th>
+                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Availability</th>
                 {isAdmin && <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Actions</th>}
               </tr>
             </thead>
@@ -290,16 +291,17 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser }) => {
                       {product.category}
                     </span>
                   </td>
-                  {!isSales && (
-                    <td className="px-8 py-5 text-right">
-                      <p className="font-black text-slate-900">₦{product.price.toLocaleString()}</p>
-                      <p className="text-[10px] text-slate-400 font-bold uppercase">Profit: ₦{(product.price - product.cost_price).toLocaleString()}</p>
-                    </td>
-                  )}
                   <td className="px-8 py-5 text-right">
-                    <span className={`px-4 py-1.5 rounded-full text-xs font-black ${product.stock_qty <= 10 ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
-                      {product.stock_qty} Units
-                    </span>
+                    <p className="font-black text-slate-900">₦{product.price.toLocaleString()}</p>
+                    {!isSales && <p className="text-[10px] text-slate-400 font-bold uppercase">Margin: ₦{(product.price - product.cost_price).toLocaleString()}</p>}
+                  </td>
+                  <td className="px-8 py-5 text-right">
+                    <div className="flex flex-col items-end">
+                      <span className={`px-4 py-1.5 rounded-full text-xs font-black ${product.stock_qty <= 10 ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                        {product.stock_qty} Units
+                      </span>
+                      {product.stock_qty === 0 && <span className="text-[9px] font-black text-rose-500 uppercase mt-1">Out of Stock</span>}
+                    </div>
                   </td>
                   {isAdmin && (
                     <td className="px-8 py-5 text-right">
@@ -326,30 +328,37 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser }) => {
             </tbody>
           </table>
         </div>
+        
         {products.length === 0 && (
-          <div className="py-32 text-center">
+          <div className="flex-1 flex flex-col items-center justify-center py-20 px-6 text-center animate-in fade-in duration-500">
             {isSales ? (
-              <div className="space-y-4">
-                <div className="w-20 h-20 bg-amber-50 text-amber-600 rounded-full flex items-center justify-center mx-auto">
-                   <RefreshCw size={40} className="animate-spin-slow" />
+              <div className="space-y-6 max-w-sm">
+                <div className="w-24 h-24 bg-amber-50 text-amber-500 rounded-full flex items-center justify-center mx-auto shadow-inner">
+                   <RefreshCw size={48} className="animate-spin-slow opacity-60" />
                 </div>
-                <div className="max-w-xs mx-auto">
-                  <h4 className="text-lg font-black text-slate-800">No inventory found</h4>
-                  <p className="text-slate-500 text-sm mt-1">Please sync with Admin to download the product list.</p>
-                  {setView && (
-                    <button 
-                      onClick={() => setView('sync')}
-                      className="mt-6 px-6 py-2 bg-emerald-600 text-white rounded-xl font-bold text-sm shadow-lg shadow-emerald-200"
-                    >
-                      Go to Sync Center
-                    </button>
-                  )}
+                <div className="space-y-2">
+                  <h4 className="text-xl font-black text-slate-800 tracking-tight">No inventory found</h4>
+                  <p className="text-slate-500 text-sm font-medium">Please sync with Admin to download the latest product list and prices.</p>
                 </div>
+                {setView && (
+                  <button 
+                    onClick={() => setView('sync')}
+                    className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black text-lg shadow-xl shadow-emerald-200 hover:bg-emerald-700 transition-all active:scale-95 flex items-center justify-center gap-3"
+                  >
+                    <RefreshCw size={20} />
+                    Go to Sync Center
+                  </button>
+                )}
               </div>
             ) : (
-              <div className="space-y-2">
-                <PackageCheck size={64} className="mx-auto text-slate-200" />
-                <p className="text-slate-500 font-bold">Your product catalog is currently empty.</p>
+              <div className="space-y-4">
+                <div className="w-20 h-20 bg-slate-50 rounded-3xl flex items-center justify-center mx-auto">
+                  <PackageCheck size={40} className="text-slate-200" />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-slate-400 font-black uppercase tracking-widest text-[10px]">Registry Empty</p>
+                  <p className="text-slate-500 font-bold">Register your first product to start selling.</p>
+                </div>
               </div>
             )}
           </div>

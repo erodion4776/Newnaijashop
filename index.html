@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -14,6 +15,33 @@
           50% { transform: scale(1.05); opacity: 0.8; }
         }
         .animate-pulse-soft { animation: pulse-soft 2s infinite ease-in-out; }
+        
+        /* PWA Video Fixes */
+        video { 
+          object-fit: cover; 
+          width: 100%; 
+          height: 100%; 
+          border-radius: inherit;
+        }
+        /* Ensure video doesn't go full-screen on iOS */
+        video[playsinline] {
+          -webkit-playsinline: playsinline;
+        }
+        
+        @keyframes scan-line {
+          0% { top: 10%; }
+          100% { top: 90%; }
+        }
+        .animate-scan {
+          position: absolute;
+          left: 10%;
+          right: 10%;
+          height: 2px;
+          background: #10b981;
+          box-shadow: 0 0 15px #10b981;
+          z-index: 10;
+          animation: scan-line 2s infinite ease-in-out;
+        }
     </style>
 <script type="importmap">
 {

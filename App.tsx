@@ -39,7 +39,7 @@ interface ErrorBoundaryState {
   error: Error | null;
 }
 
-// Fix: Use React.Component to ensure props and state are correctly inherited and recognized by the TypeScript compiler.
+// Fix: Explicitly using React.Component to ensure props and state are correctly inherited and recognized by the TypeScript compiler.
 class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   public state: ErrorBoundaryState = { hasError: false, error: null };
 
@@ -404,7 +404,7 @@ const AppContent: React.FC = () => {
   const renderView = () => {
     switch (currentView) {
       case 'dashboard': return <Dashboard currentUser={currentUser} setView={setCurrentView} />;
-      case 'pos': return <POS setView={setCurrentView} />;
+      case 'pos': return <POS setView={setCurrentView} currentUser={currentUser} />;
       case 'transfer-station': return <TransferStation setView={setCurrentView} />;
       case 'inventory': return <Inventory setView={setCurrentView} currentUser={currentUser} />;
       case 'inventory-ledger': return <InventoryLedger />;

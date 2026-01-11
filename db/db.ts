@@ -1,6 +1,8 @@
 
-// Fix: Use named import for Dexie to ensure proper prototype inheritance and type resolution in TypeScript
-import { Dexie, type Table } from 'dexie';
+// Fix: Use named import for Dexie to ensure proper prototype inheritance and type resolution in TypeScript.
+// Default imports can sometimes resolve to the module object instead of the constructor in certain environments.
+import { Dexie } from 'dexie';
+import type { Table } from 'dexie';
 import { Product, Sale, Debt, Settings, ParkedSale, InventoryLog, Staff } from '../types';
 
 /**
