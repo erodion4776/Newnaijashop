@@ -25,14 +25,23 @@ import {
   X,
   Store,
   RefreshCw,
-  Zap,
   Loader2,
   AlertTriangle
 } from 'lucide-react';
 
-// Error Boundary Component to prevent white screens on runtime errors
-class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: Error | null }> {
-  constructor(props: { children: ReactNode }) {
+// Explicitly define Props and State interfaces for ErrorBoundary
+interface ErrorBoundaryProps {
+  children: ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+// Fix: Use React.Component to ensure props and state are correctly inherited and recognized by TypeScript.
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = { hasError: false, error: null };
   }
@@ -46,6 +55,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
   }
 
   render() {
+    // Fix: Correctly access this.state
     if (this.state.hasError) {
       return (
         <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 text-center">
@@ -83,6 +93,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
         </div>
       );
     }
+    // Fix: Correctly access this.props.children
     return this.props.children;
   }
 }
@@ -97,7 +108,6 @@ const AppContent: React.FC = () => {
   const [onboardingSuccess, setOnboardingSuccess] = useState<string | null>(null);
   const [selectedStaffId, setSelectedStaffId] = useState<number | 'admin' | ''>('');
 
-  // Setup Form State
   const [setupData, setSetupData] = useState({ shopName: '', adminName: '', adminPin: '' });
 
   const settings = useLiveQuery(() => db.settings.get('app_settings'));
@@ -109,7 +119,6 @@ const AppContent: React.FC = () => {
       try {
         await initSettings();
         
-        // Handle Magic Links (invite/staffData)
         const urlParams = new URLSearchParams(window.location.search);
         const onboardingData = urlParams.get('staffData') || urlParams.get('invite');
         
@@ -133,7 +142,6 @@ const AppContent: React.FC = () => {
           }
         }
         
-        // Delay slightly for smooth transition
         setTimeout(() => setIsInitialized(true), 800);
       } catch (err: any) {
         console.error("Database initialization failed:", err);
@@ -143,7 +151,6 @@ const AppContent: React.FC = () => {
     start();
   }, []);
 
-  // License Logic
   useEffect(() => {
     if (isInitialized && settings && settings.is_setup_complete) {
       const { valid, error } = validateLicense(settings.license_key, settings.last_used_timestamp);
@@ -166,7 +173,6 @@ const AppContent: React.FC = () => {
     }
   };
 
-  // 0. Splash Loading Screen
   if (!isInitialized && !initError) {
     return (
       <div className="min-h-screen bg-emerald-900 flex flex-col items-center justify-center p-6">
@@ -185,7 +191,6 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // 1. Initialization Error Screen
   if (initError) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
@@ -208,7 +213,6 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // 2. Setup Flow
   if (settings && !settings.is_setup_complete) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
@@ -254,7 +258,6 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // 3. License Lock
   if (licenseError) {
     return (
       <div className="fixed inset-0 bg-slate-950 flex items-center justify-center p-6 z-[1000]">
@@ -280,7 +283,6 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // 4. Login Screen
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
@@ -345,7 +347,6 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // 5. Main App Content
   const renderView = () => {
     switch (currentView) {
       case 'dashboard': return <Dashboard currentUser={currentUser} />;
@@ -388,6 +389,7 @@ const AppContent: React.FC = () => {
   );
 };
 
+// Fix: Wrap App with ErrorBoundary correctly
 const App: React.FC = () => (
   <ErrorBoundary>
     <AppContent />

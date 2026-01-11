@@ -69,7 +69,7 @@ const Inventory: React.FC<InventoryProps> = ({ setView }) => {
           stock_qty: Number(formData.stock_qty)
         });
       } else {
-        // Fix: Use inherited transaction method from Dexie to wrap product creation and initial log entry
+        // Fix: Explicitly use the transaction method on the db instance.
         await db.transaction('rw', [db.products, db.inventory_logs], async () => {
           const newId = await db.products.add({
             ...formData,
@@ -80,7 +80,7 @@ const Inventory: React.FC<InventoryProps> = ({ setView }) => {
 
           // Case A: Create 'Initial Stock' log entry
           await db.inventory_logs.add({
-            product_id: newId,
+            product_id: newId as number,
             product_name: formData.name,
             quantity_changed: Number(formData.stock_qty),
             old_stock: 0,
@@ -108,7 +108,7 @@ const Inventory: React.FC<InventoryProps> = ({ setView }) => {
       const change = Number(restockQty);
       const newStock = oldStock + change;
       
-      // Fix: Use inherited transaction method from Dexie to ensure atomic updates of stock levels and audit logs
+      // Fix: Use inherited transaction method from Dexie to ensure atomic updates of stock levels and audit logs.
       await db.transaction('rw', [db.products, db.inventory_logs], async () => {
         // Update Product Table
         await db.products.update(restockProduct.id!, {
@@ -196,7 +196,7 @@ const Inventory: React.FC<InventoryProps> = ({ setView }) => {
     reader.readAsDataURL(file);
   };
 
-  const importMigrationData = async () => {
+  const importMigrationData = async (p: Product) => {
     for (const p of migrationData) {
       await db.products.add(p);
     }
@@ -499,7 +499,7 @@ const Inventory: React.FC<InventoryProps> = ({ setView }) => {
 
                   <div className="flex gap-3 pt-4">
                     <button onClick={() => setMigrationData([])} className="flex-1 py-5 bg-slate-100 rounded-2xl font-black text-slate-500 hover:bg-slate-200">Re-scan Photo</button>
-                    <button onClick={importMigrationData} className="flex-[2] py-5 bg-emerald-600 text-white rounded-2xl font-black text-xl shadow-xl shadow-emerald-200 transition-all hover:bg-emerald-700">Finalize & Import All</button>
+                    <button onClick={() => importMigrationData()} className="flex-[2] py-5 bg-emerald-600 text-white rounded-2xl font-black text-xl shadow-xl shadow-emerald-200 transition-all hover:bg-emerald-700">Finalize & Import All</button>
                   </div>
                 </div>
               ) : (
