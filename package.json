@@ -13,7 +13,7 @@
     "react-dom": "^19.0.0",
     "lucide-react": "^0.468.0",
     "recharts": "^2.15.0",
-    "react-is": "^19.0.0",
+    "react-is": "^18.3.1",
     "dexie": "^4.0.10",
     "dexie-react-hooks": "^1.1.7",
     "@google/genai": "^0.21.0",
@@ -30,5 +30,9 @@
     "tailwindcss": "^3.4.16",
     "typescript": "^5.7.2",
     "vite": "^6.0.3"
+  },
+  "overrides": {
+    "react": "$react",
+    "react-dom": "$react-dom"
   }
 }

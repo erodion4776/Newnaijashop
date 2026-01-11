@@ -32,7 +32,7 @@ export const importDatabaseFromString = async (base64String: string) => {
     const data = JSON.parse(decompressed);
 
     // Clear and restore
-    // Fix: Use the transaction method on the db instance to perform atomic data restoration.
+    // Fix: Using the transaction method on the db instance to perform atomic data restoration.
     await db.transaction('rw', [db.products, db.sales, db.debts, db.settings], async () => {
       await db.products.clear();
       await db.sales.clear();

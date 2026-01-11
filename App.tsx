@@ -31,7 +31,7 @@ import {
 
 // Explicitly define Props and State interfaces for ErrorBoundary
 interface ErrorBoundaryProps {
-  children: ReactNode;
+  children?: ReactNode;
 }
 
 interface ErrorBoundaryState {
@@ -39,11 +39,12 @@ interface ErrorBoundaryState {
   error: Error | null;
 }
 
-// Fix: Use React.Component to ensure props and state are correctly inherited and recognized by TypeScript.
+// Fix: Correctly extending React.Component and initializing state as a property for proper TS recognition.
 class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  public override state: ErrorBoundaryState = { hasError: false, error: null };
+
   constructor(props: ErrorBoundaryProps) {
     super(props);
-    this.state = { hasError: false, error: null };
   }
 
   static getDerivedStateFromError(error: Error) {
@@ -55,8 +56,11 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
   }
 
   render() {
-    // Fix: Correctly access this.state
-    if (this.state.hasError) {
+    // Fix: Using destructuring to access state and props which are now correctly inherited.
+    const { hasError, error } = this.state;
+    const { children } = this.props;
+
+    if (hasError) {
       return (
         <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 text-center">
           <div className="max-w-md w-full bg-white p-10 rounded-[3rem] shadow-2xl border border-rose-100 space-y-8">
@@ -68,7 +72,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
               <p className="text-slate-500 text-sm">The terminal encountered an unexpected error. This might be due to a corrupted local cache.</p>
             </div>
             <div className="bg-slate-50 p-4 rounded-2xl text-left overflow-auto max-h-32 scrollbar-hide">
-              <code className="text-[10px] text-rose-500 font-mono">{this.state.error?.message}</code>
+              <code className="text-[10px] text-rose-500 font-mono">{error?.message}</code>
             </div>
             <div className="flex flex-col gap-3">
               <button 
@@ -93,8 +97,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
         </div>
       );
     }
-    // Fix: Correctly access this.props.children
-    return this.props.children;
+    return children;
   }
 }
 
@@ -389,7 +392,7 @@ const AppContent: React.FC = () => {
   );
 };
 
-// Fix: Wrap App with ErrorBoundary correctly
+// Fix: ErrorBoundary correctly receives children prop implicitly through JSX nesting.
 const App: React.FC = () => (
   <ErrorBoundary>
     <AppContent />

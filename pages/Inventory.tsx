@@ -196,7 +196,8 @@ const Inventory: React.FC<InventoryProps> = ({ setView }) => {
     reader.readAsDataURL(file);
   };
 
-  const importMigrationData = async (p: Product) => {
+  // Fix: Removed unused parameter 'p' to match call site and avoid shadowing loop variable.
+  const importMigrationData = async () => {
     for (const p of migrationData) {
       await db.products.add(p);
     }
