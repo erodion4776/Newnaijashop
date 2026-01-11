@@ -39,9 +39,9 @@ interface ErrorBoundaryState {
   error: Error | null;
 }
 
-// Fix: Correctly extending React.Component and initializing state as a property for proper TS recognition.
-class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  public override state: ErrorBoundaryState = { hasError: false, error: null };
+// Fix: Use named Component import and remove 'override' to ensure TypeScript correctly recognizes the inheritance and property visibility.
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  public state: ErrorBoundaryState = { hasError: false, error: null };
 
   constructor(props: ErrorBoundaryProps) {
     super(props);
@@ -56,7 +56,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
   }
 
   render() {
-    // Fix: Using destructuring to access state and props which are now correctly inherited.
+    // Fix: Inheritance is now properly recognized, allowing access to this.state and this.props.
     const { hasError, error } = this.state;
     const { children } = this.props;
 
@@ -84,6 +84,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
               <button 
                 onClick={async () => {
                   if(confirm("Clear local storage? This will delete your data.")) {
+                    // Fix: db.delete() is now correctly recognized via the base Dexie class fix in db.ts.
                     await db.delete();
                     window.location.reload();
                   }
@@ -171,6 +172,7 @@ const AppContent: React.FC = () => {
 
   const resetSystem = async () => {
     if (confirm("DANGER: This will delete ALL local data. Proceed?")) {
+      // Fix: db.delete() is now correctly recognized via the base Dexie class fix in db.ts.
       await db.delete();
       window.location.reload();
     }
@@ -392,7 +394,6 @@ const AppContent: React.FC = () => {
   );
 };
 
-// Fix: ErrorBoundary correctly receives children prop implicitly through JSX nesting.
 const App: React.FC = () => (
   <ErrorBoundary>
     <AppContent />
