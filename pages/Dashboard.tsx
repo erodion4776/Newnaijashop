@@ -16,15 +16,21 @@ import {
   Briefcase,
   Layers,
   Staff,
-  RefreshCw
+  RefreshCw,
+  Wifi,
+  MessageCircle,
+  ArrowRight
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { View } from '../types';
+import pako from 'pako';
 
 interface DashboardProps {
   currentUser?: Staff | null;
+  setView?: (view: View) => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ currentUser }) => {
+const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
   const isSales = currentUser?.role === 'Sales';
   const [showSensitiveData, setShowSensitiveData] = useState(!isSales);
 
@@ -87,6 +93,19 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser }) => {
     return `₦${Math.floor(val).toLocaleString()}`;
   };
 
+  const handleWhatsAppReport = async () => {
+    try {
+      const today = new Date().setHours(0, 0, 0, 0);
+      const pendingSales = await db.sales.where('sync_status').equals('pending').toArray();
+      const data = { type: 'SALES_PUSH', sales: pendingSales };
+      const compressed = pako.gzip(JSON.stringify(data));
+      const b64 = btoa(String.fromCharCode.apply(null, Array.from(compressed)));
+      window.open(`https://wa.me/?text=${encodeURIComponent(`📦 STAFF_SALES REPORT (${new Date().toLocaleDateString()}):\n${b64}`)}`, '_blank');
+    } catch (err) {
+      alert("Report failed: " + err);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between mb-2">
@@ -135,6 +154,48 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser }) => {
           color="rose"
         />
       </div>
+
+      {isSales && (
+        <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm space-y-6">
+          <div className="flex items-center gap-3">
+             <div className="p-3 bg-emerald-600 text-white rounded-2xl">
+               <RefreshCw size={24} />
+             </div>
+             <div>
+               <h3 className="text-xl font-black text-slate-800">Sync Center</h3>
+               <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Keep your terminal up to date</p>
+             </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <button 
+              onClick={() => setView && setView('sync')}
+              className="group p-6 bg-slate-50 border border-slate-200 rounded-[2rem] hover:border-emerald-500 hover:bg-emerald-50 transition-all flex items-center gap-4 text-left"
+            >
+              <div className="p-4 bg-white rounded-2xl shadow-sm text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white transition-all">
+                <Wifi size={24} />
+              </div>
+              <div className="flex-1">
+                <p className="font-black text-slate-800 leading-tight">Connect to Admin (Wi-Fi)</p>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Send sales & get stock</p>
+              </div>
+              <ArrowRight size={20} className="text-slate-300 group-hover:text-emerald-500 group-hover:translate-x-1 transition-all" />
+            </button>
+            <button 
+              onClick={handleWhatsAppReport}
+              className="group p-6 bg-slate-50 border border-slate-200 rounded-[2rem] hover:border-emerald-500 hover:bg-emerald-50 transition-all flex items-center gap-4 text-left"
+            >
+              <div className="p-4 bg-white rounded-2xl shadow-sm text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white transition-all">
+                <MessageCircle size={24} />
+              </div>
+              <div className="flex-1">
+                <p className="font-black text-slate-800 leading-tight">Send WhatsApp Report</p>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Manual offline fallback</p>
+              </div>
+              <ArrowRight size={20} className="text-slate-300 group-hover:text-emerald-500 group-hover:translate-x-1 transition-all" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {showSensitiveData && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in slide-in-from-top-4 duration-300">

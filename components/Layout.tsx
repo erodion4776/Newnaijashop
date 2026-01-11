@@ -33,12 +33,12 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, setView, shopName
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['Admin', 'Manager', 'Sales'] },
     { id: 'pos', label: 'Point of Sale', icon: ShoppingCart, roles: ['Admin', 'Manager', 'Sales'] },
     { id: 'transfer-station', label: 'Transfer Station', icon: Landmark, roles: ['Admin', 'Manager', 'Sales'] },
-    { id: 'inventory', label: 'Inventory', icon: Package, roles: ['Admin', 'Manager'] },
+    { id: 'inventory', label: 'Inventory', icon: Package, roles: ['Admin', 'Manager', 'Sales'] },
     { id: 'inventory-ledger', label: 'Inventory Ledger', icon: ClipboardList, roles: ['Admin', 'Manager'] },
     { id: 'debts', label: 'Debt Tracker', icon: Users, roles: ['Admin', 'Manager'] },
     { id: 'staff-management', label: 'Manage Staff', icon: UserCog, roles: ['Admin'] },
     { id: 'ai-insights', label: 'AI Business Hub', icon: Sparkles, roles: ['Admin', 'Manager'] },
-    { id: 'sync', label: 'Sync & Backup', icon: RefreshCw, roles: ['Admin'] },
+    { id: 'sync', label: 'Sync & Backup', icon: RefreshCw, roles: ['Admin', 'Sales'] },
     { id: 'settings', label: 'Settings', icon: Settings, roles: ['Admin'] },
   ];
 

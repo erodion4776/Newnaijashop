@@ -17,7 +17,8 @@ import {
   Archive,
   ClipboardList,
   AlertCircle,
-  PackageCheck
+  PackageCheck,
+  RefreshCw
 } from 'lucide-react';
 import { Product, View, Staff } from '../types';
 import Tesseract from 'tesseract.js';
@@ -259,10 +260,10 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser }) => {
           <table className="w-full text-left">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
-                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Details</th>
+                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Product Name</th>
                 <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Category</th>
                 {!isSales && <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Pricing</th>}
-                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Inventory</th>
+                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Units in Stock</th>
                 {isAdmin && <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Actions</th>}
               </tr>
             </thead>
@@ -272,14 +273,16 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser }) => {
                   <td className="px-8 py-5">
                     <div>
                       <p className="font-bold text-slate-800">{product.name}</p>
-                      <div className="flex gap-2 mt-1">
-                        <span className="text-[10px] text-slate-400 font-bold uppercase">SN: {product.barcode || '---'}</span>
-                        {product.expiry_date && (
-                          <span className={`text-[10px] font-black uppercase ${new Date(product.expiry_date) < new Date() ? 'text-rose-500' : 'text-emerald-500'}`}>
-                            Exp: {product.expiry_date}
-                          </span>
-                        )}
-                      </div>
+                      {!isSales && (
+                        <div className="flex gap-2 mt-1">
+                          <span className="text-[10px] text-slate-400 font-bold uppercase">SN: {product.barcode || '---'}</span>
+                          {product.expiry_date && (
+                            <span className={`text-[10px] font-black uppercase ${new Date(product.expiry_date) < new Date() ? 'text-rose-500' : 'text-emerald-500'}`}>
+                              Exp: {product.expiry_date}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </td>
                   <td className="px-8 py-5">
@@ -323,6 +326,34 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser }) => {
             </tbody>
           </table>
         </div>
+        {products.length === 0 && (
+          <div className="py-32 text-center">
+            {isSales ? (
+              <div className="space-y-4">
+                <div className="w-20 h-20 bg-amber-50 text-amber-600 rounded-full flex items-center justify-center mx-auto">
+                   <RefreshCw size={40} className="animate-spin-slow" />
+                </div>
+                <div className="max-w-xs mx-auto">
+                  <h4 className="text-lg font-black text-slate-800">No inventory found</h4>
+                  <p className="text-slate-500 text-sm mt-1">Please sync with Admin to download the product list.</p>
+                  {setView && (
+                    <button 
+                      onClick={() => setView('sync')}
+                      className="mt-6 px-6 py-2 bg-emerald-600 text-white rounded-xl font-bold text-sm shadow-lg shadow-emerald-200"
+                    >
+                      Go to Sync Center
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <PackageCheck size={64} className="mx-auto text-slate-200" />
+                <p className="text-slate-500 font-bold">Your product catalog is currently empty.</p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Admin Only Modals */}

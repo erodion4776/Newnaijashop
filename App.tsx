@@ -39,8 +39,8 @@ interface ErrorBoundaryState {
   error: Error | null;
 }
 
-// Fix: Use the imported Component class directly to ensure props and state are correctly inherited and recognized by the TypeScript compiler.
-class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+// Fix: Use React.Component to ensure props and state are correctly inherited and recognized by the TypeScript compiler.
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   public state: ErrorBoundaryState = { hasError: false, error: null };
 
   constructor(props: ErrorBoundaryProps) {
@@ -51,6 +51,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
     return { hasError: true, error };
   }
 
+  // Fix: Renamed componentCatch to componentDidCatch (standard React lifecycle method).
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("Uncaught Terminal Error:", error, errorInfo);
   }
@@ -84,7 +85,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
                 onClick={async () => {
                   if(confirm("Clear local storage? This will delete your data.")) {
                     localStorage.clear();
-                    // Fix: db.delete() is correctly inherited and recognized after fixing the inheritance in db.ts
+                    // Fix: db.delete() is correctly recognized as an instance method after inheritance fix in db.ts.
                     await db.delete();
                     window.location.reload();
                   }
@@ -207,7 +208,7 @@ const AppContent: React.FC = () => {
   const resetSystem = async () => {
     if (confirm("DANGER: This will delete ALL local data. Proceed?")) {
       localStorage.clear();
-      // Fix: db.delete() is correctly inherited and recognized after fixing the inheritance in db.ts
+      // Fix: db.delete() is correctly recognized as an instance method after inheritance fix in db.ts.
       await db.delete();
       window.location.reload();
     }
@@ -402,7 +403,7 @@ const AppContent: React.FC = () => {
 
   const renderView = () => {
     switch (currentView) {
-      case 'dashboard': return <Dashboard currentUser={currentUser} />;
+      case 'dashboard': return <Dashboard currentUser={currentUser} setView={setCurrentView} />;
       case 'pos': return <POS setView={setCurrentView} />;
       case 'transfer-station': return <TransferStation setView={setCurrentView} />;
       case 'inventory': return <Inventory setView={setCurrentView} currentUser={currentUser} />;
@@ -431,7 +432,7 @@ const AppContent: React.FC = () => {
            </div>
         </div>
       );
-      default: return <Dashboard currentUser={currentUser} />;
+      default: return <Dashboard currentUser={currentUser} setView={setCurrentView} />;
     }
   };
 
