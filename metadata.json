@@ -1,0 +1,7 @@
+{
+  "name": "NaijaShop POS",
+  "description": "An offline-first PWA for Nigerian retailers featuring inventory management, sales tracking, and AI-powered business insights.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
