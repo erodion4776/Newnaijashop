@@ -17,6 +17,8 @@ import {
 } from 'lucide-react';
 import { View, Staff } from '../types';
 
+const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-9987-b4ed4c0e3c36.png";
+
 interface LayoutProps {
   children: React.ReactNode;
   activeView: View;
@@ -55,7 +57,9 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, setView, shopName
       `}>
         <div className="flex items-center justify-between p-6 border-b border-emerald-800">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center text-emerald-900 font-bold">NS</div>
+            <div className="w-8 h-8 bg-white rounded-lg p-1 flex items-center justify-center overflow-hidden">
+              <img src={LOGO_URL} className="w-full h-full object-contain" alt="Logo" />
+            </div>
             <h1 className="text-xl font-bold tracking-tight">NaijaShop</h1>
           </div>
           <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden">

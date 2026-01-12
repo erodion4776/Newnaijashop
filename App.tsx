@@ -30,6 +30,8 @@ import {
   Terminal
 } from 'lucide-react';
 
+const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-9987-b4ed4c0e3c36.png";
+
 interface ErrorBoundaryProps {
   children?: ReactNode;
 }
@@ -39,7 +41,10 @@ interface ErrorBoundaryState {
   error: Error | null;
 }
 
-// Fix: Explicitly using React.Component to ensure props and state are correctly inherited and recognized by the TypeScript compiler.
+/**
+ * Custom Error Boundary to catch terminal-level crashes.
+ * Fix: Explicitly using React.Component ensures correct inheritance of props and state in TypeScript.
+ */
 class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   public state: ErrorBoundaryState = { hasError: false, error: null };
 
@@ -51,7 +56,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
     return { hasError: true, error };
   }
 
-  // Fix: Renamed componentCatch to componentDidCatch (standard React lifecycle method).
+  // Fix: Standard React lifecycle method implementation.
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("Uncaught Terminal Error:", error, errorInfo);
   }
@@ -171,7 +176,7 @@ const AppContent: React.FC = () => {
           }
         }
         
-        setTimeout(() => setIsInitialized(true), 800);
+        setTimeout(() => setIsInitialized(true), 1200);
       } catch (err: any) {
         console.error("Database initialization failed:", err);
         setInitError(err?.message || "Could not connect to local database.");
@@ -208,7 +213,7 @@ const AppContent: React.FC = () => {
   const resetSystem = async () => {
     if (confirm("DANGER: This will delete ALL local data. Proceed?")) {
       localStorage.clear();
-      // Fix: db.delete() is correctly recognized as an instance method after inheritance fix in db.ts.
+      // Fix: db.delete() is correctly recognized after inheritance fix in db.ts.
       await db.delete();
       window.location.reload();
     }
@@ -218,8 +223,8 @@ const AppContent: React.FC = () => {
     return (
       <div className="min-h-screen bg-emerald-900 flex flex-col items-center justify-center p-6">
         <div className="text-center space-y-8 animate-pulse-soft">
-          <div className="w-32 h-32 bg-white rounded-[2.5rem] flex items-center justify-center mx-auto shadow-2xl shadow-black/20">
-            <span className="text-emerald-900 text-5xl font-black italic tracking-tighter">NS</span>
+          <div className="w-32 h-32 bg-white rounded-[2.5rem] p-4 flex items-center justify-center mx-auto shadow-2xl shadow-black/20">
+            <img src={LOGO_URL} className="w-full h-full object-contain" alt="NaijaShop Logo" />
           </div>
           <div className="space-y-2">
             <h1 className="text-white text-2xl font-black tracking-tight">NaijaShop POS</h1>
@@ -259,8 +264,8 @@ const AppContent: React.FC = () => {
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
         <div className="w-full max-w-sm space-y-8 animate-in fade-in zoom-in duration-500">
           <div className="text-center space-y-3">
-             <div className="w-20 h-20 bg-emerald-600 rounded-[1.5rem] flex items-center justify-center mx-auto shadow-2xl shadow-emerald-600/30">
-                <Store size={40} className="text-white" />
+             <div className="w-24 h-24 bg-white rounded-[2rem] p-4 flex items-center justify-center mx-auto shadow-2xl shadow-emerald-600/10 border border-slate-100">
+                <img src={LOGO_URL} className="w-full h-full object-contain" alt="NaijaShop Logo" />
              </div>
              <h1 className="text-2xl font-black text-slate-900 tracking-tight">Setup Your Shop</h1>
           </div>
@@ -338,8 +343,8 @@ const AppContent: React.FC = () => {
             </div>
           )}
           <div className="text-center space-y-4">
-             <div className="w-24 h-24 bg-emerald-600 rounded-[2rem] flex items-center justify-center mx-auto shadow-2xl rotate-3">
-                <span className="text-white text-4xl font-black italic">NS</span>
+             <div className="w-24 h-24 bg-white rounded-[2rem] p-4 flex items-center justify-center mx-auto shadow-2xl rotate-3 border border-slate-100">
+                <img src={LOGO_URL} className="w-full h-full object-contain" alt="NaijaShop Logo" />
              </div>
              <h1 className="text-3xl font-black text-slate-900 tracking-tight">{settings?.shop_name || 'NaijaShop'}</h1>
              {isStaffDevice && (

@@ -19,7 +19,8 @@ import {
   RefreshCw,
   Wifi,
   MessageCircle,
-  ArrowRight
+  ArrowRight,
+  Loader2
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { View } from '../types';
@@ -33,11 +34,19 @@ interface DashboardProps {
 const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
   const isSales = currentUser?.role === 'Sales';
   const [showSensitiveData, setShowSensitiveData] = useState(!isSales);
+  const [isDataReady, setIsDataReady] = useState(false);
 
   const settings = useLiveQuery(() => db.settings.get('app_settings'));
-  const sales = useLiveQuery(() => db.sales.toArray()) || [];
-  const products = useLiveQuery(() => db.products.toArray()) || [];
-  const debts = useLiveQuery(() => db.debts.toArray()) || [];
+  const sales = useLiveQuery(() => db.sales.toArray());
+  const products = useLiveQuery(() => db.products.toArray());
+  const debts = useLiveQuery(() => db.debts.toArray());
+
+  // Determine when all critical data from Dexie is loaded
+  useEffect(() => {
+    if (sales !== undefined && products !== undefined && debts !== undefined && settings !== undefined) {
+      setIsDataReady(true);
+    }
+  }, [sales, products, debts, settings]);
 
   const lastSyncText = useMemo(() => {
     if (!settings?.last_synced_timestamp) return "Never Synced";
@@ -53,16 +62,18 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
   }, [isSales]);
 
   const todaySales = useMemo(() => {
+    if (!sales) return [];
     const today = new Date().setHours(0, 0, 0, 0);
     return sales.filter(s => s.timestamp >= today);
   }, [sales]);
 
   const totalSalesToday = todaySales.reduce((acc, curr) => acc + curr.total_amount, 0);
-  const totalStockValue = products.reduce((acc, p) => acc + (p.cost_price * p.stock_qty), 0);
-  const expectedProfitOnStock = products.reduce((acc, p) => acc + ((p.price - p.cost_price) * p.stock_qty), 0);
+  const totalStockValue = (products || []).reduce((acc, p) => acc + (p.cost_price * p.stock_qty), 0);
+  const expectedProfitOnStock = (products || []).reduce((acc, p) => acc + ((p.price - p.cost_price) * p.stock_qty), 0);
 
   const todaysInterest = useMemo(() => {
     let profit = 0;
+    if (!products) return 0;
     todaySales.forEach(sale => {
       sale.items.forEach(item => {
         const product = products.find(p => p.id === item.productId);
@@ -74,9 +85,9 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
     return profit;
   }, [todaySales, products]);
 
-  const totalDebt = debts.filter(d => d.status === 'pending').reduce((acc, curr) => acc + curr.amount, 0);
-  const lowStock = products.filter(p => p.stock_qty <= 10).length;
-  const unconfirmedTransfers = sales.filter(s => s.payment_method === 'transfer' && !s.confirmed_by).length;
+  const totalDebt = (debts || []).filter(d => d.status === 'pending').reduce((acc, curr) => acc + curr.amount, 0);
+  const lowStock = (products || []).filter(p => p.stock_qty <= 10).length;
+  const unconfirmedTransfers = (sales || []).filter(s => s.payment_method === 'transfer' && !s.confirmed_by).length;
 
   const chartData = [
     { name: 'Mon', amount: 45000 },
@@ -95,7 +106,6 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
 
   const handleWhatsAppReport = async () => {
     try {
-      const today = new Date().setHours(0, 0, 0, 0);
       const pendingSales = await db.sales.where('sync_status').equals('pending').toArray();
       const data = { type: 'SALES_PUSH', sales: pendingSales };
       const compressed = pako.gzip(JSON.stringify(data));
@@ -105,6 +115,16 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
       alert("Report failed: " + err);
     }
   };
+
+  // Main Loading Spinner for Dashboard
+  if (!isDataReady) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
+        <Loader2 size={48} className="animate-spin text-emerald-600" />
+        <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">Syncing Terminal Data...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -169,7 +189,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <button 
               onClick={() => setView && setView('sync')}
-              className="group p-6 bg-slate-50 border border-slate-200 rounded-[2rem] hover:border-emerald-500 hover:bg-emerald-50 transition-all flex items-center gap-4 text-left"
+              className="group p-6 bg-slate-50 border border-slate-200 rounded-3xl hover:border-emerald-500 hover:bg-emerald-50 transition-all flex items-center gap-4 text-left"
             >
               <div className="p-4 bg-white rounded-2xl shadow-sm text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white transition-all">
                 <Wifi size={24} />
@@ -182,7 +202,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
             </button>
             <button 
               onClick={handleWhatsAppReport}
-              className="group p-6 bg-slate-50 border border-slate-200 rounded-[2rem] hover:border-emerald-500 hover:bg-emerald-50 transition-all flex items-center gap-4 text-left"
+              className="group p-6 bg-slate-50 border border-slate-200 rounded-3xl hover:border-emerald-500 hover:bg-emerald-50 transition-all flex items-center gap-4 text-left"
             >
               <div className="p-4 bg-white rounded-2xl shadow-sm text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white transition-all">
                 <MessageCircle size={24} />
@@ -259,7 +279,8 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-200">
+        {/* Parent Card for Sales Analytics */}
+        <div className="lg:col-span-2 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-200 flex flex-col min-h-0 block">
           <div className="flex items-center justify-between mb-8">
             <h3 className="font-black text-slate-800 text-xl tracking-tight">Sales Analytics</h3>
             <select className="bg-slate-50 border border-slate-200 text-sm font-bold rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-emerald-500">
@@ -267,8 +288,9 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
               <option>Last 30 Days</option>
             </select>
           </div>
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
+          {/* Chart Wrapper with explicit sizing for ResponsiveContainer */}
+          <div className="w-full h-[300px] min-h-[300px]">
+            <ResponsiveContainer width="100%" height="100%" aspect={2}>
               <BarChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis 
@@ -297,7 +319,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
         <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden relative">
           <h3 className="font-black text-slate-800 text-xl mb-8 tracking-tight">Activity Log</h3>
           <div className="space-y-6 relative z-10">
-            {sales.slice(-5).reverse().map((sale) => (
+            {(sales || []).slice(-5).reverse().map((sale) => (
               <div key={sale.id} className="flex items-center justify-between pb-6 border-b border-slate-50 last:border-0 last:pb-0">
                 <div className="space-y-1">
                   <p className="font-black text-slate-800">Sale #{sale.id}</p>
@@ -317,7 +339,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
                 </div>
               </div>
             ))}
-            {sales.length === 0 && (
+            {(sales || []).length === 0 && (
               <div className="text-center py-20">
                 <p className="text-sm font-bold text-slate-300">Awaiting transactions...</p>
               </div>
