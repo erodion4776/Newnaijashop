@@ -416,7 +416,7 @@ const AppContent: React.FC = () => {
       case 'inventory-ledger': return <InventoryLedger />;
       case 'debts': return <Debts />;
       case 'ai-insights': return <AIInsights />;
-      case 'sync': return <SyncStation currentUser={currentUser} />;
+      case 'sync': return <SyncStation currentUser={currentUser} setView={setCurrentView} />;
       case 'staff-management': return <StaffManagement />;
       case 'settings': return (
         <div className="max-w-4xl mx-auto space-y-6 pb-12">

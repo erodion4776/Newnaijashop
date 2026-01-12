@@ -15,9 +15,11 @@ import {
   CheckCircle2,
   Zap,
   ShieldCheck,
-  AlertCircle
+  AlertCircle,
+  PackageCheck,
+  ReceiptText
 } from 'lucide-react';
-import { Staff, Sale } from '../types';
+import { Staff, Sale, View } from '../types';
 
 // Polyfill Buffer for simple-peer in browser environments
 if (typeof window !== 'undefined') {
@@ -28,20 +30,22 @@ const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-998
 
 interface SyncStationProps {
   currentUser?: Staff | null;
+  setView: (view: View) => void;
 }
 
 type SyncStep = 'idle' | 'generating' | 'showing-qr' | 'scanning-answer' | 'syncing';
 
-const SyncStation: React.FC<SyncStationProps> = ({ currentUser }) => {
+const SyncStation: React.FC<SyncStationProps> = ({ currentUser, setView }) => {
   const isAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'Manager';
   
-  // New forced state machine
+  // State machine
   const [mode, setMode] = useState<'idle' | 'host' | 'join'>('idle');
   const [syncStep, setSyncStep] = useState<SyncStep>('idle');
+  const [isFinished, setIsFinished] = useState(false);
+  const [syncSummary, setSyncSummary] = useState({ products: 0, sales: 0 });
   
   const [qrData, setQrData] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<string>('Ready for Zero-Data Sync');
-  const [showCelebration, setShowCelebration] = useState(false);
   const [isOpeningCamera, setIsOpeningCamera] = useState(false);
 
   const peerRef = useRef<any>(null);
@@ -69,11 +73,17 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser }) => {
     }
     clearTimeout(signalTimeoutRef.current);
     
-    setMode('idle');
-    setSyncStep('idle');
-    setQrData(null);
-    setSyncStatus('Ready for Zero-Data Sync');
-    setIsOpeningCamera(false);
+    // Logic for the 'Done' button redirect
+    if (isFinished) {
+      setView('dashboard');
+    } else {
+      setMode('idle');
+      setSyncStep('idle');
+      setIsFinished(false);
+      setQrData(null);
+      setSyncStatus('Ready for Zero-Data Sync');
+      setIsOpeningCamera(false);
+    }
   };
 
   const handleDataExchange = async (data: string) => {
@@ -85,8 +95,9 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser }) => {
         setSyncStatus('Admin: Reconciling Staff Sales...');
         setSyncStep('syncing');
         
+        const salesToSync = payload.sales as Sale[];
         await db.transaction('rw', [db.sales, db.products, db.inventory_logs], async () => {
-          for (const sale of payload.sales as Sale[]) {
+          for (const sale of salesToSync) {
             const exists = await db.sales.where('timestamp').equals(sale.timestamp).first();
             if (!exists) {
               await db.sales.add({ ...sale, sync_status: 'synced' });
@@ -104,26 +115,32 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser }) => {
         
         const masterProducts = await db.products.toArray();
         peerRef.current?.send(JSON.stringify({ type: 'INVENTORY_PULL', products: masterProducts }));
-        console.log('[SYNC] Admin: Master catalog sent to Staff.');
+        
+        setSyncSummary({ sales: salesToSync.length, products: 0 });
         setSyncStatus('Admin: Sync Reconciled. Catalog Sent.');
         await db.settings.update('app_settings', { last_synced_timestamp: Date.now() });
-        setTimeout(() => setShowCelebration(true), 1000);
+        
+        // Finalize
+        setTimeout(() => setIsFinished(true), 1200);
       } 
       
       else if (!isAdmin && payload.type === 'INVENTORY_PULL') {
         setSyncStatus('Staff: Updating Master Catalog...');
         setSyncStep('syncing');
         
+        const productsToSync = payload.products;
         await db.transaction('rw', [db.products, db.sales], async () => {
           await db.products.clear();
-          await db.products.bulkAdd(payload.products);
+          await db.products.bulkAdd(productsToSync);
           await db.sales.where('sync_status').equals('pending').modify({ sync_status: 'synced' });
         });
         
-        console.log('[SYNC] Staff: Terminal inventory updated.');
+        setSyncSummary({ products: productsToSync.length, sales: 0 });
         setSyncStatus('Staff: Terminal Fully Synced!');
         await db.settings.update('app_settings', { last_synced_timestamp: Date.now() });
-        setTimeout(() => setShowCelebration(true), 1000);
+        
+        // Finalize
+        setTimeout(() => setIsFinished(true), 1200);
       }
     } catch (e) {
       console.error("[SYNC] Data Exchange Error", e);
@@ -281,20 +298,33 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser }) => {
     return () => clearInterval(interval);
   }, [syncStep, mode]);
 
-  if (showCelebration) {
+  // Success Screen
+  if (isFinished) {
     return (
       <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-emerald-950/98 backdrop-blur-xl">
         <div className="text-center space-y-8 animate-in zoom-in duration-500">
           <div className="w-32 h-32 bg-white text-emerald-600 rounded-[2.5rem] flex items-center justify-center mx-auto shadow-[0_0_100px_rgba(255,255,255,0.3)]">
             <CheckCircle2 size={80} className="animate-bounce" />
           </div>
-          <div className="space-y-2">
+          <div className="space-y-4">
             <h2 className="text-5xl font-black text-white tracking-tighter">Sync Complete!</h2>
-            <p className="text-emerald-300 font-bold text-lg uppercase tracking-widest">Inventory & Sales Reconciled</p>
+            <div className="flex flex-col items-center gap-3">
+               {isAdmin ? (
+                 <div className="flex items-center gap-3 bg-white/10 px-6 py-3 rounded-2xl border border-white/10 text-emerald-300">
+                   <ReceiptText size={20} />
+                   <span className="font-bold text-lg">{syncSummary.sales} Staff Sales Reconciled</span>
+                 </div>
+               ) : (
+                 <div className="flex items-center gap-3 bg-white/10 px-6 py-3 rounded-2xl border border-white/10 text-emerald-300">
+                   <PackageCheck size={20} />
+                   <span className="font-bold text-lg">{syncSummary.products} Products Updated</span>
+                 </div>
+               )}
+            </div>
           </div>
           <button 
             onClick={cleanup}
-            className="px-12 py-5 bg-white text-emerald-900 rounded-[2rem] font-black text-xl shadow-2xl active:scale-95 transition-all"
+            className="px-12 py-5 bg-white text-emerald-900 rounded-[2rem] font-black text-xl shadow-2xl active:scale-95 transition-all hover:bg-emerald-50"
           >
             Done
           </button>
