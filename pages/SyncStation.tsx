@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../db/db';
 import QRCode from 'qrcode';
-import Peer from 'simple-peer';
+import Peer from 'simple-peer/simplepeer.min.js';
 import { Buffer } from 'buffer';
 import { 
   Wifi, 
@@ -70,7 +70,7 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser }) => {
       
       if (isAdmin && payload.type === 'SALES_PUSH') {
         setSyncStatus('Admin: Reconciling Staff Sales...');
-        // Fix: Explicitly ensuring transaction is recognized through corrected Dexie inheritance in db/db.ts.
+        // Fixed: Explicitly ensuring transaction is recognized through corrected Dexie inheritance in db/db.ts.
         await db.transaction('rw', [db.sales, db.products, db.inventory_logs], async () => {
           for (const sale of payload.sales as Sale[]) {
             const exists = await db.sales.where('timestamp').equals(sale.timestamp).first();
@@ -98,7 +98,7 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser }) => {
       
       else if (!isAdmin && payload.type === 'INVENTORY_PULL') {
         setSyncStatus('Staff: Updating Master Catalog...');
-        // Fix: Explicitly ensuring transaction is recognized through corrected Dexie inheritance in db/db.ts.
+        // Fixed: Explicitly ensuring transaction is recognized through corrected Dexie inheritance in db/db.ts.
         await db.transaction('rw', [db.products, db.sales], async () => {
           await db.products.clear();
           await db.products.bulkAdd(payload.products);

@@ -91,7 +91,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
                 onClick={async () => {
                   if(confirm("Clear local storage? This will delete your data.")) {
                     localStorage.clear();
-                    // Fix: db.delete() is correctly recognized as an instance method after correcting Dexie inheritance in db/db.ts.
+                    // Fixed: db.delete() is now correctly recognized as an instance method after inheritance fix in db/db.ts.
                     await db.delete();
                     window.location.reload();
                   }
@@ -214,7 +214,7 @@ const AppContent: React.FC = () => {
   const resetSystem = async () => {
     if (confirm("DANGER: This will delete ALL local data. Proceed?")) {
       localStorage.clear();
-      // Fix: db.delete() is now correctly recognized as an inherited method from Dexie after fix in db/db.ts.
+      // Fixed: db.delete() is now correctly recognized as an inherited method from Dexie after fix in db/db.ts.
       await db.delete();
       window.location.reload();
     }

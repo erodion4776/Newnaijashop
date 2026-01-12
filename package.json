@@ -1,3 +1,4 @@
+
 {
   "name": "naijashop-pos",
   "private": true,
@@ -19,7 +20,9 @@
     "@google/genai": "^1.35.0",
     "pako": "^2.1.0",
     "qrcode": "^1.5.4",
-    "tesseract.js": "^5.1.1"
+    "tesseract.js": "^5.1.1",
+    "simple-peer": "^9.11.1",
+    "buffer": "^6.0.3"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",
@@ -29,7 +32,8 @@
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.16",
     "typescript": "^5.7.2",
-    "vite": "^6.0.3"
+    "vite": "^6.0.3",
+    "vite-plugin-node-polyfills": "^0.23.0"
   },
   "overrides": {
     "react": "$react",

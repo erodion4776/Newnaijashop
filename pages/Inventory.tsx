@@ -429,7 +429,7 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser }) => {
       {/* Admin Only Restock */}
       {isAdmin && isRestockModalOpen && restockProduct && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-           <div className="bg-white rounded-[3rem] w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in duration-300">
+           <div className="bg-white rounded-[3rem] w-full max-md shadow-2xl overflow-hidden animate-in zoom-in duration-300">
               <div className="p-8 border-b border-slate-50 flex items-center justify-between bg-emerald-50/30">
                  <div className="flex items-center gap-3">
                     <div className="p-3 bg-emerald-600 text-white rounded-2xl">
