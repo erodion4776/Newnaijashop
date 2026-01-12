@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect, useRef, useLayoutEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
@@ -99,6 +98,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
       const width = chartParentRef.current?.offsetWidth || 0;
       if (width > 0) {
         setChartWidth(width);
+        setIsChartLoading(false);
       }
     };
 
@@ -121,8 +121,10 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
   useEffect(() => {
     if (sales !== undefined && products !== undefined && debts !== undefined && settings !== undefined) {
       setIsDataReady(true);
-      // Ensure that if we have sales data, we tell the chart to try and stop loading
-      if (sales.length >= 0) setIsChartLoading(false);
+      // Aggressive check to unlock chart
+      if (sales.length >= 0) {
+        setTimeout(() => setIsChartLoading(false), 500);
+      }
     }
   }, [sales, products, debts, settings]);
 
@@ -351,7 +353,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
             </select>
           </div>
           
-          {/* 3 & 4. Fail-Safe Container: Fixed dimensions with absolute overlay loading */}
+          {/* Fail-Safe Container: Fixed dimensions with absolute overlay loading */}
           <div 
             ref={chartParentRef}
             className="relative block w-full h-[350px] overflow-hidden"
@@ -359,7 +361,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
           >
             {/* Overlay loading: ensure Chart is always 'there' in the background */}
             {isChartLoading && (
-               <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/90 z-20 text-gray-400 gap-3">
+               <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/95 z-20 text-gray-400 gap-3">
                  <Loader2 className="animate-spin text-emerald-600" />
                  <span className="text-[10px] font-black uppercase tracking-widest">Calibrating Analytics Hub...</span>
                </div>
@@ -397,7 +399,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
             </ResponsiveContainer>
           </div>
 
-          {/* 5. Debug Text: DB Visibility */}
+          {/* Debug Text: DB Visibility */}
           <div className="mt-4 flex items-center justify-center gap-2 text-slate-300">
             <Info size={12} />
             <span className="text-[9px] font-black uppercase tracking-widest">

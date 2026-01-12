@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { db } from '../db/db';
 import QRCode from 'qrcode';
-import Peer from 'simple-peer/simplepeer.min.js';
+import Peer from 'simple-peer';
 import { Buffer } from 'buffer';
 import { 
   Wifi, 
