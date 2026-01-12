@@ -1,6 +1,6 @@
 
 // Fix: Use named import for Dexie to ensure proper prototype inheritance and type resolution in TypeScript.
-// Named imports resolve to the class constructor correctly, fixing "Property 'version' does not exist" errors.
+// This resolves "Property 'version' does not exist" and other missing Dexie method errors across the app.
 import { Dexie } from 'dexie';
 import type { Table } from 'dexie';
 import { Product, Sale, Debt, Settings, ParkedSale, InventoryLog, Staff } from '../types';
@@ -21,7 +21,7 @@ export class NaijaShopDB extends Dexie {
   constructor() {
     super('NaijaShopDB');
     
-    // Fix: Inheritance is now correctly recognized by using the named import of Dexie.
+    // The version and stores methods are now correctly recognized as inherited from Dexie.
     this.version(6).stores({
       products: '++id, name, category, barcode',
       sales: '++id, timestamp, sync_status, payment_method',

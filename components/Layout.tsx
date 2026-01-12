@@ -55,14 +55,14 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, setView, shopName
         fixed inset-y-0 left-0 z-50 w-64 bg-emerald-900 text-white transform transition-transform duration-300 ease-in-out lg:relative lg:translate-x-0
         ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
-        <div className="flex items-center justify-between p-6 border-b border-emerald-800">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-white rounded-lg p-1 flex items-center justify-center overflow-hidden">
+        <div className="flex items-center justify-between pl-5 pr-4 py-6 border-b border-emerald-800">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-white rounded-xl p-1.5 flex items-center justify-center shadow-lg overflow-hidden shrink-0">
               <img src={LOGO_URL} className="w-full h-full object-contain" alt="Logo" />
             </div>
-            <h1 className="text-xl font-bold tracking-tight">NaijaShop</h1>
+            <h1 className="text-xl font-black tracking-tight text-white leading-none">NaijaShop</h1>
           </div>
-          <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden">
+          <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden p-2 text-emerald-100 hover:text-white transition-colors">
             <X size={24} />
           </button>
         </div>

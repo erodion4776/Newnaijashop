@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo, Component, ErrorInfo, ReactNode } from 'react';
+import React, { useState, useEffect, useMemo, ErrorInfo, ReactNode } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, initSettings } from './db/db';
 import { View, Staff } from './types';
@@ -43,7 +43,7 @@ interface ErrorBoundaryState {
 
 /**
  * Custom Error Boundary to catch terminal-level crashes.
- * Fix: Explicitly using React.Component ensures correct inheritance of props and state in TypeScript.
+ * Fix: Explicitly extending React.Component to ensure props and state are correctly inherited and recognized by TypeScript.
  */
 class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   public state: ErrorBoundaryState = { hasError: false, error: null };
@@ -56,13 +56,14 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
     return { hasError: true, error };
   }
 
-  // Fix: Standard React lifecycle method implementation.
+  // Standard React lifecycle method implementation.
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("Uncaught Terminal Error:", error, errorInfo);
   }
 
   render() {
     const { hasError, error } = this.state;
+    // Fix: Accessing this.props is now correctly typed after inheriting from React.Component.
     const { children } = this.props;
 
     if (hasError) {
@@ -90,7 +91,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
                 onClick={async () => {
                   if(confirm("Clear local storage? This will delete your data.")) {
                     localStorage.clear();
-                    // Fix: db.delete() is correctly recognized as an instance method after inheritance fix in db.ts.
+                    // Fix: db.delete() is correctly recognized as an instance method after correcting Dexie inheritance.
                     await db.delete();
                     window.location.reload();
                   }
@@ -213,7 +214,7 @@ const AppContent: React.FC = () => {
   const resetSystem = async () => {
     if (confirm("DANGER: This will delete ALL local data. Proceed?")) {
       localStorage.clear();
-      // Fix: db.delete() is correctly recognized after inheritance fix in db.ts.
+      // Fix: db.delete() is now correctly recognized as an inherited method from Dexie after fix in db/db.ts.
       await db.delete();
       window.location.reload();
     }
@@ -222,14 +223,14 @@ const AppContent: React.FC = () => {
   if (!isInitialized && !initError) {
     return (
       <div className="min-h-screen bg-emerald-900 flex flex-col items-center justify-center p-6">
-        <div className="text-center space-y-8 animate-pulse-soft">
-          <div className="w-32 h-32 bg-white rounded-[2.5rem] p-4 flex items-center justify-center mx-auto shadow-2xl shadow-black/20">
+        <div className="text-center space-y-6 animate-pulse-soft">
+          <div className="w-24 h-24 bg-white rounded-[2rem] p-4 flex items-center justify-center mx-auto shadow-2xl shadow-black/20">
             <img src={LOGO_URL} className="w-full h-full object-contain" alt="NaijaShop Logo" />
           </div>
-          <div className="space-y-2">
+          <div className="space-y-3">
             <h1 className="text-white text-2xl font-black tracking-tight">NaijaShop POS</h1>
-            <div className="flex items-center justify-center gap-3 text-emerald-400 font-black text-[10px] uppercase tracking-[0.3em]">
-              <Loader2 size={12} className="animate-spin" /> Secure Terminal Starting
+            <div className="flex items-center justify-center gap-2 text-emerald-400 font-black text-[10px] uppercase tracking-[0.3em] opacity-80">
+              <Loader2 size={12} className="animate-spin" /> SECURE TERMINAL STARTING
             </div>
           </div>
         </div>
@@ -263,11 +264,11 @@ const AppContent: React.FC = () => {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
         <div className="w-full max-w-sm space-y-8 animate-in fade-in zoom-in duration-500">
-          <div className="text-center space-y-3">
-             <div className="w-24 h-24 bg-white rounded-[2rem] p-4 flex items-center justify-center mx-auto shadow-2xl shadow-emerald-600/10 border border-slate-100">
+          <div className="text-center flex flex-col items-center">
+             <div className="w-24 h-24 bg-white rounded-[2rem] p-4 flex items-center justify-center shadow-2xl shadow-emerald-600/10 border border-slate-100">
                 <img src={LOGO_URL} className="w-full h-full object-contain" alt="NaijaShop Logo" />
              </div>
-             <h1 className="text-2xl font-black text-slate-900 tracking-tight">Setup Your Shop</h1>
+             <h1 className="text-3xl font-black text-slate-900 tracking-tight mt-6">Setup Your Shop</h1>
           </div>
 
           <form onSubmit={async (e) => {
@@ -342,13 +343,13 @@ const AppContent: React.FC = () => {
               <button onClick={() => setOnboardingSuccess(null)}><X size={16} /></button>
             </div>
           )}
-          <div className="text-center space-y-4">
-             <div className="w-24 h-24 bg-white rounded-[2rem] p-4 flex items-center justify-center mx-auto shadow-2xl rotate-3 border border-slate-100">
+          <div className="text-center flex flex-col items-center">
+             <div className="w-24 h-24 bg-white rounded-[2rem] p-4 flex items-center justify-center shadow-2xl rotate-3 border border-slate-100">
                 <img src={LOGO_URL} className="w-full h-full object-contain" alt="NaijaShop Logo" />
              </div>
-             <h1 className="text-3xl font-black text-slate-900 tracking-tight">{settings?.shop_name || 'NaijaShop'}</h1>
+             <h1 className="text-4xl font-black text-slate-900 tracking-tight mt-6">{settings?.shop_name || 'NaijaShop'}</h1>
              {isStaffDevice && (
-               <div className="inline-flex items-center gap-2 bg-emerald-50 text-emerald-700 px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border border-emerald-100">
+               <div className="inline-flex items-center gap-2 bg-emerald-50 text-emerald-700 px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border border-emerald-100 mt-2">
                  <Terminal size={12} /> Staff Terminal Mode
                </div>
              )}
