@@ -16,20 +16,13 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      // This forces simple-peer to use the browser-ready version during bundling
+      // This forces simple-peer to use the browser version via the alias
       'simple-peer': 'simple-peer/simplepeer.min.js',
     },
   },
-  base: '/',
   build: {
-    outDir: 'dist',
-    sourcemap: true,
     commonjsOptions: {
       transformMixedEsModules: true,
     },
   },
-  server: {
-    port: 3000,
-    host: true
-  }
 });

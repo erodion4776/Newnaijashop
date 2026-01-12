@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../db/db';
 import QRCode from 'qrcode';
-import Peer from 'simple-peer/simplepeer.min.js';
+import Peer from 'simple-peer';
 import { Buffer } from 'buffer';
 import { 
   Wifi, 
@@ -301,7 +301,7 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser }) => {
                   <p className="text-[10px] text-emerald-600 font-black uppercase tracking-widest mt-1">Recommended for Admin</p>
                 </div>
               </button>
-              <button onClick={startJoining} className="group p-8 bg-slate-50 border-2 border-slate-100 rounded-[2.5rem] hover:border-emerald-500 hover:bg-emerald-50 transition-all text-left flex items-center gap-6">
+              <button onClick={startJoining} className="group p-8 bg-slate-50 border-2 border-slate-100 rounded-[2.5rem] hover:border-emerald-500 hover:bg-emerald-100 transition-all text-left flex items-center gap-6">
                 <div className="p-5 bg-white rounded-2xl shadow-sm group-hover:bg-emerald-600 group-hover:text-white transition-all text-slate-400">
                   <Smartphone size={32} />
                 </div>
