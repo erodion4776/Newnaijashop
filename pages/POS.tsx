@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
 import { 
@@ -19,7 +19,10 @@ import {
   User,
   Phone,
   ArrowRight,
-  Camera
+  Camera,
+  AlertTriangle,
+  PackagePlus,
+  Loader2
 } from 'lucide-react';
 import { Product, SaleItem, ParkedSale, View, Staff } from '../types';
 import BarcodeScanner from '../components/BarcodeScanner';
@@ -43,24 +46,39 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
   const [cashAmount, setCashAmount] = useState<number>(0);
   const [customerInfo, setCustomerInfo] = useState({ name: '', phone: '' });
 
-  const products = useLiveQuery(() => db.products.toArray()) || [];
+  // 1. Use Live Query for automatic updates after Sync
+  const products = useLiveQuery(() => db.products.toArray());
   const parkedSales = useLiveQuery(() => db.parked_sales.toArray()) || [];
 
+  // 4. Debugging View: Log products to console
+  useEffect(() => {
+    if (products) {
+      console.log('POS Products:', products);
+    }
+  }, [products]);
+
   const categories = useMemo(() => {
+    if (!products) return ['All'];
     const cats = Array.from(new Set(products.map(p => p.category)));
     return ['All', ...cats];
   }, [products]);
 
+  // 3. Fix Search & Category Logic
   const filteredProducts = useMemo(() => {
+    if (!products) return [];
     return products.filter(p => {
       const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
                            p.barcode?.includes(searchTerm);
       const matchesCategory = activeCategory === 'All' || p.category === activeCategory;
+      // Note: We specifically do NOT filter out stock_qty <= 0 here anymore
       return matchesSearch && matchesCategory;
     });
   }, [products, searchTerm, activeCategory]);
 
   const addToCart = (product: Product) => {
+    // 2. Disable adding if out of stock
+    if (product.stock_qty <= 0) return;
+
     setCart(prev => {
       const existing = prev.find(item => item.productId === product.id);
       if (existing) {
@@ -82,7 +100,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
   };
 
   const handleBarcodeScanned = (barcode: string) => {
-    const product = products.find(p => p.barcode === barcode);
+    const product = products?.find(p => p.barcode === barcode);
     if (product) {
       addToCart(product);
       setSearchTerm('');
@@ -167,7 +185,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
 
   return (
     <div className="h-full flex flex-col lg:flex-row gap-4">
-      {/* Barcode Scanner Modal Integration - Visible to all roles */}
+      {/* Barcode Scanner Modal Integration */}
       {showScanner && (
         <BarcodeScanner 
           onScan={handleBarcodeScanned} 
@@ -230,37 +248,85 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
 
         {/* Grid */}
         <div className="flex-1 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 overflow-y-auto pr-1 pb-4">
-          {filteredProducts.map((product) => (
-            <button 
-              key={product.id}
-              onClick={() => addToCart(product)}
-              className="bg-white p-4 rounded-3xl border border-slate-200 hover:border-emerald-500 hover:shadow-xl transition-all text-left flex flex-col h-44 group relative overflow-hidden active:scale-95"
-            >
-              <div className="flex-1">
-                <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center text-slate-400 mb-3 group-hover:bg-emerald-50 group-hover:text-emerald-600 transition-colors shadow-sm">
-                  <Tag size={18} />
+          {filteredProducts.map((product) => {
+            const isOutOfStock = product.stock_qty <= 0;
+            return (
+              <button 
+                key={product.id}
+                onClick={() => addToCart(product)}
+                disabled={isOutOfStock}
+                className={`bg-white p-4 rounded-3xl border transition-all text-left flex flex-col h-44 group relative overflow-hidden active:scale-95 ${
+                  isOutOfStock 
+                    ? 'border-slate-100 opacity-60 cursor-not-allowed grayscale' 
+                    : 'border-slate-200 hover:border-emerald-500 hover:shadow-xl'
+                }`}
+              >
+                <div className="flex-1">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-3 transition-colors shadow-sm ${
+                    isOutOfStock ? 'bg-slate-100 text-slate-300' : 'bg-slate-50 text-slate-400 group-hover:bg-emerald-50 group-hover:text-emerald-600'
+                  }`}>
+                    <Tag size={18} />
+                  </div>
+                  <h4 className="font-bold text-slate-800 line-clamp-2 leading-tight text-sm mb-1">{product.name}</h4>
+                  <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">{product.category}</p>
                 </div>
-                <h4 className="font-bold text-slate-800 line-clamp-2 leading-tight text-sm mb-1">{product.name}</h4>
-                <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">{product.category}</p>
-              </div>
-              <div className="mt-2 flex items-center justify-between">
-                <div>
-                  <p className="font-black text-emerald-600 text-base">₦{product.price.toLocaleString()}</p>
-                  <p className={`text-[10px] font-bold ${product.stock_qty <= 5 ? 'text-rose-500' : 'text-slate-400'}`}>
-                    Stock: {product.stock_qty}
-                  </p>
+                <div className="mt-2 flex items-center justify-between">
+                  <div>
+                    <p className={`font-black text-base ${isOutOfStock ? 'text-slate-400' : 'text-emerald-600'}`}>
+                      ₦{product.price.toLocaleString()}
+                    </p>
+                    <p className={`text-[10px] font-bold ${isOutOfStock ? 'text-rose-500' : product.stock_qty <= 5 ? 'text-amber-500' : 'text-slate-400'}`}>
+                      {isOutOfStock ? 'Out of Stock' : `Stock: ${product.stock_qty}`}
+                    </p>
+                  </div>
+                  {!isOutOfStock && (
+                    <div className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg group-hover:bg-emerald-600 group-hover:text-white transition-all">
+                      <Plus size={16} />
+                    </div>
+                  )}
                 </div>
-                <div className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg group-hover:bg-emerald-600 group-hover:text-white transition-all">
-                  <Plus size={16} />
-                </div>
-              </div>
-            </button>
-          ))}
-          {filteredProducts.length === 0 && (
-            <div className="col-span-full py-20 text-center space-y-4">
-               <Package size={48} className="mx-auto text-slate-200" />
-               <p className="text-slate-400 font-bold italic">No matching products found...</p>
+                {isOutOfStock && (
+                   <div className="absolute top-2 right-2">
+                     <AlertTriangle size={16} className="text-rose-400" />
+                   </div>
+                )}
+              </button>
+            );
+          })}
+          
+          {/* 4. Debugging View & Empty State Improvements */}
+          {products !== undefined && filteredProducts.length === 0 && (
+            <div className="col-span-full py-20 text-center space-y-6">
+               <div className="w-24 h-24 bg-slate-50 rounded-full flex items-center justify-center mx-auto text-slate-200 border border-slate-100 shadow-inner">
+                 <Package size={48} />
+               </div>
+               <div className="space-y-2">
+                 <h4 className="text-xl font-black text-slate-800 tracking-tight">
+                    {products.length === 0 ? "No products found in POS" : "No results matching your search"}
+                 </h4>
+                 <p className="text-slate-500 text-sm max-w-xs mx-auto font-medium">
+                   {products.length === 0 
+                     ? "Your product catalog is currently empty. Go to Inventory to add products or sync with Admin." 
+                     : "Try adjusting your search terms or selecting a different category."}
+                 </p>
+               </div>
+               {products.length === 0 && currentUser?.role !== 'Sales' && (
+                 <button 
+                   onClick={() => setView('inventory')}
+                   className="px-8 py-3 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-emerald-100 hover:bg-emerald-700 transition-all flex items-center gap-2 mx-auto"
+                 >
+                   <PackagePlus size={18} /> Add Your First Product
+                 </button>
+               )}
             </div>
+          )}
+          
+          {/* Initial Loading state for live query */}
+          {products === undefined && (
+             <div className="col-span-full py-20 flex flex-col items-center gap-4">
+               <Loader2 size={40} className="animate-spin text-emerald-600" />
+               <p className="text-slate-400 font-black uppercase text-[10px] tracking-[0.2em]">Accessing Local Storage...</p>
+             </div>
           )}
         </div>
       </div>

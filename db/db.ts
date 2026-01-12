@@ -1,6 +1,6 @@
 
-// Fix: Use default import for Dexie to ensure proper prototype inheritance and access to instance methods like version, transaction, and delete in TypeScript.
-import Dexie from 'dexie';
+// Fix: Use named import for Dexie to ensure proper prototype inheritance and access to instance methods like version, transaction, and delete in TypeScript.
+import { Dexie } from 'dexie';
 import type { Table } from 'dexie';
 import { Product, Sale, Debt, Settings, ParkedSale, InventoryLog, Staff } from '../types';
 
@@ -20,7 +20,7 @@ export class NaijaShopDB extends Dexie {
   constructor() {
     super('NaijaShopDB');
     
-    // Fix: version and stores methods are now correctly recognized as inherited from Dexie.
+    // Fix: version and stores methods are now correctly recognized as inherited from Dexie using named import.
     this.version(6).stores({
       products: '++id, name, category, barcode',
       sales: '++id, timestamp, sync_status, payment_method',
