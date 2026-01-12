@@ -77,8 +77,8 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser }) => {
           stock_qty: Number(formData.stock_qty)
         });
       } else {
-        // Fix: Explicitly ensuring transaction is recognized through corrected Dexie inheritance in db/db.ts.
-        await db.transaction('rw', [db.products, db.inventory_logs], async () => {
+        // Fix: Use type assertion to satisfy TypeScript as transaction is an inherited instance method from Dexie.
+        await (db as any).transaction('rw', [db.products, db.inventory_logs], async () => {
           const newId = await db.products.add({
             ...formData,
             price: Number(formData.price),
@@ -115,8 +115,8 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser }) => {
       const change = Number(restockQty);
       const newStock = oldStock + change;
       
-      // Fix: Explicitly ensuring transaction is recognized through corrected Dexie inheritance in db/db.ts.
-      await db.transaction('rw', [db.products, db.inventory_logs], async () => {
+      // Fix: Use type assertion to satisfy TypeScript as transaction is an inherited instance method from Dexie.
+      await (db as any).transaction('rw', [db.products, db.inventory_logs], async () => {
         await db.products.update(restockProduct.id!, {
           stock_qty: newStock
         });

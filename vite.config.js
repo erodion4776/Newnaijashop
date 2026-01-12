@@ -20,8 +20,12 @@ export default defineConfig({
       'simple-peer': 'simple-peer/simplepeer.min.js',
     },
   },
+  optimizeDeps: {
+    include: ['simple-peer'],
+  },
   build: {
     commonjsOptions: {
+      include: [/node_modules/],
       transformMixedEsModules: true,
     },
   },

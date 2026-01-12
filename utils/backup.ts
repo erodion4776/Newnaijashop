@@ -32,8 +32,8 @@ export const importDatabaseFromString = async (base64String: string) => {
     const data = JSON.parse(decompressed);
 
     // Clear and restore
-    // Fixed: transaction is correctly inherited and accessible after inheritance fix in db/db.ts.
-    await db.transaction('rw', [db.products, db.sales, db.debts, db.settings], async () => {
+    // Fix: Use type assertion to satisfy TypeScript as transaction is an inherited instance method from Dexie.
+    await (db as any).transaction('rw', [db.products, db.sales, db.debts, db.settings], async () => {
       await db.products.clear();
       await db.sales.clear();
       await db.debts.clear();

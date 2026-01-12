@@ -1,8 +1,7 @@
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { db } from '../db/db';
 import QRCode from 'qrcode';
-import Peer from 'simple-peer';
+import Peer from 'simple-peer/simplepeer.min.js';
 import { Buffer } from 'buffer';
 import { 
   Wifi, 
@@ -21,8 +20,9 @@ import {
 } from 'lucide-react';
 import { Staff, Sale, View } from '../types';
 
-// Polyfill Buffer for simple-peer in browser environments
+// Global Buffer Check: CRITICAL for simple-peer constructor
 if (typeof window !== 'undefined') {
+  // Fix: Cast window to any to bypass TypeScript error for polyfilled Buffer property
   (window as any).Buffer = Buffer;
 }
 
@@ -33,8 +33,7 @@ interface SyncStationProps {
   setView: (view: View) => void;
 }
 
-// Refined steps for clearer state transitions
-type SyncStep = 'idle' | 'generating' | 'showing-qr' | 'scanning-answer' | 'syncing';
+type SyncStep = 'idle' | 'generating' | 'showing-qr' | 'showing-answer' | 'scanning-answer' | 'syncing';
 
 const SyncStation: React.FC<SyncStationProps> = ({ currentUser, setView }) => {
   const isAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'Manager';
@@ -53,7 +52,6 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser, setView }) => {
   const streamRef = useRef<MediaStream | null>(null);
   const signalTimeoutRef = useRef<any>(null);
 
-  // 1. Explicit Camera Stop Utility
   const stopAllMedia = useCallback(() => {
     console.log('[SYNC] Explicitly stopping all media tracks...');
     if (streamRef.current) {
@@ -65,7 +63,7 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser, setView }) => {
     }
     if (videoRef.current) {
       videoRef.current.srcObject = null;
-      videoRef.current.load(); // Force release
+      videoRef.current.load();
     }
   }, []);
 
@@ -99,7 +97,7 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser, setView }) => {
         setSyncStep('syncing');
         
         const salesToSync = payload.sales as Sale[];
-        await db.transaction('rw', [db.sales, db.products, db.inventory_logs], async () => {
+        await (db as any).transaction('rw', [db.sales, db.products, db.inventory_logs], async () => {
           for (const sale of salesToSync) {
             const exists = await db.sales.where('timestamp').equals(sale.timestamp).first();
             if (!exists) {
@@ -129,7 +127,7 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser, setView }) => {
         setSyncStep('syncing');
         
         const productsToSync = payload.products;
-        await db.transaction('rw', [db.products, db.sales], async () => {
+        await (db as any).transaction('rw', [db.products, db.sales], async () => {
           await db.products.clear();
           await db.products.bulkAdd(productsToSync);
           await db.sales.where('sync_status').equals('pending').modify({ sync_status: 'synced' });
@@ -150,6 +148,7 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser, setView }) => {
   const initPeer = (initiator: boolean) => {
     setSyncStep('generating');
     
+    // Explicit 'new' keyword to satisfy class constructor requirement
     const p = new Peer({
       initiator,
       trickle: false,
@@ -162,11 +161,12 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser, setView }) => {
       QRCode.toDataURL(signalStr, { margin: 1, scale: 8 }, (err, url) => {
         if (err) return;
         setQrData(url);
-        setSyncStep('showing-qr');
-        if (initiator) {
-          setSyncStatus('Admin - Show this QR to Staff');
+        if (mode === 'join' || !initiator) {
+          setSyncStep('showing-answer');
+          setSyncStatus('Staff - Show this Answer QR back to Admin');
         } else {
-          setSyncStatus('Staff - Show this QR back to Admin');
+          setSyncStep('showing-qr');
+          setSyncStatus('Admin - Show this QR to Staff');
         }
       });
     });
@@ -182,7 +182,8 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser, setView }) => {
     });
 
     p.on('data', (data) => handleDataExchange(data.toString()));
-    p.on('error', () => {
+    p.on('error', (err) => {
+      console.error('[SYNC] Peer Error:', err);
       alert('Connection failed. Please restart sync.');
       cleanup();
     });
@@ -212,21 +213,14 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser, setView }) => {
     }
   };
 
-  // 2 & 4. Scan Success Handoff with Delay
   const handleScanSignal = useCallback(async (signal: string) => {
     try {
       console.log('[SYNC] Valid QR detected. Stopping camera immediately.');
-      
-      // CRITICAL: Stop camera FIRST to prevent hardware lock
       stopAllMedia();
-      
-      // Move to a processing state to unmount video component
       setSyncStep('generating');
       setSyncStatus('Processing Connection...');
-
       const data = JSON.parse(signal);
 
-      // Short delay (350ms) to allow mobile hardware to release the lens and refresh the CPU
       setTimeout(() => {
         if (mode === 'join' && data.type === 'offer') {
           setSyncStatus('Staff: Generating Answer QR...');
@@ -240,12 +234,11 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser, setView }) => {
       }, 350);
     } catch (e) {
       console.error('[SYNC] Scanning Error:', e);
-      alert("Invalid QR. Ensure you are scanning the right device.");
+      alert("Invalid QR detected.");
       cleanup();
     }
   }, [mode, stopAllMedia]);
 
-  // 3. Robust Cleanup Hook
   useEffect(() => {
     if (syncStep === 'scanning-answer') {
       const initCamera = async () => {
@@ -270,14 +263,12 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser, setView }) => {
     }
 
     return () => {
-      // Ensure camera dies when the state changes or component unmounts
       if (syncStep !== 'scanning-answer') {
         stopAllMedia();
       }
     };
   }, [syncStep, stopAllMedia]);
 
-  // QR Decoder Loop with interval cleanup
   useEffect(() => {
     let interval: any;
     if (syncStep === 'scanning-answer' && 'BarcodeDetector' in window) {
@@ -287,7 +278,7 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser, setView }) => {
         try {
           const codes = await detector.detect(videoRef.current);
           if (codes.length > 0) {
-            clearInterval(interval); // Stop scanning immediately
+            clearInterval(interval);
             handleScanSignal(codes[0].rawValue);
           }
         } catch (e) {}
@@ -382,7 +373,7 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser, setView }) => {
           <div className="flex-1 flex flex-col items-center justify-center text-center space-y-8 animate-in fade-in duration-500">
             <div className="flex items-center gap-4 mb-4">
               {['generating', 'showing-qr', 'scanning-answer', 'syncing'].map((s, idx) => {
-                const stepIdx = ['generating', 'showing-qr', 'scanning-answer', 'syncing'].indexOf(syncStep);
+                const stepIdx = ['generating', 'showing-qr', 'scanning-answer', 'syncing'].indexOf(syncStep === 'showing-answer' ? 'showing-qr' : syncStep);
                 return (
                     <div key={s} className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-sm transition-all border-2 ${
                         idx === stepIdx ? 'bg-emerald-600 border-emerald-600 text-white shadow-lg' : 
@@ -407,12 +398,12 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser, setView }) => {
               </div>
             )}
 
-            {syncStep === 'showing-qr' && qrData && (
+            {(syncStep === 'showing-qr' || syncStep === 'showing-answer') && qrData && (
               <div className="space-y-8 animate-in zoom-in duration-300 flex flex-col items-center">
                 <div className="p-6 bg-white border-8 border-emerald-500 rounded-[3rem] shadow-2xl inline-block">
                   <img src={qrData} alt="Handshake QR" className="w-64 h-64 rounded-xl" />
                 </div>
-                {mode === 'host' && (
+                {mode === 'host' && syncStep === 'showing-qr' && (
                   <button 
                     onClick={startScanning}
                     disabled={isOpeningCamera}

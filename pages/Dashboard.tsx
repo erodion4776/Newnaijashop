@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useLayoutEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
 import { 
@@ -20,7 +20,8 @@ import {
   Wifi,
   MessageCircle,
   ArrowRight,
-  Loader2
+  Loader2,
+  Info
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { View } from '../types';
@@ -35,16 +36,93 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
   const isSales = currentUser?.role === 'Sales';
   const [showSensitiveData, setShowSensitiveData] = useState(!isSales);
   const [isDataReady, setIsDataReady] = useState(false);
+  const [isChartLoading, setIsChartLoading] = useState(true);
+  
+  // Recharts dimensions fix
+  const [chartWidth, setChartWidth] = useState(0);
+  const chartParentRef = useRef<HTMLDivElement>(null);
 
   const settings = useLiveQuery(() => db.settings.get('app_settings'));
   const sales = useLiveQuery(() => db.sales.toArray());
   const products = useLiveQuery(() => db.products.toArray());
   const debts = useLiveQuery(() => db.debts.toArray());
 
-  // Determine when all critical data from Dexie is loaded
+  // 1. 2-Second Safety Switch: Force loading state to false
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsChartLoading(false);
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // 2. Fail-Safe Data Processing: Timezone-aware grouping with try/catch
+  const processedChartData = useMemo(() => {
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const fallback = days.map(d => ({ name: d, amount: 0, fullDate: 'N/A' }));
+
+    try {
+      const result = [];
+      const now = new Date();
+      
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(now);
+        d.setDate(now.getDate() - i);
+        d.setHours(0, 0, 0, 0); // Local WAT / System time start of day
+        
+        const startTs = d.getTime();
+        const endTs = startTs + 86400000;
+        
+        const dayName = days[d.getDay()];
+        const dayTotal = (sales || [])
+          .filter(s => s.timestamp >= startTs && s.timestamp < endTs)
+          .reduce((sum, s) => sum + (s.total_amount || 0), 0);
+          
+        result.push({
+          name: dayName,
+          amount: dayTotal,
+          fullDate: d.toLocaleDateString()
+        });
+      }
+      
+      console.log('Analytics Data:', result);
+      return result;
+    } catch (err) {
+      console.error("Chart Processing Error:", err);
+      return fallback;
+    }
+  }, [sales]);
+
+  useLayoutEffect(() => {
+    if (!chartParentRef.current) return;
+
+    const measure = () => {
+      const width = chartParentRef.current?.offsetWidth || 0;
+      if (width > 0) {
+        setChartWidth(width);
+      }
+    };
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const width = entry.contentRect.width;
+        if (width > 0) {
+          setChartWidth(width);
+          setIsChartLoading(false);
+        }
+      }
+    });
+
+    resizeObserver.observe(chartParentRef.current);
+    measure();
+
+    return () => resizeObserver.disconnect();
+  }, []);
+
   useEffect(() => {
     if (sales !== undefined && products !== undefined && debts !== undefined && settings !== undefined) {
       setIsDataReady(true);
+      // Ensure that if we have sales data, we tell the chart to try and stop loading
+      if (sales.length >= 0) setIsChartLoading(false);
     }
   }, [sales, products, debts, settings]);
 
@@ -56,10 +134,6 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
     if (mins < 60) return `${mins}m ago`;
     return new Date(settings.last_synced_timestamp).toLocaleTimeString();
   }, [settings?.last_synced_timestamp]);
-
-  useEffect(() => {
-    if (isSales) setShowSensitiveData(false);
-  }, [isSales]);
 
   const todaySales = useMemo(() => {
     if (!sales) return [];
@@ -89,16 +163,6 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
   const lowStock = (products || []).filter(p => p.stock_qty <= 10).length;
   const unconfirmedTransfers = (sales || []).filter(s => s.payment_method === 'transfer' && !s.confirmed_by).length;
 
-  const chartData = [
-    { name: 'Mon', amount: 45000 },
-    { name: 'Tue', amount: 52000 },
-    { name: 'Wed', amount: 38000 },
-    { name: 'Thu', amount: 65000 },
-    { name: 'Fri', amount: 82000 },
-    { name: 'Sat', amount: 91000 },
-    { name: 'Sun', amount: 48000 },
-  ];
-
   const formatCurrency = (val: number) => {
     if (!showSensitiveData) return "₦ ****";
     return `₦${Math.floor(val).toLocaleString()}`;
@@ -116,7 +180,6 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
     }
   };
 
-  // Main Loading Spinner for Dashboard
   if (!isDataReady) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
@@ -279,8 +342,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Parent Card for Sales Analytics */}
-        <div className="lg:col-span-2 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-200 flex flex-col min-h-0 block">
+        <div className="lg:col-span-2 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden min-h-0 block">
           <div className="flex items-center justify-between mb-8">
             <h3 className="font-black text-slate-800 text-xl tracking-tight">Sales Analytics</h3>
             <select className="bg-slate-50 border border-slate-200 text-sm font-bold rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-emerald-500">
@@ -288,10 +350,29 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
               <option>Last 30 Days</option>
             </select>
           </div>
-          {/* Chart Wrapper with explicit sizing for ResponsiveContainer */}
-          <div className="w-full h-[300px] min-h-[300px]">
-            <ResponsiveContainer width="100%" height="100%" aspect={2}>
-              <BarChart data={chartData}>
+          
+          {/* 3 & 4. Fail-Safe Container: Fixed dimensions with absolute overlay loading */}
+          <div 
+            ref={chartParentRef}
+            className="relative block w-full h-[350px] overflow-hidden"
+            style={{ height: '350px', width: '100%', display: 'block' }}
+          >
+            {/* Overlay loading: ensure Chart is always 'there' in the background */}
+            {isChartLoading && (
+               <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/90 z-20 text-gray-400 gap-3">
+                 <Loader2 className="animate-spin text-emerald-600" />
+                 <span className="text-[10px] font-black uppercase tracking-widest">Calibrating Analytics Hub...</span>
+               </div>
+            )}
+            
+            <ResponsiveContainer 
+              width="100%" 
+              height={350} 
+              minWidth={0} 
+              minHeight={0}
+              debounce={50}
+            >
+              <BarChart data={processedChartData}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis 
                   dataKey="name" 
@@ -305,14 +386,23 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
                   cursor={{ fill: '#f8fafc' }}
                   contentStyle={{ borderRadius: '20px', border: 'none', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)', padding: '12px 16px' }}
                   itemStyle={{ fontWeight: 900, color: '#0f172a' }}
+                  formatter={(value: number) => [`₦${value.toLocaleString()}`, 'Daily Total']}
                 />
                 <Bar dataKey="amount" radius={[10, 10, 0, 0]} barSize={45}>
-                  {chartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={index === 5 ? '#059669' : '#10b981'} fillOpacity={index === 5 ? 1 : 0.8} />
+                  {processedChartData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={index === 6 ? '#059669' : '#10b981'} fillOpacity={index === 6 ? 1 : 0.8} />
                   ))}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
+          </div>
+
+          {/* 5. Debug Text: DB Visibility */}
+          <div className="mt-4 flex items-center justify-center gap-2 text-slate-300">
+            <Info size={12} />
+            <span className="text-[9px] font-black uppercase tracking-widest">
+              Debug: Found {sales?.length || 0} sales in DB
+            </span>
           </div>
         </div>
 
@@ -331,7 +421,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
                   </p>
                   <p className={`text-[9px] uppercase font-black tracking-[0.15em] px-2 py-0.5 rounded-full inline-block ${
                     sale.payment_method === 'cash' ? 'bg-emerald-100 text-emerald-700' :
-                    sale.payment_method === 'transfer' ? 'bg-indigo-100 text-indigo-700' :
+                    sale.payment_method === 'transfer' || sale.payment_method === 'Bank Transfer' ? 'bg-indigo-100 text-indigo-700' :
                     'bg-amber-100 text-amber-700'
                   }`}>
                     {sale.payment_method}
@@ -362,7 +452,7 @@ interface StatCardProps {
   isSensitive?: boolean;
 }
 
-const StatCard: React.FC<StatCardProps> = ({ title, value, icon, trend, trendType, color, warning, isSensitive }) => {
+const StatCard: React.FC<StatCardProps> = ({ title, value, icon, trend, trendType, color, warning }) => {
   const colors = {
     emerald: 'bg-emerald-50 text-emerald-600',
     blue: 'bg-indigo-50 text-indigo-600',

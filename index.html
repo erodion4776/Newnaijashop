@@ -44,6 +44,10 @@
           z-index: 10;
           animation: scan-line 2s infinite ease-in-out;
         }
+
+        /* Recharts Fixes */
+        .recharts-wrapper { cursor: default !important; }
+        .recharts-responsive-container { min-width: 0; min-height: 0; }
     </style>
 <script type="importmap">
 {
@@ -71,7 +75,6 @@
 </head>
 <body class="bg-slate-50 text-slate-900">
     <div id="root"></div>
-    <!-- Entry point linked directly at root as per project structure -->
     <script type="module" src="/index.tsx"></script>
 </body>
 </html>
