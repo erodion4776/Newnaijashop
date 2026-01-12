@@ -32,7 +32,7 @@ export const importDatabaseFromString = async (base64String: string) => {
     const data = JSON.parse(decompressed);
 
     // Clear and restore
-    // Fix: Using the transaction method on the db instance to perform atomic data restoration.
+    // Fix: transaction is correctly inherited and accessible after correcting the Dexie inheritance in db/db.ts.
     await db.transaction('rw', [db.products, db.sales, db.debts, db.settings], async () => {
       await db.products.clear();
       await db.sales.clear();

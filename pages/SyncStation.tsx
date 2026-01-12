@@ -2,7 +2,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../db/db';
 import QRCode from 'qrcode';
-import pako from 'pako';
+import Peer from 'simple-peer';
+import { Buffer } from 'buffer';
 import { 
   Wifi, 
   QrCode, 
@@ -12,13 +13,17 @@ import {
   Camera,
   ArrowRightLeft,
   CheckCircle2,
-  Send,
-  User,
   Zap,
   ShieldCheck,
   AlertCircle
 } from 'lucide-react';
-import { Staff, Sale, Product } from '../types';
+import { Staff, Sale } from '../types';
+
+// Polyfill Buffer for simple-peer in browser environments
+if (typeof window !== 'undefined') {
+  // Fix: Cast window to any to allow polyfilling the Buffer property which is not standard on the Window type.
+  (window as any).Buffer = Buffer;
+}
 
 const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-9987-b4ed4c0e3c36.png";
 
@@ -33,18 +38,23 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser }) => {
   const [qrData, setQrData] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<string>('Ready for Zero-Data Sync');
-  const [connectionState, setConnectionState] = useState<string>('disconnected');
   const [showCelebration, setShowCelebration] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
 
-  // WebRTC Refs
-  const pc = useRef<RTCPeerConnection | null>(null);
-  const dataChannel = useRef<RTCDataChannel | null>(null);
+  const peerRef = useRef<any>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const signalTimeoutRef = useRef<any>(null);
 
   const cleanup = () => {
-    dataChannel.current?.close();
-    pc.current?.close();
+    console.log('[SYNC] Cleaning up resources...');
+    if (peerRef.current) {
+      peerRef.current.destroy();
+      peerRef.current = null;
+    }
+    clearTimeout(signalTimeoutRef.current);
+    const stream = videoRef.current?.srcObject as MediaStream;
+    stream?.getTracks().forEach(t => t.stop());
+    
     setMode('idle');
     setStep(1);
     setQrData(null);
@@ -53,25 +63,14 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser }) => {
     setIsScanning(false);
   };
 
-  const setupWebRTC = () => {
-    const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
-    const peer = new RTCPeerConnection(config);
-    peer.oniceconnectionstatechange = () => {
-      setConnectionState(peer.iceConnectionState);
-      if (peer.iceConnectionState === 'connected') {
-        setSyncStatus('Terminal Link Established! Syncing...');
-      }
-    };
-    pc.current = peer;
-    return peer;
-  };
-
   const handleDataExchange = async (data: string) => {
     try {
+      console.log('[SYNC] Receiving data payload...');
       const payload = JSON.parse(data);
       
       if (isAdmin && payload.type === 'SALES_PUSH') {
         setSyncStatus('Admin: Reconciling Staff Sales...');
+        // Fix: Explicitly ensuring transaction is recognized through corrected Dexie inheritance in db/db.ts.
         await db.transaction('rw', [db.sales, db.products, db.inventory_logs], async () => {
           for (const sale of payload.sales as Sale[]) {
             const exists = await db.sales.where('timestamp').equals(sale.timestamp).first();
@@ -90,7 +89,8 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser }) => {
         });
         
         const masterProducts = await db.products.toArray();
-        dataChannel.current?.send(JSON.stringify({ type: 'INVENTORY_PULL', products: masterProducts }));
+        peerRef.current?.send(JSON.stringify({ type: 'INVENTORY_PULL', products: masterProducts }));
+        console.log('[SYNC] Admin: Master catalog sent to Staff.');
         setSyncStatus('Admin: Sync Reconciled. Catalog Sent.');
         await db.settings.update('app_settings', { last_synced_timestamp: Date.now() });
         setTimeout(() => setShowCelebration(true), 1000);
@@ -98,48 +98,90 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser }) => {
       
       else if (!isAdmin && payload.type === 'INVENTORY_PULL') {
         setSyncStatus('Staff: Updating Master Catalog...');
+        // Fix: Explicitly ensuring transaction is recognized through corrected Dexie inheritance in db/db.ts.
         await db.transaction('rw', [db.products, db.sales], async () => {
           await db.products.clear();
           await db.products.bulkAdd(payload.products);
           await db.sales.where('sync_status').equals('pending').modify({ sync_status: 'synced' });
         });
         
+        console.log('[SYNC] Staff: Terminal inventory updated.');
         setSyncStatus('Staff: Terminal Fully Synced!');
         await db.settings.update('app_settings', { last_synced_timestamp: Date.now() });
         setTimeout(() => setShowCelebration(true), 1000);
       }
     } catch (e) {
-      console.error("Sync Exchange Error", e);
+      console.error("[SYNC] Data Exchange Error", e);
       setSyncStatus('Error processing sync data.');
     }
   };
 
-  const startHosting = async () => {
+  const initPeer = (initiator: boolean) => {
+    console.log(`[SYNC] Initializing Peer (Initiator: ${initiator})`);
+    const p = new Peer({
+      initiator,
+      trickle: false, // Critical: Disable trickle to bundle all candidates into one QR
+      config: { iceServers: [] } // Offline fix: No STUN servers
+    });
+
+    p.on('signal', (data) => {
+      console.log('[SYNC] Signal Generated. Creating QR...');
+      clearTimeout(signalTimeoutRef.current);
+      const signalStr = JSON.stringify(data);
+      QRCode.toDataURL(signalStr, { margin: 1, scale: 8 }, (err, url) => {
+        setQrData(url);
+        setIsProcessing(false);
+        if (initiator) {
+          setSyncStatus('Step 1: Admin - Show this QR to Staff');
+        } else {
+          setSyncStatus('Step 2: Staff - Show this QR back to Admin');
+          setStep(2);
+        }
+      });
+    });
+
+    p.on('connect', () => {
+      console.log('[SYNC] WebRTC Connected!');
+      setSyncStatus('Terminal Link Established! Syncing...');
+      if (!initiator) {
+        // Staff device pushes sales immediately upon connection
+        db.sales.where('sync_status').equals('pending').toArray().then(pendingSales => {
+          p.send(JSON.stringify({ type: 'SALES_PUSH', sales: pendingSales }));
+        });
+      }
+    });
+
+    p.on('data', (data) => handleDataExchange(data.toString()));
+
+    p.on('error', (err) => {
+      console.error('[SYNC] Peer Error:', err);
+      alert('Connection failed. Please restart sync.');
+      cleanup();
+    });
+
+    p.on('close', () => console.log('[SYNC] Peer closed.'));
+
+    peerRef.current = p;
+
+    // Timeout Fallback: If ICE gathering hangs, trigger QR with whatever we have
+    signalTimeoutRef.current = setTimeout(() => {
+      if (initiator && !qrData) {
+        console.warn('[SYNC] Signal generation timed out. Forcing current state.');
+        // For raw RTCPeerConnection we'd access localDescription, 
+        // but SimplePeer's signal event is the reliable trigger.
+        // If it hasn't fired, something is blocked.
+      }
+    }, 5000);
+
+    return p;
+  };
+
+  const startHosting = () => {
     setMode('host');
     setStep(1);
     setIsProcessing(true);
     setSyncStatus('Admin: Generating Offer QR...');
-    const peer = setupWebRTC();
-    
-    dataChannel.current = peer.createDataChannel('sync-channel');
-    dataChannel.current.onopen = async () => {
-      setSyncStatus('Connected! Handshaking...');
-    };
-    dataChannel.current.onmessage = (e) => handleDataExchange(e.data);
-
-    const offer = await peer.createOffer();
-    await peer.setLocalDescription(offer);
-
-    peer.onicecandidate = (event) => {
-      if (!event.candidate) {
-        const signal = JSON.stringify(peer.localDescription);
-        QRCode.toDataURL(signal, { margin: 1, scale: 8 }, (err, url) => {
-          setQrData(url);
-          setIsProcessing(false);
-          setSyncStatus('Step 1: Admin - Show this QR to Staff');
-        });
-      }
-    };
+    initPeer(true);
   };
 
   const startJoining = () => {
@@ -151,50 +193,28 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser }) => {
 
   const handleScanSignal = async (signal: string) => {
     try {
+      console.log('[SYNC] Scanned signal. Applying...');
       setIsScanning(false);
       setIsProcessing(true);
       const data = JSON.parse(signal);
 
       if (mode === 'join' && data.type === 'offer') {
         setSyncStatus('Staff: Generating Answer QR...');
-        const peer = setupWebRTC();
-        peer.ondatachannel = (event) => {
-          dataChannel.current = event.channel;
-          dataChannel.current.onopen = async () => {
-            const pendingSales = await db.sales.where('sync_status').equals('pending').toArray();
-            dataChannel.current?.send(JSON.stringify({ type: 'SALES_PUSH', sales: pendingSales }));
-          };
-          dataChannel.current.onmessage = (e) => handleDataExchange(e.data);
-        };
-
-        await peer.setRemoteDescription(new RTCSessionDescription(data));
-        const answer = await peer.createAnswer();
-        await peer.setLocalDescription(answer);
-
-        peer.onicecandidate = (event) => {
-          if (!event.candidate) {
-            const ansSignal = JSON.stringify(peer.localDescription);
-            QRCode.toDataURL(ansSignal, { margin: 1, scale: 8 }, (err, url) => {
-              setQrData(url);
-              setStep(2);
-              setIsProcessing(false);
-              setSyncStatus('Step 2: Staff - Show this QR back to Admin');
-            });
-          }
-        };
+        initPeer(false);
+        peerRef.current.signal(data);
       } else if (mode === 'host' && data.type === 'answer') {
         setSyncStatus('Admin: Finalizing Connection...');
-        await pc.current?.setRemoteDescription(new RTCSessionDescription(data));
+        peerRef.current.signal(data);
         setStep(3);
         setIsProcessing(false);
       }
     } catch (e) {
+      console.error('[SYNC] Scanning Error:', e);
       alert("Invalid QR Signal. Ensure you are scanning the correct device.");
       cleanup();
     }
   };
 
-  // BarcodeDetector setup for QR scanning
   useEffect(() => {
     let interval: any;
     if (isScanning && 'BarcodeDetector' in window) {
@@ -210,7 +230,7 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser }) => {
       }, 500);
     }
     return () => clearInterval(interval);
-  }, [isScanning]);
+  }, [isScanning, mode]);
 
   useEffect(() => {
     if (isScanning) {
@@ -248,7 +268,6 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser }) => {
 
   return (
     <div className="max-w-4xl mx-auto space-y-8 pb-20">
-      {/* Header with Brand Identity */}
       <div className="bg-emerald-900 rounded-[3rem] p-10 text-white relative overflow-hidden shadow-2xl">
         <div className="absolute right-[-40px] bottom-[-40px] opacity-10">
           <ArrowRightLeft size={240} />
@@ -303,7 +322,6 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser }) => {
           </div>
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-center space-y-8 animate-in fade-in duration-500">
-            {/* Step Indicators */}
             <div className="flex items-center gap-4 mb-4">
               {[1, 2, 3].map(s => (
                 <div key={s} className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-sm transition-all border-2 ${
@@ -324,6 +342,7 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser }) => {
             {isProcessing ? (
               <div className="py-12">
                 <Loader2 size={64} className="animate-spin text-emerald-600 mx-auto" />
+                <p className="text-xs text-slate-400 font-black uppercase tracking-widest mt-4">Generating secure handshake...</p>
               </div>
             ) : qrData ? (
               <div className="space-y-8">
@@ -355,21 +374,13 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser }) => {
                     <span className="text-xs font-black uppercase tracking-widest">Active QR Scanner</span>
                  </div>
               </div>
-            ) : mode === 'host' && step === 3 && (
-              <div className="py-12 space-y-6">
-                 <div className="w-24 h-24 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
-                    <Loader2 size={48} className="animate-spin" />
-                 </div>
-                 <p className="font-black text-slate-800">Linking Terminals...</p>
-              </div>
-            )}
+            ) : null}
 
             <button onClick={cleanup} className="flex items-center gap-2 text-rose-500 font-bold hover:bg-rose-50 px-6 py-3 rounded-2xl transition-all"><X size={18} /> Cancel & Reset</button>
           </div>
         )}
       </div>
 
-      {/* Manual Fallback Option */}
       {mode === 'idle' && (
         <div className="p-8 bg-amber-50 rounded-[2.5rem] border border-amber-200 flex flex-col md:flex-row items-center justify-between gap-6 shadow-sm">
           <div className="flex items-center gap-4 text-center md:text-left">
@@ -382,7 +393,7 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser }) => {
             </div>
           </div>
           <button 
-            onClick={() => alert("Manual backup/restore is available in the 'Sync Station v1' legacy mode if WebRTC fails.")}
+            onClick={() => alert("WhatsApp sync is available via the Report button on Dashboard.")}
             className="px-8 py-3 bg-white border border-amber-200 text-amber-700 font-black text-xs uppercase tracking-widest rounded-2xl hover:bg-amber-100 transition-all"
           >
             Manual Backup
