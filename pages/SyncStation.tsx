@@ -21,7 +21,6 @@ import { Staff, Sale } from '../types';
 
 // Polyfill Buffer for simple-peer in browser environments
 if (typeof window !== 'undefined') {
-  // Fix: Cast window to any to allow polyfilling the Buffer property which is not standard on the Window type.
   (window as any).Buffer = Buffer;
 }
 
@@ -31,36 +30,50 @@ interface SyncStationProps {
   currentUser?: Staff | null;
 }
 
+type SyncStep = 'idle' | 'generating' | 'showing-qr' | 'scanning-answer' | 'syncing';
+
 const SyncStation: React.FC<SyncStationProps> = ({ currentUser }) => {
   const isAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'Manager';
+  
+  // New forced state machine
   const [mode, setMode] = useState<'idle' | 'host' | 'join'>('idle');
-  const [step, setStep] = useState(1);
+  const [syncStep, setSyncStep] = useState<SyncStep>('idle');
+  
   const [qrData, setQrData] = useState<string | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<string>('Ready for Zero-Data Sync');
   const [showCelebration, setShowCelebration] = useState(false);
-  const [isScanning, setIsScanning] = useState(false);
+  const [isOpeningCamera, setIsOpeningCamera] = useState(false);
 
   const peerRef = useRef<any>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const signalTimeoutRef = useRef<any>(null);
+
+  const stopAllMedia = () => {
+    console.log('[SYNC] Stopping all media tracks...');
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+  };
 
   const cleanup = () => {
     console.log('[SYNC] Cleaning up resources...');
+    stopAllMedia();
     if (peerRef.current) {
       peerRef.current.destroy();
       peerRef.current = null;
     }
     clearTimeout(signalTimeoutRef.current);
-    const stream = videoRef.current?.srcObject as MediaStream;
-    stream?.getTracks().forEach(t => t.stop());
     
     setMode('idle');
-    setStep(1);
+    setSyncStep('idle');
     setQrData(null);
-    setIsProcessing(false);
     setSyncStatus('Ready for Zero-Data Sync');
-    setIsScanning(false);
+    setIsOpeningCamera(false);
   };
 
   const handleDataExchange = async (data: string) => {
@@ -70,7 +83,8 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser }) => {
       
       if (isAdmin && payload.type === 'SALES_PUSH') {
         setSyncStatus('Admin: Reconciling Staff Sales...');
-        // Fixed: Explicitly ensuring transaction is recognized through corrected Dexie inheritance in db/db.ts.
+        setSyncStep('syncing');
+        
         await db.transaction('rw', [db.sales, db.products, db.inventory_logs], async () => {
           for (const sale of payload.sales as Sale[]) {
             const exists = await db.sales.where('timestamp').equals(sale.timestamp).first();
@@ -98,7 +112,8 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser }) => {
       
       else if (!isAdmin && payload.type === 'INVENTORY_PULL') {
         setSyncStatus('Staff: Updating Master Catalog...');
-        // Fixed: Explicitly ensuring transaction is recognized through corrected Dexie inheritance in db/db.ts.
+        setSyncStep('syncing');
+        
         await db.transaction('rw', [db.products, db.sales], async () => {
           await db.products.clear();
           await db.products.bulkAdd(payload.products);
@@ -113,15 +128,18 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser }) => {
     } catch (e) {
       console.error("[SYNC] Data Exchange Error", e);
       setSyncStatus('Error processing sync data.');
+      setSyncStep('idle');
     }
   };
 
   const initPeer = (initiator: boolean) => {
     console.log(`[SYNC] Initializing Peer (Initiator: ${initiator})`);
+    setSyncStep('generating');
+    
     const p = new Peer({
       initiator,
-      trickle: false, // Critical: Disable trickle to bundle all candidates into one QR
-      config: { iceServers: [] } // Offline fix: No STUN servers
+      trickle: false,
+      config: { iceServers: [] } 
     });
 
     p.on('signal', (data) => {
@@ -129,13 +147,16 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser }) => {
       clearTimeout(signalTimeoutRef.current);
       const signalStr = JSON.stringify(data);
       QRCode.toDataURL(signalStr, { margin: 1, scale: 8 }, (err, url) => {
+        if (err) {
+            console.error('[SYNC] QR Gen Error:', err);
+            return;
+        }
         setQrData(url);
-        setIsProcessing(false);
+        setSyncStep('showing-qr');
         if (initiator) {
-          setSyncStatus('Step 1: Admin - Show this QR to Staff');
+          setSyncStatus('Admin - Show this QR to Staff');
         } else {
-          setSyncStatus('Step 2: Staff - Show this QR back to Admin');
-          setStep(2);
+          setSyncStatus('Staff - Show this QR back to Admin');
         }
       });
     });
@@ -143,8 +164,8 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser }) => {
     p.on('connect', () => {
       console.log('[SYNC] WebRTC Connected!');
       setSyncStatus('Terminal Link Established! Syncing...');
+      setSyncStep('syncing');
       if (!initiator) {
-        // Staff device pushes sales immediately upon connection
         db.sales.where('sync_status').equals('pending').toArray().then(pendingSales => {
           p.send(JSON.stringify({ type: 'SALES_PUSH', sales: pendingSales }));
         });
@@ -159,43 +180,44 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser }) => {
       cleanup();
     });
 
-    p.on('close', () => console.log('[SYNC] Peer closed.'));
-
     peerRef.current = p;
 
-    // Timeout Fallback: If ICE gathering hangs, trigger QR with whatever we have
     signalTimeoutRef.current = setTimeout(() => {
-      if (initiator && !qrData) {
-        console.warn('[SYNC] Signal generation timed out. Forcing current state.');
-        // For raw RTCPeerConnection we'd access localDescription, 
-        // but SimplePeer's signal event is the reliable trigger.
-        // If it hasn't fired, something is blocked.
+      if (initiator && syncStep === 'generating') {
+        console.warn('[SYNC] Signal generation timed out.');
       }
-    }, 5000);
+    }, 10000);
 
     return p;
   };
 
   const startHosting = () => {
     setMode('host');
-    setStep(1);
-    setIsProcessing(true);
-    setSyncStatus('Admin: Generating Offer QR...');
     initPeer(true);
   };
 
   const startJoining = () => {
     setMode('join');
-    setStep(1);
-    setIsScanning(true);
-    setSyncStatus('Step 1: Staff - Scan Admin QR');
+    setSyncStep('scanning-answer');
+    setSyncStatus('Staff - Scan Admin QR');
+  };
+
+  const startScanning = async () => {
+    console.log('[SYNC] startScanning() called...');
+    setIsOpeningCamera(true);
+    setSyncStep('scanning-answer');
+    
+    if (mode === 'host') {
+        setSyncStatus('Admin - Scan Staff Answer QR');
+    } else {
+        setSyncStatus('Staff - Scan Admin QR');
+    }
   };
 
   const handleScanSignal = async (signal: string) => {
     try {
       console.log('[SYNC] Scanned signal. Applying...');
-      setIsScanning(false);
-      setIsProcessing(true);
+      stopAllMedia();
       const data = JSON.parse(signal);
 
       if (mode === 'join' && data.type === 'offer') {
@@ -204,9 +226,8 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser }) => {
         peerRef.current.signal(data);
       } else if (mode === 'host' && data.type === 'answer') {
         setSyncStatus('Admin: Finalizing Connection...');
+        setSyncStep('syncing');
         peerRef.current.signal(data);
-        setStep(3);
-        setIsProcessing(false);
       }
     } catch (e) {
       console.error('[SYNC] Scanning Error:', e);
@@ -215,9 +236,37 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser }) => {
     }
   };
 
+  // Explicit Camera Controller
+  useEffect(() => {
+    if (syncStep === 'scanning-answer') {
+      const initCamera = async () => {
+        try {
+          stopAllMedia(); // Clear conflicts
+          const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: 'environment' } 
+          });
+          streamRef.current = stream;
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+            await videoRef.current.play();
+          }
+          setIsOpeningCamera(false);
+        } catch (err) {
+          console.error('[SYNC] Camera Access Error:', err);
+          alert("Camera access required for sync. Please check permissions.");
+          cleanup();
+        }
+      };
+      initCamera();
+    } else {
+      stopAllMedia();
+    }
+  }, [syncStep]);
+
+  // QR Decoder Loop
   useEffect(() => {
     let interval: any;
-    if (isScanning && 'BarcodeDetector' in window) {
+    if (syncStep === 'scanning-answer' && 'BarcodeDetector' in window) {
       const detector = new (window as any).BarcodeDetector({ formats: ['qr_code'] });
       interval = setInterval(async () => {
         if (!videoRef.current || videoRef.current.readyState !== 4) return;
@@ -230,19 +279,7 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser }) => {
       }, 500);
     }
     return () => clearInterval(interval);
-  }, [isScanning, mode]);
-
-  useEffect(() => {
-    if (isScanning) {
-      navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-        .then(stream => { if (videoRef.current) videoRef.current.srcObject = stream; })
-        .catch(() => alert("Camera access required for sync."));
-    }
-    return () => {
-      const stream = videoRef.current?.srcObject as MediaStream;
-      stream?.getTracks().forEach(t => t.stop());
-    };
-  }, [isScanning]);
+  }, [syncStep, mode]);
 
   if (showCelebration) {
     return (
@@ -283,9 +320,9 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser }) => {
         </div>
       </div>
 
-      <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm space-y-10 min-h-[500px] flex flex-col">
-        {mode === 'idle' ? (
-          <div className="flex-1 flex flex-col justify-center space-y-6">
+      <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm space-y-10 min-h-[500px] flex flex-col relative">
+        {syncStep === 'idle' ? (
+          <div className="flex-1 flex flex-col justify-center space-y-6 animate-in fade-in duration-300">
             <div className="text-center space-y-2 mb-4">
               <h3 className="text-2xl font-black text-slate-800">Choose Sync Mode</h3>
               <p className="text-slate-400 font-medium text-sm">Both devices must be on the same local network</p>
@@ -301,7 +338,7 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser }) => {
                   <p className="text-[10px] text-emerald-600 font-black uppercase tracking-widest mt-1">Recommended for Admin</p>
                 </div>
               </button>
-              <button onClick={startJoining} className="group p-8 bg-slate-50 border-2 border-slate-100 rounded-[2.5rem] hover:border-emerald-500 hover:bg-emerald-100 transition-all text-left flex items-center gap-6">
+              <button onClick={startJoining} className="group p-8 bg-slate-50 border-2 border-slate-100 rounded-[2.5rem] hover:border-emerald-500 hover:bg-emerald-50 transition-all text-left flex items-center gap-6">
                 <div className="p-5 bg-white rounded-2xl shadow-sm group-hover:bg-emerald-600 group-hover:text-white transition-all text-slate-400">
                   <Smartphone size={32} />
                 </div>
@@ -323,44 +360,62 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser }) => {
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-center space-y-8 animate-in fade-in duration-500">
             <div className="flex items-center gap-4 mb-4">
-              {[1, 2, 3].map(s => (
-                <div key={s} className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-sm transition-all border-2 ${
-                  step === s ? 'bg-emerald-600 border-emerald-600 text-white shadow-lg' : 
-                  step > s ? 'bg-emerald-100 border-emerald-100 text-emerald-600' : 
-                  'bg-slate-50 border-slate-200 text-slate-300'
-                }`}>
-                  {step > s ? <CheckCircle2 size={16} /> : s}
-                </div>
-              ))}
+              {['generating', 'showing-qr', 'scanning-answer', 'syncing'].map((s, idx) => {
+                const stepIdx = ['generating', 'showing-qr', 'scanning-answer', 'syncing'].indexOf(syncStep);
+                return (
+                    <div key={s} className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-sm transition-all border-2 ${
+                        idx === stepIdx ? 'bg-emerald-600 border-emerald-600 text-white shadow-lg' : 
+                        idx < stepIdx ? 'bg-emerald-100 border-emerald-100 text-emerald-600' : 
+                        'bg-slate-50 border-slate-200 text-slate-300'
+                    }`}>
+                        {idx < stepIdx ? <CheckCircle2 size={16} /> : idx + 1}
+                    </div>
+                );
+              })}
             </div>
 
             <div className="space-y-2">
               <h4 className="text-2xl font-black text-slate-800 tracking-tight">{syncStatus}</h4>
-              <p className="text-slate-400 text-sm font-medium">Do not close this page during sync</p>
+              <p className="text-slate-400 text-sm font-medium">Keep this page open during sync</p>
             </div>
 
-            {isProcessing ? (
-              <div className="py-12">
+            {syncStep === 'generating' && (
+              <div className="py-12 animate-in zoom-in duration-300">
                 <Loader2 size={64} className="animate-spin text-emerald-600 mx-auto" />
-                <p className="text-xs text-slate-400 font-black uppercase tracking-widest mt-4">Generating secure handshake...</p>
+                <p className="text-xs text-slate-400 font-black uppercase tracking-widest mt-4">Bundling handshake signal...</p>
               </div>
-            ) : qrData ? (
-              <div className="space-y-8">
-                <div className="p-6 bg-white border-8 border-emerald-500 rounded-[3rem] shadow-2xl inline-block animate-in zoom-in duration-300">
+            )}
+
+            {syncStep === 'showing-qr' && qrData && (
+              <div className="space-y-8 animate-in zoom-in duration-300">
+                <div className="p-6 bg-white border-8 border-emerald-500 rounded-[3rem] shadow-2xl inline-block">
                   <img src={qrData} alt="Handshake QR" className="w-64 h-64 rounded-xl" />
                 </div>
                 
-                {mode === 'host' && step === 1 && (
+                {mode === 'host' && (
                   <button 
-                    onClick={() => { setIsScanning(true); setSyncStatus('Step 3: Admin - Scan Staff Answer QR'); }}
-                    className="w-full py-5 bg-slate-900 text-white rounded-[2rem] font-black text-xl hover:bg-black transition-all flex items-center justify-center gap-3 shadow-xl"
+                    onClick={startScanning}
+                    disabled={isOpeningCamera}
+                    className="w-full py-5 bg-slate-900 text-white rounded-[2rem] font-black text-xl hover:bg-black transition-all flex items-center justify-center gap-3 shadow-xl active:scale-95 disabled:opacity-50"
                   >
-                    <Camera size={24} /> Next: Scan Staff Answer
+                    {isOpeningCamera ? (
+                        <>
+                            <Loader2 size={24} className="animate-spin" />
+                            Opening Camera...
+                        </>
+                    ) : (
+                        <>
+                            <Camera size={24} />
+                            Next: Scan Staff Phone
+                        </>
+                    )}
                   </button>
                 )}
               </div>
-            ) : isScanning ? (
-              <div className="w-full max-w-sm space-y-6">
+            )}
+
+            {syncStep === 'scanning-answer' && (
+              <div className="w-full max-w-sm space-y-6 z-50 relative animate-in zoom-in duration-300">
                  <div className="aspect-square bg-slate-900 rounded-[2.5rem] border-4 border-emerald-500 overflow-hidden relative shadow-2xl">
                     <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
                     <div className="absolute inset-0 pointer-events-none border-[40px] border-black/40">
@@ -368,20 +423,38 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser }) => {
                         <div className="animate-scan"></div>
                       </div>
                     </div>
+                    {isOpeningCamera && (
+                        <div className="absolute inset-0 bg-slate-900 flex flex-col items-center justify-center gap-4">
+                            <Loader2 size={48} className="animate-spin text-emerald-500" />
+                            <p className="text-white text-[10px] font-black uppercase tracking-widest">Initialising Back Camera</p>
+                        </div>
+                    )}
                  </div>
                  <div className="flex items-center gap-3 justify-center text-emerald-600 bg-emerald-50 py-3 rounded-2xl border border-emerald-100">
                     <Zap size={16} className="animate-pulse" />
                     <span className="text-xs font-black uppercase tracking-widest">Active QR Scanner</span>
                  </div>
               </div>
-            ) : null}
+            )}
+
+            {syncStep === 'syncing' && (
+                <div className="py-20 animate-in zoom-in duration-300">
+                    <Loader2 size={64} className="animate-spin text-emerald-600 mx-auto" />
+                    <p className="text-xs text-slate-400 font-black uppercase tracking-widest mt-6">Handshaking & Data Exchange...</p>
+                    <div className="mt-4 flex flex-col items-center gap-2">
+                        <div className="h-1 w-32 bg-slate-100 rounded-full overflow-hidden">
+                            <div className="h-full bg-emerald-500 animate-pulse w-full"></div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <button onClick={cleanup} className="flex items-center gap-2 text-rose-500 font-bold hover:bg-rose-50 px-6 py-3 rounded-2xl transition-all"><X size={18} /> Cancel & Reset</button>
           </div>
         )}
       </div>
 
-      {mode === 'idle' && (
+      {syncStep === 'idle' && (
         <div className="p-8 bg-amber-50 rounded-[2.5rem] border border-amber-200 flex flex-col md:flex-row items-center justify-between gap-6 shadow-sm">
           <div className="flex items-center gap-4 text-center md:text-left">
             <div className="p-3 bg-amber-100 text-amber-600 rounded-2xl">
