@@ -20,7 +20,7 @@ export class NaijaShopDB extends Dexie {
   constructor() {
     super('NaijaShopDB');
     
-    // Fix: Using default import ensures the version and stores methods are correctly recognized as inherited from Dexie.
+    // Using the default import ensures the version and stores methods are correctly recognized as inherited from Dexie.
     this.version(6).stores({
       products: '++id, name, category, barcode',
       sales: '++id, timestamp, sync_status, payment_method',

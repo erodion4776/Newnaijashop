@@ -217,7 +217,7 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser, setView }) => {
     try {
       console.log('[SYNC] Valid QR detected. Stopping camera immediately.');
       
-      // Stop camera FIRST to prevent UI blocking
+      // CRITICAL: Stop camera FIRST to prevent hardware lock
       stopAllMedia();
       
       // Move to a processing state to unmount video component
@@ -226,7 +226,7 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser, setView }) => {
 
       const data = JSON.parse(signal);
 
-      // Short delay to let mobile hardware release the lens and refresh the bus
+      // Short delay (350ms) to allow mobile hardware to release the lens and refresh the CPU
       setTimeout(() => {
         if (mode === 'join' && data.type === 'offer') {
           setSyncStatus('Staff: Generating Answer QR...');
@@ -400,14 +400,85 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser, setView }) => {
               <p className="text-slate-400 text-sm font-medium">Keep this page open during sync</p>
             </div>
 
-            {/* CONDITIONAL RENDERING TO FORCE UNMOUNTING */}
             {syncStep === 'generating' && (
-              <div className="py-12 animate-in zoom-in duration-300">
+              <div className="py-12 animate-in zoom-in duration-300 text-center">
                 <Loader2 size={64} className="animate-spin text-emerald-600 mx-auto" />
                 <p className="text-xs text-slate-400 font-black uppercase tracking-widest mt-4">Bundling handshake signal...</p>
               </div>
             )}
 
             {syncStep === 'showing-qr' && qrData && (
-              <div className="space-y-8 animate-in zoom-in duration-300">
-                <div className="p-6 bg-white border-8 border-emerald-500 rounded-[
+              <div className="space-y-8 animate-in zoom-in duration-300 flex flex-col items-center">
+                <div className="p-6 bg-white border-8 border-emerald-500 rounded-[3rem] shadow-2xl inline-block">
+                  <img src={qrData} alt="Handshake QR" className="w-64 h-64 rounded-xl" />
+                </div>
+                {mode === 'host' && (
+                  <button 
+                    onClick={startScanning}
+                    disabled={isOpeningCamera}
+                    className="w-full max-w-sm py-5 bg-slate-900 text-white rounded-[2rem] font-black text-xl hover:bg-black transition-all flex items-center justify-center gap-3 shadow-xl active:scale-95 disabled:opacity-50"
+                  >
+                    <Camera size={24} /> Next: Scan Staff Phone
+                  </button>
+                )}
+              </div>
+            )}
+
+            {syncStep === 'scanning-answer' && (
+              <div key="scanner-container" className="w-full max-w-sm space-y-6 z-50 relative animate-in zoom-in duration-300">
+                 <div className="aspect-square bg-slate-900 rounded-[2.5rem] border-4 border-emerald-500 overflow-hidden relative shadow-2xl">
+                    <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+                    <div className="absolute inset-0 pointer-events-none border-[40px] border-black/40">
+                      <div className="w-full h-full border-2 border-emerald-400 rounded-xl relative">
+                        <div className="animate-scan"></div>
+                      </div>
+                    </div>
+                    {isOpeningCamera && (
+                        <div className="absolute inset-0 bg-slate-900 flex flex-col items-center justify-center gap-4">
+                            <Loader2 size={48} className="animate-spin text-emerald-500" />
+                            <p className="text-white text-[10px] font-black uppercase tracking-widest">Initialising Camera...</p>
+                        </div>
+                    )}
+                 </div>
+                 <div className="flex items-center gap-3 justify-center text-emerald-600 bg-emerald-50 py-3 rounded-2xl border border-emerald-100">
+                    <Zap size={16} className="animate-pulse" />
+                    <span className="text-xs font-black uppercase tracking-widest">Active QR Scanner</span>
+                 </div>
+              </div>
+            )}
+
+            {syncStep === 'syncing' && (
+                <div className="py-20 animate-in zoom-in duration-300 text-center">
+                    <Loader2 size={64} className="animate-spin text-emerald-600 mx-auto" />
+                    <p className="text-xs text-slate-400 font-black uppercase tracking-widest mt-6">Handshaking & Data Exchange...</p>
+                </div>
+            )}
+
+            <button 
+              onClick={cleanup} 
+              className="flex items-center gap-2 text-rose-500 font-bold hover:bg-rose-50 px-6 py-3 rounded-2xl transition-all"
+            >
+              <X size={18} /> Cancel & Reset
+            </button>
+          </div>
+        )}
+      </div>
+
+      {syncStep === 'idle' && (
+        <div className="p-8 bg-amber-50 rounded-[2.5rem] border border-amber-200 flex flex-col md:flex-row items-center justify-between gap-6 shadow-sm">
+          <div className="flex items-center gap-4 text-center md:text-left">
+            <div className="p-3 bg-amber-100 text-amber-600 rounded-2xl shadow-inner">
+              <AlertCircle size={24} />
+            </div>
+            <div>
+              <p className="font-black text-slate-800">Direct Link Security</p>
+              <p className="text-xs text-slate-500 font-medium">Syncing is encrypted and handled P2P. No data ever leaves your local network.</p>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default SyncStation;
