@@ -16,7 +16,6 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      // This forces simple-peer to use the browser version via the alias
       'simple-peer': 'simple-peer/simplepeer.min.js',
     },
   },
