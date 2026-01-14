@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { db } from '../db/db';
 import QRCode from 'qrcode';
 import Peer from 'simple-peer';
+import LZString from 'lz-string';
 import { Buffer } from 'buffer';
 import { 
   Wifi, 
@@ -21,7 +22,9 @@ import {
   ClipboardPaste,
   Clock,
   ClipboardList,
-  MessageSquare
+  MessageSquare,
+  RefreshCw,
+  Info
 } from 'lucide-react';
 import { Staff, Sale, View } from '../types';
 
@@ -36,7 +39,7 @@ interface SyncStationProps {
   setView: (view: View) => void;
 }
 
-type SyncStep = 'idle' | 'generating' | 'showing-qr' | 'showing-answer' | 'scanning-answer' | 'syncing';
+type SyncStep = 'idle' | 'generating' | 'showing-qr' | 'showing-answer' | 'scanning-answer' | 'syncing' | 'failed';
 
 const SyncStation: React.FC<SyncStationProps> = ({ currentUser, setView }) => {
   const isAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'Manager';
@@ -69,7 +72,8 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser, setView }) => {
     }
   }, []);
 
-  const cleanup = () => {
+  const cleanup = useCallback(() => {
+    console.log('[SYNC] Total Reset Initiated...');
     stopAllMedia();
     if (peerRef.current) {
       peerRef.current.destroy();
@@ -90,7 +94,16 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser, setView }) => {
       setIsOpeningCamera(false);
       setManualInput('');
     }
-  };
+  }, [isFinished, setView, stopAllMedia]);
+
+  // FORCE RESET ON ENTRY: UseEffect triggers on component mount
+  useEffect(() => {
+    cleanup();
+    return () => {
+      // Destructive cleanup on unmount
+      if (peerRef.current) peerRef.current.destroy();
+    };
+  }, []);
 
   const handleDataExchange = async (data: string) => {
     try {
@@ -145,31 +158,36 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser, setView }) => {
     } catch (e) {
       console.error("[SYNC] Data Exchange Error", e);
       setSyncStatus('Error processing sync data.');
-      setSyncStep('idle');
+      setSyncStep('failed');
     }
   };
 
   const initPeer = (initiator: boolean) => {
-    console.log(`[SYNC] Initializing Peer (initiator: ${initiator})`);
+    console.log(`[SYNC] Initializing BRAND NEW Peer (initiator: ${initiator})`);
     setSyncStep('generating');
     
+    // Explicit destruction before creating new instance
     if (peerRef.current) {
       peerRef.current.destroy();
+      peerRef.current = null;
     }
 
     const p = new Peer({
       initiator,
-      trickle: false,
+      trickle: false, // MANDATORY: Trickle false for static QR
       config: { iceServers: [] } 
     });
 
     p.on('signal', (data) => {
       console.log('[SYNC] Local Signal Generated:', data.type);
       clearTimeout(answerGenerationTimeoutRef.current);
-      const signalStr = JSON.stringify(data);
-      setRawSignal(signalStr);
       
-      QRCode.toDataURL(signalStr, { margin: 1, scale: 8 }, (err, url) => {
+      const signalStr = JSON.stringify(data);
+      // CLEANING: Use LZString to keep QR code small and simple
+      const compressed = LZString.compressToEncodedURIComponent(signalStr);
+      setRawSignal(compressed);
+      
+      QRCode.toDataURL(compressed, { margin: 1, scale: 8 }, (err, url) => {
         if (err) return;
         setQrData(url);
         if (mode === 'join' || !initiator) {
@@ -197,8 +215,8 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser, setView }) => {
     p.on('data', (data) => handleDataExchange(data.toString()));
     p.on('error', (err) => {
       console.error('[SYNC] Peer Error:', err);
-      alert('Connection failed. Please refresh and try again.');
-      cleanup();
+      setSyncStep('failed');
+      setSyncStatus('Connection Failed. Please reset and try again.');
     });
 
     peerRef.current = p;
@@ -224,41 +242,45 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser, setView }) => {
 
   const handleScanSignal = useCallback(async (signal: string) => {
     try {
-      console.log('[SYNC] Signal Received from Scan');
+      console.log('[SYNC] Compressed Signal Received from Scan');
       stopAllMedia();
-      const data = JSON.parse(signal);
+      
+      // DECOMPRESS: Clean signal back to JSON
+      const decompressed = LZString.decompressFromEncodedURIComponent(signal);
+      if (!decompressed) throw new Error("Decompression Failed");
+      
+      const data = JSON.parse(decompressed);
 
       if (mode === 'join' && data.type === 'offer') {
         console.log('[SYNC] Staff received Admin signal, generating answer...');
         setSyncStep('generating');
         setSyncStatus('Generating Answer Signal...');
         
-        // 3 Second Answer Generation Timeout
         answerGenerationTimeoutRef.current = setTimeout(() => {
+          setSyncStep('failed');
           setSyncStatus('Failed to generate answer. Please refresh.');
-          alert("Failed to generate answer. Signal context may be lost.");
         }, 5000);
 
         const p = initPeer(false);
-        // CRITICAL: Trigger the answer by signaling the offer
         p.signal(data);
       } else if (mode === 'host' && data.type === 'answer') {
         setSyncStep('syncing');
         setSyncStatus('Establishing P2P Handshake...');
         
-        // 15 Second Connection Timeout
         connectionTimeoutRef.current = setTimeout(() => {
-          alert("Connection Timeout. Devices must be on same local network.");
-          cleanup();
+          setSyncStep('failed');
+          setSyncStatus('Connection Timeout. Check Wi-Fi settings.');
         }, 15000);
 
-        if (!peerRef.current || peerRef.current.destroyed) return;
+        if (!peerRef.current || peerRef.current.destroyed) {
+          throw new Error("Peer instance is dead. Restart required.");
+        }
         peerRef.current.signal(data);
       }
     } catch (e) {
       console.error('[SYNC] Signal Processing Error:', e);
-      alert("Invalid QR signal detected.");
-      cleanup();
+      setSyncStep('failed');
+      setSyncStatus('Invalid QR format. Please use the current session QR.');
     }
   }, [mode, stopAllMedia]);
 
@@ -372,6 +394,39 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser, setView }) => {
                 <div><p className="font-black text-slate-800 text-xl">Join Link</p><p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mt-1">Recommended for Staff</p></div>
               </button>
             </div>
+            
+            {/* Hotspot Advice */}
+            <div className="p-6 bg-amber-50 rounded-3xl border border-amber-100 flex items-start gap-4">
+               <Info size={20} className="text-amber-600 shrink-0 mt-1" />
+               <div className="space-y-1">
+                  <p className="text-xs font-black text-slate-800 uppercase tracking-widest">Hotspot Connection Tips</p>
+                  <p className="text-xs text-slate-500 font-medium">If using a phone Hotspot: Ensure the Staff phone has <b>Mobile Data turned OFF</b>. Some Android devices try to sync over 4G instead of the Wi-Fi link.</p>
+               </div>
+            </div>
+          </div>
+        ) : syncStep === 'failed' ? (
+          <div className="flex-1 flex flex-col items-center justify-center text-center space-y-8 animate-in zoom-in duration-300">
+             <div className="w-20 h-20 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center shadow-inner">
+                <AlertCircle size={40} />
+             </div>
+             <div className="space-y-2">
+                <h4 className="text-2xl font-black text-slate-800">{syncStatus}</h4>
+                <p className="text-slate-500 text-sm font-medium px-10">Peer connection was interrupted or timed out. Handshake signals are only valid for the current session.</p>
+             </div>
+             <div className="w-full max-w-sm space-y-3">
+                <button 
+                  onClick={cleanup}
+                  className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-xl shadow-xl shadow-emerald-200 active:scale-95 transition-all flex items-center justify-center gap-2"
+                >
+                  <RefreshCw size={24} /> Reset & Try Again
+                </button>
+                <button 
+                  onClick={() => setView('dashboard')}
+                  className="w-full py-3 text-slate-400 font-bold text-xs uppercase tracking-widest"
+                >
+                  Return to Dashboard
+                </button>
+             </div>
           </div>
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-center space-y-8 animate-in fade-in duration-500">
