@@ -19,7 +19,9 @@ import {
   PackageCheck,
   ReceiptText,
   ClipboardPaste,
-  Clock
+  Clock,
+  ClipboardList,
+  MessageSquare
 } from 'lucide-react';
 import { Staff, Sale, View } from '../types';
 
@@ -46,6 +48,7 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser, setView }) => {
   const [manualInput, setManualInput] = useState('');
   
   const [qrData, setQrData] = useState<string | null>(null);
+  const [rawSignal, setRawSignal] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<string>('Ready for Zero-Data Sync');
   const [isOpeningCamera, setIsOpeningCamera] = useState(false);
 
@@ -53,6 +56,7 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser, setView }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const connectionTimeoutRef = useRef<any>(null);
+  const answerGenerationTimeoutRef = useRef<any>(null);
 
   const stopAllMedia = useCallback(() => {
     if (streamRef.current) {
@@ -72,6 +76,7 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser, setView }) => {
       peerRef.current = null;
     }
     clearTimeout(connectionTimeoutRef.current);
+    clearTimeout(answerGenerationTimeoutRef.current);
     
     if (isFinished) {
       setView('dashboard');
@@ -80,6 +85,7 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser, setView }) => {
       setSyncStep('idle');
       setIsFinished(false);
       setQrData(null);
+      setRawSignal(null);
       setSyncStatus('Ready for Zero-Data Sync');
       setIsOpeningCamera(false);
       setManualInput('');
@@ -144,8 +150,13 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser, setView }) => {
   };
 
   const initPeer = (initiator: boolean) => {
+    console.log(`[SYNC] Initializing Peer (initiator: ${initiator})`);
     setSyncStep('generating');
     
+    if (peerRef.current) {
+      peerRef.current.destroy();
+    }
+
     const p = new Peer({
       initiator,
       trickle: false,
@@ -153,7 +164,11 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser, setView }) => {
     });
 
     p.on('signal', (data) => {
+      console.log('[SYNC] Local Signal Generated:', data.type);
+      clearTimeout(answerGenerationTimeoutRef.current);
       const signalStr = JSON.stringify(data);
+      setRawSignal(signalStr);
+      
       QRCode.toDataURL(signalStr, { margin: 1, scale: 8 }, (err, url) => {
         if (err) return;
         setQrData(url);
@@ -168,6 +183,7 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser, setView }) => {
     });
 
     p.on('connect', () => {
+      console.log('[SYNC] P2P CONNECTED!');
       clearTimeout(connectionTimeoutRef.current);
       setSyncStatus('Terminal Link Established! Syncing...');
       setSyncStep('syncing');
@@ -181,7 +197,7 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser, setView }) => {
     p.on('data', (data) => handleDataExchange(data.toString()));
     p.on('error', (err) => {
       console.error('[SYNC] Peer Error:', err);
-      alert('Connection failed. Network context restricted?');
+      alert('Connection failed. Please refresh and try again.');
       cleanup();
     });
 
@@ -208,31 +224,39 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser, setView }) => {
 
   const handleScanSignal = useCallback(async (signal: string) => {
     try {
+      console.log('[SYNC] Signal Received from Scan');
       stopAllMedia();
-      setSyncStep('syncing');
-      setSyncStatus('Establishing P2P Handshake...');
       const data = JSON.parse(signal);
 
-      // 10 Second Timeout Protection
-      connectionTimeoutRef.current = setTimeout(() => {
-        alert("Connection Timeout. Devices must be on same Wi-Fi.");
-        cleanup();
-      }, 15000);
-
-      setTimeout(() => {
-        if (!peerRef.current || peerRef.current.destroyed) return;
+      if (mode === 'join' && data.type === 'offer') {
+        console.log('[SYNC] Staff received Admin signal, generating answer...');
+        setSyncStep('generating');
+        setSyncStatus('Generating Answer Signal...');
         
-        if (mode === 'join' && data.type === 'offer') {
-          setSyncStatus('Staff: Responding to Offer...');
-          initPeer(false);
-          peerRef.current.signal(data);
-        } else if (mode === 'host' && data.type === 'answer') {
-          setSyncStatus('Admin: Signal Accepted...');
-          peerRef.current.signal(data);
-        }
-      }, 400);
+        // 3 Second Answer Generation Timeout
+        answerGenerationTimeoutRef.current = setTimeout(() => {
+          setSyncStatus('Failed to generate answer. Please refresh.');
+          alert("Failed to generate answer. Signal context may be lost.");
+        }, 5000);
+
+        const p = initPeer(false);
+        // CRITICAL: Trigger the answer by signaling the offer
+        p.signal(data);
+      } else if (mode === 'host' && data.type === 'answer') {
+        setSyncStep('syncing');
+        setSyncStatus('Establishing P2P Handshake...');
+        
+        // 15 Second Connection Timeout
+        connectionTimeoutRef.current = setTimeout(() => {
+          alert("Connection Timeout. Devices must be on same local network.");
+          cleanup();
+        }, 15000);
+
+        if (!peerRef.current || peerRef.current.destroyed) return;
+        peerRef.current.signal(data);
+      }
     } catch (e) {
-      console.error('[SYNC] Scanning Error:', e);
+      console.error('[SYNC] Signal Processing Error:', e);
       alert("Invalid QR signal detected.");
       cleanup();
     }
@@ -367,14 +391,37 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser, setView }) => {
             <h4 className="text-2xl font-black text-slate-800 tracking-tight">{syncStatus}</h4>
 
             {(syncStep === 'showing-qr' || syncStep === 'showing-answer') && qrData && (
-              <div className="space-y-8 animate-in zoom-in duration-300 flex flex-col items-center">
+              <div className="space-y-8 animate-in zoom-in duration-300 flex flex-col items-center w-full">
                 <div className="p-6 bg-white border-8 border-emerald-500 rounded-[3rem] shadow-2xl inline-block">
                   <img src={qrData} alt="Handshake QR" className="w-64 h-64 rounded-xl" />
                 </div>
+                
                 {mode === 'host' && syncStep === 'showing-qr' && (
                   <button onClick={startScanning} disabled={isOpeningCamera} className="w-full max-w-sm py-5 bg-slate-900 text-white rounded-[2rem] font-black text-xl hover:bg-black transition-all flex items-center justify-center gap-3 shadow-xl active:scale-95 disabled:opacity-50">
                     <Camera size={24} /> Next: Scan Staff Phone
                   </button>
+                )}
+
+                {mode === 'join' && syncStep === 'showing-answer' && (
+                   <div className="w-full max-w-sm space-y-4">
+                      <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">QR Blurry? Use Manual Code:</p>
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 text-left">
+                         <code className="text-[10px] break-all block max-h-24 overflow-y-auto scrollbar-hide font-mono text-slate-600">
+                            {rawSignal}
+                         </code>
+                      </div>
+                      <button 
+                         onClick={() => {
+                            if (rawSignal) {
+                               navigator.clipboard.writeText(rawSignal);
+                               alert("Answer code copied to clipboard!");
+                            }
+                         }}
+                         className="w-full py-3 bg-slate-100 text-slate-600 rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 border border-slate-200"
+                      >
+                         <MessageSquare size={14} /> Copy Code for Admin
+                      </button>
+                   </div>
                 )}
               </div>
             )}
@@ -387,24 +434,29 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser, setView }) => {
                     {isOpeningCamera && <div className="absolute inset-0 bg-slate-900 flex flex-col items-center justify-center gap-4"><Loader2 size={48} className="animate-spin text-emerald-500" /></div>}
                  </div>
                  
-                 {mode === 'host' && (
-                    <div className="bg-slate-50 p-6 rounded-3xl border border-slate-200 space-y-4">
-                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-left">Camera Blurry? Paste Answer Manually:</p>
-                       <textarea 
-                          className="w-full h-24 p-4 bg-white border border-slate-200 rounded-2xl font-mono text-[10px] outline-none focus:ring-2 focus:ring-emerald-500"
-                          placeholder="Paste the Staff's answer signal here..."
-                          value={manualInput}
-                          onChange={(e) => setManualInput(e.target.value)}
-                       />
-                       <button 
-                          onClick={handleManualPaste}
-                          className="w-full py-3 bg-emerald-600 text-white rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2"
-                       >
-                          <ClipboardPaste size={14} /> Finish Link Manually
-                       </button>
-                    </div>
-                 )}
+                 <div className="bg-slate-50 p-6 rounded-3xl border border-slate-200 space-y-4">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-left">Camera Issue? Paste Code Manually:</p>
+                    <textarea 
+                       className="w-full h-24 p-4 bg-white border border-slate-200 rounded-2xl font-mono text-[10px] outline-none focus:ring-2 focus:ring-emerald-500"
+                       placeholder="Paste the other phone's signal signal here..."
+                       value={manualInput}
+                       onChange={(e) => setManualInput(e.target.value)}
+                    />
+                    <button 
+                       onClick={handleManualPaste}
+                       className="w-full py-3 bg-emerald-600 text-white rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2"
+                    >
+                       <ClipboardPaste size={14} /> Finish Link Manually
+                    </button>
+                 </div>
               </div>
+            )}
+
+            {syncStep === 'generating' && (
+                <div className="py-20 animate-in zoom-in duration-300 text-center">
+                    <Loader2 size={64} className="animate-spin text-emerald-600 mx-auto" />
+                    <p className="text-xs text-slate-400 font-black uppercase tracking-widest mt-6">Generating Cryptographic Signal...</p>
+                </div>
             )}
 
             {syncStep === 'syncing' && (
