@@ -34,8 +34,8 @@ export const SyncProvider: React.FC<{ children: React.ReactNode, currentUser: St
       peerRef.current.destroy();
       peerRef.current = null;
     }
-    clearInterval(heartbeatIntervalRef.current);
-    clearTimeout(reconnectTimeoutRef.current);
+    if (heartbeatIntervalRef.current) clearInterval(heartbeatIntervalRef.current);
+    if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
     setStatus('offline');
     setLastHeartbeat(0);
   }, []);
@@ -97,7 +97,7 @@ export const SyncProvider: React.FC<{ children: React.ReactNode, currentUser: St
       heartbeatIntervalRef.current = setInterval(() => {
         if (p.connected) {
           p.send(JSON.stringify({ type: 'HEARTBEAT' }));
-          // Check if we lost the other side
+          // Check if we lost the other side (25s timeout)
           if (Date.now() - lastHeartbeat > 25000) {
             setStatus('reconnecting');
           }
@@ -144,6 +144,7 @@ export const SyncProvider: React.FC<{ children: React.ReactNode, currentUser: St
 
   const processWhatsAppSync = async (compressedData: string) => {
     try {
+      // Ensure we use the correct decompression for encoded URI components (standard for sharing)
       const json = LZString.decompressFromEncodedURIComponent(compressedData);
       if (!json) throw new Error("Invalid or Corrupt Data String");
       const payload = JSON.parse(json);
