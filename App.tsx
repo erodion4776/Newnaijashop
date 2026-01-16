@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo, ErrorInfo, ReactNode } from 'react
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, initSettings } from './db/db';
 import { View, Staff } from './types';
+import LZString from 'lz-string';
 import { generateRequestCode } from './utils/licensing';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
@@ -29,7 +30,8 @@ import {
   Users,
   ArrowRight,
   Camera,
-  LogOut
+  LogOut,
+  Loader2
 } from 'lucide-react';
 
 const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-9987-b4ed4c0e3c36.png";
@@ -68,6 +70,7 @@ const AppContent: React.FC = () => {
   const [loginPassword, setLoginPassword] = useState('');
   const [selectedStaffId, setSelectedStaffId] = useState<number | 'admin' | ''>('');
   const [isJoining, setIsJoining] = useState(false);
+  const [isProcessingJoin, setIsProcessingJoin] = useState(false);
   
   const [setupData, setSetupData] = useState({ shopName: '', adminName: '', adminPin: '' });
 
@@ -93,29 +96,7 @@ const AppContent: React.FC = () => {
         const inviteData = urlParams.get('staffData') || urlParams.get('invite');
         
         if (inviteData && inviteData !== 'true') {
-          try {
-            const decoded = JSON.parse(atob(inviteData));
-            const existing = await db.staff.where('name').equals(decoded.name).first();
-            if (!existing) {
-              await db.staff.add({ 
-                name: decoded.name, 
-                role: decoded.role, 
-                password: decoded.password, 
-                status: 'Active', 
-                created_at: Date.now() 
-              });
-            }
-            localStorage.setItem('isStaffDevice', 'true');
-            localStorage.setItem('invitedStaffName', decoded.name);
-            await db.settings.update('app_settings', { 
-              shop_name: decoded.shop || 'NaijaShop', 
-              is_setup_complete: true, 
-              license_key: 'STAFF-TERMINAL-ACTIVE' 
-            });
-            window.history.replaceState({}, document.title, window.location.pathname);
-          } catch (e) {
-            console.error("Invite processing failed:", e);
-          }
+          await processStaffJoin(inviteData);
         }
         setIsInitialized(true);
       } catch (err: any) {
@@ -148,31 +129,66 @@ const AppContent: React.FC = () => {
     });
   };
 
-  const processStaffJoin = async (scannedData: string) => {
+  const processStaffJoin = async (scannedText: string) => {
+    setIsProcessingJoin(true);
     try {
-      const decoded = JSON.parse(atob(scannedData));
-      if (!decoded.name || !decoded.shop) throw new Error("Invalid Invite Data");
+      let dataToProcess = scannedText;
       
-      await db.staff.add({ 
-        name: decoded.name, 
-        role: decoded.role, 
-        password: decoded.password, 
-        status: 'Active', 
-        created_at: Date.now() 
-      });
+      // Handle URL vs Raw string
+      if (scannedText.startsWith('http')) {
+        const url = new URL(scannedText);
+        const params = new URLSearchParams(url.search);
+        dataToProcess = params.get('staffData') || params.get('invite') || '';
+      }
+
+      if (!dataToProcess) throw new Error("No data found");
+
+      // Decompress the data
+      let json = LZString.decompressFromEncodedURIComponent(dataToProcess);
       
-      await db.settings.update('app_settings', { 
-        shop_name: decoded.shop, 
-        is_setup_complete: true, 
-        license_key: 'STAFF-TERMINAL-ACTIVE' 
+      // Fallback for non-compressed legacy invites or base64
+      if (!json) {
+        try { json = atob(dataToProcess); } catch(e) { json = dataToProcess; }
+      }
+
+      const parsedData = JSON.parse(json);
+      if (!parsedData.name || !parsedData.shop) throw new Error("Invalid format");
+
+      // Immediate DB Provisioning
+      await (db as any).transaction('rw', [db.staff, db.settings], async () => {
+        // Clear potential partial setup
+        await db.staff.clear(); 
+        
+        // Add the Staff member
+        await db.staff.add({ 
+          name: parsedData.name, 
+          role: parsedData.role || 'Sales', 
+          password: parsedData.password, 
+          status: 'Active', 
+          created_at: Date.now() 
+        });
+        
+        // Provision the Shop Identity and Lock setup
+        await db.settings.update('app_settings', { 
+          shop_name: parsedData.shop, 
+          is_setup_complete: true, 
+          license_key: 'STAFF-TERMINAL-ACTIVE' 
+        });
       });
 
       localStorage.setItem('isStaffDevice', 'true');
-      localStorage.setItem('invitedStaffName', decoded.name);
-      setIsJoining(false);
-      window.location.reload();
+      localStorage.setItem('invitedStaffName', parsedData.name);
+
+      // Brief pause for visual confirmation
+      setTimeout(() => {
+        window.location.reload();
+      }, 1000);
     } catch (e) {
-      alert("Invalid Invite QR. Please scan the QR generated from the Admin's Staff Registry.");
+      console.error("Join Error:", e);
+      setIsProcessingJoin(false);
+      if (scannedText.startsWith('http') || scannedText.length > 20) {
+        alert("Invalid Invite Code. Please ask the Admin for a new QR code.");
+      }
     }
   };
 
@@ -193,11 +209,23 @@ const AppContent: React.FC = () => {
   if (isJoining) {
     return (
       <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-center">
-        <BarcodeScanner onScan={processStaffJoin} onClose={() => setIsJoining(false)} />
-        <div className="fixed bottom-10 left-0 right-0 p-6 flex flex-col items-center">
-           <p className="text-white font-black uppercase tracking-widest text-xs mb-4">Scan Admin's Invite QR</p>
-           <button onClick={() => setIsJoining(false)} className="px-8 py-3 bg-white/10 text-white rounded-xl font-bold border border-white/5">Cancel Join</button>
-        </div>
+        {isProcessingJoin ? (
+          <div className="bg-white p-12 rounded-[3rem] space-y-6 animate-in zoom-in">
+             <Loader2 size={64} className="animate-spin text-emerald-600 mx-auto" />
+             <div className="space-y-2">
+               <h3 className="text-2xl font-black text-slate-900">Joining Shop...</h3>
+               <p className="text-slate-500 font-bold uppercase tracking-widest text-[10px]">Provisioning Local Terminal</p>
+             </div>
+          </div>
+        ) : (
+          <>
+            <BarcodeScanner onScan={processStaffJoin} onClose={() => setIsJoining(false)} />
+            <div className="fixed bottom-10 left-0 right-0 p-6 flex flex-col items-center">
+               <p className="text-white font-black uppercase tracking-widest text-xs mb-4">Scan Admin's Invite QR</p>
+               <button onClick={() => setIsJoining(false)} className="px-8 py-3 bg-white/10 text-white rounded-xl font-bold border border-white/5">Cancel Join</button>
+            </div>
+          </>
+        )}
       </div>
     );
   }

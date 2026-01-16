@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
+import LZString from 'lz-string';
 import { 
   UserCog, 
   UserPlus, 
@@ -55,9 +56,10 @@ const StaffManagement: React.FC = () => {
       password: staff.password,
       shop: settings?.shop_name
     };
-    const b64 = btoa(JSON.stringify(data));
-    // Updated to use staffData as per requirements
-    const url = `${window.location.origin}/login?staffData=${b64}`;
+    
+    // Use LZString for shorter, more reliable QR/URL data
+    const compressed = LZString.compressToEncodedURIComponent(JSON.stringify(data));
+    const url = `${window.location.origin}/login?staffData=${compressed}`;
     
     const message = `Hello ${staff.name}, your account for ${settings?.shop_name} is ready. Click this magic link to join the terminal: ${url}`;
     const encodedMessage = encodeURIComponent(message);

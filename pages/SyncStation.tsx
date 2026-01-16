@@ -43,12 +43,14 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser, setView }) => {
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const isSyncingRef = useRef(false);
 
   const cleanup = useCallback(() => {
     if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
     resetConnection();
     setStep('idle');
     setQrData(null);
+    isSyncingRef.current = false;
   }, [resetConnection]);
 
   const handleStartSync = async (isHost: boolean) => {
@@ -135,24 +137,28 @@ const SyncStation: React.FC<SyncStationProps> = ({ currentUser, setView }) => {
     if (step === 'scanning' && 'BarcodeDetector' in window) {
       const detector = new (window as any).BarcodeDetector({ formats: ['qr_code'] });
       interval = setInterval(async () => {
-        if (!videoRef.current) return;
+        if (!videoRef.current || isSyncingRef.current) return;
         try {
           const codes = await detector.detect(videoRef.current);
           if (codes.length > 0) {
             const decompressed = LZString.decompressFromEncodedURIComponent(codes[0].rawValue);
             if (decompressed) {
-              const { peer } = (window as any).currentSyncState || {}; // Fallback or direct context access
-              // In production, you'd use a more stable reference to the active peer
               const payload = JSON.parse(decompressed);
-              // Note: The actual peer signaling would be handled by the initiateSync flow
-              // but we ensure the joiner scans the host.
+              
+              if (payload.signal && !isAdmin && !isSyncingRef.current) {
+                isSyncingRef.current = true;
+                // Initialize as Joiner (initiator: false)
+                const p = initiateSync(false); 
+                // Immediately feed the host's signal to the peer
+                p.signal(payload.signal);
+              }
             }
           }
         } catch (e) {}
       }, 500);
     }
     return () => clearInterval(interval);
-  }, [step]);
+  }, [step, isAdmin, initiateSync]);
 
   return (
     <div className="max-w-4xl mx-auto space-y-8 pb-20">
