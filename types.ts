@@ -84,4 +84,10 @@ export interface Settings {
 
 export type View = 'dashboard' | 'pos' | 'inventory' | 'inventory-ledger' | 'debts' | 'settings' | 'ai-insights' | 'transfer-station' | 'sync' | 'staff-management';
 
-export type SyncStatus = 'offline' | 'connecting' | 'live' | 'reconnecting';
+export type SyncStatus = 'offline' | 'connecting' | 'live' | 'reconnecting' | 'failed';
+
+export interface SyncSession {
+  id: string;
+  initiator: boolean;
+  timestamp: number;
+}

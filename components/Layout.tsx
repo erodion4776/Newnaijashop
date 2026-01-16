@@ -14,7 +14,10 @@ import {
   ClipboardList,
   UserCog,
   LogOut,
-  Zap
+  Zap,
+  Wifi,
+  WifiOff,
+  Activity
 } from 'lucide-react';
 import { View, Staff } from '../types';
 import { useSync } from '../context/SyncProvider';
@@ -90,24 +93,43 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, setView, shopName
             <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-2 hover:bg-slate-100 rounded-lg"><Menu size={24} /></button>
             <h2 className="text-lg font-bold text-slate-800">{navItems.find(i => i.id === activeView)?.label}</h2>
           </div>
+          
           <div className="flex items-center gap-6">
+            {/* THE CONNECTION STRENGTH BAR */}
+            <div className="hidden sm:flex items-center gap-3 bg-slate-50 px-4 py-2 rounded-2xl border border-slate-100 shadow-inner">
+               <div className="flex items-end gap-0.5 h-3">
+                  <div className={`w-1 rounded-full transition-all duration-300 ${status !== 'offline' ? 'h-full bg-emerald-500' : 'h-1/3 bg-slate-200'}`} />
+                  <div className={`w-1 rounded-full transition-all duration-300 ${status === 'live' || status === 'connecting' ? 'h-full bg-emerald-500' : 'h-1/2 bg-slate-200'}`} />
+                  <div className={`w-1 rounded-full transition-all duration-300 ${status === 'live' ? 'h-full bg-emerald-500' : 'h-2/3 bg-slate-200'}`} />
+               </div>
+               <div className="flex flex-col">
+                  <span className={`text-[9px] font-black uppercase tracking-[0.1em] leading-none ${
+                    status === 'live' ? 'text-emerald-600' : 
+                    status === 'reconnecting' ? 'text-amber-600 animate-pulse' : 
+                    status === 'failed' ? 'text-rose-600' : 
+                    'text-slate-400'
+                  }`}>
+                    {status === 'live' ? 'Live Sync Active' : 
+                     status === 'reconnecting' ? 'Reconnecting...' : 
+                     status === 'failed' ? 'Link Failed' : 
+                     'Bridge Offline'}
+                  </span>
+                  <p className="text-[7px] text-slate-400 font-bold uppercase mt-0.5">Terminal Bridge</p>
+               </div>
+               {status === 'failed' && <WifiOff size={12} className="text-rose-400" />}
+               {status === 'live' && <Activity size={12} className="text-emerald-500 animate-pulse" />}
+            </div>
+
             <div className="flex items-center gap-2">
               <div className="relative flex items-center">
                  <div className={`h-2.5 w-2.5 rounded-full transition-all duration-500 ${
                    status === 'live' ? 'bg-emerald-500 shadow-[0_0_8px_#10b981]' : 
                    status === 'reconnecting' ? 'bg-amber-500 animate-pulse shadow-[0_0_8px_#f59e0b]' : 
+                   status === 'failed' ? 'bg-rose-500 animate-pulse' :
                    status === 'connecting' ? 'bg-blue-500 animate-pulse' :
                    'bg-slate-300'
                  }`}></div>
-                 {status === 'live' && <Zap size={10} className="text-emerald-500 absolute -right-3 -top-1" />}
               </div>
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                {status === 'live' ? 'Live Link' : status === 'reconnecting' ? 'Re-linking...' : 'Offline'}
-              </span>
-            </div>
-            <div className="hidden sm:flex items-center gap-4 border-l border-slate-100 pl-6">
-              <span className="flex h-2 w-2 rounded-full bg-emerald-500"></span>
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Station Active</span>
             </div>
           </div>
         </header>

@@ -8,9 +8,11 @@ import { Sale, SyncStatus, Staff } from '../types';
 interface SyncContextType {
   status: SyncStatus;
   peer: any;
-  initiateSync: (initiator: boolean, mode: 'host' | 'join') => any;
+  sessionId: string | null;
+  initiateSync: (initiator: boolean) => any;
   broadcastSale: (sale: Sale) => void;
   broadcastInventory: () => void;
+  processWhatsAppSync: (compressedData: string) => Promise<{ sales: number, products: number }>;
   resetConnection: () => void;
   lastHeartbeat: number;
 }
@@ -19,17 +21,21 @@ const SyncContext = createContext<SyncContextType | undefined>(undefined);
 
 export const SyncProvider: React.FC<{ children: React.ReactNode, currentUser: Staff | null }> = ({ children, currentUser }) => {
   const [status, setStatus] = useState<SyncStatus>('offline');
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [lastHeartbeat, setLastHeartbeat] = useState<number>(0);
   const peerRef = useRef<any>(null);
   const heartbeatIntervalRef = useRef<any>(null);
+  const reconnectTimeoutRef = useRef<any>(null);
   const isAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'Manager';
 
   const resetConnection = useCallback(() => {
+    console.log('[SYNC] Force Clearing Connection Objects...');
     if (peerRef.current) {
       peerRef.current.destroy();
       peerRef.current = null;
     }
     clearInterval(heartbeatIntervalRef.current);
+    clearTimeout(reconnectTimeoutRef.current);
     setStatus('offline');
     setLastHeartbeat(0);
   }, []);
@@ -38,15 +44,7 @@ export const SyncProvider: React.FC<{ children: React.ReactNode, currentUser: St
     try {
       const payload = JSON.parse(data);
 
-      if (payload.type === 'PING') {
-        setLastHeartbeat(Date.now());
-        if (peerRef.current?.connected) {
-          peerRef.current.send(JSON.stringify({ type: 'PONG' }));
-        }
-        return;
-      }
-
-      if (payload.type === 'PONG') {
+      if (payload.type === 'HEARTBEAT') {
         setLastHeartbeat(Date.now());
         setStatus('live');
         return;
@@ -72,12 +70,16 @@ export const SyncProvider: React.FC<{ children: React.ReactNode, currentUser: St
         await db.settings.update('app_settings', { last_synced_timestamp: Date.now() });
       }
     } catch (e) {
-      console.error("[SYNC] Data Error:", e);
+      console.error("[SYNC] Real-time Data Error:", e);
     }
   }, [isAdmin]);
 
-  const initiateSync = useCallback((initiator: boolean, mode: 'host' | 'join') => {
+  const initiateSync = useCallback((initiator: boolean) => {
     resetConnection();
+    
+    // THE FRESH SESSION RULE
+    const newSessionId = Math.random().toString(36).substring(7);
+    setSessionId(newSessionId);
     setStatus('connecting');
 
     const p = new Peer({
@@ -87,35 +89,47 @@ export const SyncProvider: React.FC<{ children: React.ReactNode, currentUser: St
     });
 
     p.on('connect', () => {
+      console.log('[SYNC] P2P Linked Successfully!');
       setStatus('live');
       setLastHeartbeat(Date.now());
       
-      // Start Heartbeat
+      // THE HEARTBEAT RULE: Tiny ping every 10 seconds
       heartbeatIntervalRef.current = setInterval(() => {
         if (p.connected) {
-          p.send(JSON.stringify({ type: 'PING' }));
-          // If we haven't seen a pong in 10s, mark as reconnecting
-          if (Date.now() - lastHeartbeat > 10000) {
+          p.send(JSON.stringify({ type: 'HEARTBEAT' }));
+          // Check if we lost the other side
+          if (Date.now() - lastHeartbeat > 25000) {
             setStatus('reconnecting');
           }
         }
-      }, 5000);
+      }, 10000);
     });
 
     p.on('data', (data: any) => handleIncomingData(data.toString()));
 
     p.on('error', (err: any) => {
       console.error("[SYNC] Peer Error:", err);
-      setStatus('offline');
+      setStatus('failed');
     });
 
-    p.on('close', () => setStatus('offline'));
+    p.on('close', () => {
+      if (status === 'live') {
+        setStatus('reconnecting');
+        // Auto-Reconnect window (60 seconds)
+        reconnectTimeoutRef.current = setTimeout(() => {
+          if (status !== 'live') setStatus('failed');
+        }, 60000);
+      } else {
+        setStatus('offline');
+      }
+    });
 
     peerRef.current = p;
     return p;
-  }, [handleIncomingData, resetConnection, lastHeartbeat]);
+  }, [handleIncomingData, resetConnection, lastHeartbeat, status]);
 
   const broadcastSale = useCallback((sale: Sale) => {
+    // THE AUTO-PUSH RULE
     if (peerRef.current?.connected) {
       peerRef.current.send(JSON.stringify({ type: 'SALE_PUSH', sale }));
     }
@@ -128,7 +142,48 @@ export const SyncProvider: React.FC<{ children: React.ReactNode, currentUser: St
     }
   }, [isAdmin]);
 
-  // Cleanup on unmount
+  const processWhatsAppSync = async (compressedData: string) => {
+    try {
+      const json = LZString.decompressFromEncodedURIComponent(compressedData);
+      if (!json) throw new Error("Invalid or Corrupt Data String");
+      const payload = JSON.parse(json);
+      
+      let salesCount = 0;
+      let productCount = 0;
+
+      if (payload.type === 'WHATSAPP_EXPORT') {
+        // Handle Admin importing Staff sales
+        if (isAdmin && payload.sales) {
+          for (const sale of payload.sales) {
+            const exists = await db.sales.where('timestamp').equals(sale.timestamp).first();
+            if (!exists) {
+              await (db as any).transaction('rw', [db.sales, db.products], async () => {
+                await db.sales.add({ ...sale, sync_status: 'synced' });
+                for (const item of sale.items) {
+                  const p = await db.products.get(item.productId);
+                  if (p) await db.products.update(item.productId, { stock_qty: Math.max(0, p.stock_qty - item.quantity) });
+                }
+              });
+              salesCount++;
+            }
+          }
+        }
+        // Handle Staff importing Admin catalog
+        else if (!isAdmin && payload.products) {
+          await (db as any).transaction('rw', [db.products], async () => {
+            await db.products.clear();
+            await db.products.bulkAdd(payload.products);
+          });
+          productCount = payload.products.length;
+          await db.settings.update('app_settings', { last_synced_timestamp: Date.now() });
+        }
+      }
+      return { sales: salesCount, products: productCount };
+    } catch (e: any) {
+      throw new Error("Sync Failed: " + e.message);
+    }
+  };
+
   useEffect(() => {
     return () => resetConnection();
   }, [resetConnection]);
@@ -137,9 +192,11 @@ export const SyncProvider: React.FC<{ children: React.ReactNode, currentUser: St
     <SyncContext.Provider value={{ 
       status, 
       peer: peerRef.current, 
+      sessionId,
       initiateSync, 
       broadcastSale, 
       broadcastInventory,
+      processWhatsAppSync,
       resetConnection,
       lastHeartbeat 
     }}>
