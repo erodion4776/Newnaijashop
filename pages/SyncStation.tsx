@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { Staff, View } from '../types';
 
-const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-9987-b4ed4c0e5c36.png";
+const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-9987-b4ed4c0e3c36.png";
 
 interface SyncStationProps {
   currentUser?: Staff | null;

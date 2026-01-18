@@ -1,626 +1,213 @@
-import React, { 
-  createContext, 
-  useContext, 
-  useState, 
-  useRef, 
-  useEffect, 
-  useCallback 
-} from 'react';
+
+import React, { createContext, useContext, useState, useRef, useEffect, useCallback } from 'react';
 import Peer from 'simple-peer';
 import LZString from 'lz-string';
 import { db } from '../db/db';
-import { Sale, Product, Staff } from '../types';
-
-// ============ TYPES ============
-
-export type SyncStatus = 'offline' | 'connecting' | 'live' | 'reconnecting' | 'failed';
-
-interface SyncMessage {
-  type: 'HEARTBEAT' | 'SALE_PUSH' | 'CATALOG_UPDATE' | 'SALE_ACK' | 'SYNC_REQUEST';
-  sessionId?: string;
-  timestamp?: number;
-  sale?: Sale;
-  products?: Product[];
-  saleId?: number;
-}
+import { Sale, SyncStatus, Staff } from '../types';
 
 interface SyncContextType {
   status: SyncStatus;
+  peer: any;
   sessionId: string | null;
-  connectedPeers: number;
-  lastSyncTime: number | null;
-  initiateSync: (initiator: boolean) => Peer.Instance;
+  initiateSync: (initiator: boolean) => any;
   broadcastSale: (sale: Sale) => void;
-  broadcastInventory: () => Promise<void>;
-  processWhatsAppSync: (compressedData: string) => Promise<{ sales: number; products: number }>;
+  broadcastInventory: () => void;
+  processWhatsAppSync: (compressedData: string) => Promise<{ sales: number, products: number }>;
   resetConnection: () => void;
-  requestSync: () => void;
+  lastHeartbeat: number;
 }
-
-interface PendingSale {
-  sale: Sale;
-  attempts: number;
-  lastAttempt: number;
-}
-
-// ============ CONSTANTS ============
-
-const HEARTBEAT_INTERVAL = 10000; // 10 seconds
-const HEARTBEAT_TIMEOUT = 25000; // 25 seconds
-const CONNECTION_TIMEOUT = 30000; // 30 seconds
-const RECONNECT_WINDOW = 60000; // 60 seconds
-const MAX_RETRY_ATTEMPTS = 3;
-const RETRY_DELAY = 5000; // 5 seconds
-
-// ============ CONTEXT ============
 
 const SyncContext = createContext<SyncContextType | undefined>(undefined);
 
-// ============ PROVIDER ============
-
-interface SyncProviderProps {
-  children: React.ReactNode;
-  currentUser: Staff | null;
-}
-
-export const SyncProvider: React.FC<SyncProviderProps> = ({ children, currentUser }) => {
-  // State
+export const SyncProvider: React.FC<{ children: React.ReactNode, currentUser: Staff | null }> = ({ children, currentUser }) => {
   const [status, setStatus] = useState<SyncStatus>('offline');
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [lastSyncTime, setLastSyncTime] = useState<number | null>(null);
-  const [connectedPeers, setConnectedPeers] = useState(0);
-
-  // Refs (to avoid stale closures)
-  const peerRef = useRef<Peer.Instance | null>(null);
-  const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const retryIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const lastHeartbeatRef = useRef<number>(0);
-  const statusRef = useRef<SyncStatus>('offline');
-  const pendingSalesRef = useRef<Map<number, PendingSale>>(new Map());
-  const sessionIdRef = useRef<string | null>(null);
-
-  // Keep refs in sync with state
-  useEffect(() => {
-    statusRef.current = status;
-  }, [status]);
-
-  useEffect(() => {
-    sessionIdRef.current = sessionId;
-  }, [sessionId]);
-
+  const [lastHeartbeat, setLastHeartbeat] = useState<number>(0);
+  const peerRef = useRef<any>(null);
+  const heartbeatIntervalRef = useRef<any>(null);
+  const reconnectTimeoutRef = useRef<any>(null);
   const isAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'Manager';
-  const isAdminRef = useRef(isAdmin);
-  useEffect(() => {
-    isAdminRef.current = isAdmin;
-  }, [isAdmin]);
-
-  // ============ CLEANUP ============
-
-  const clearTimers = useCallback(() => {
-    if (heartbeatIntervalRef.current) {
-      clearInterval(heartbeatIntervalRef.current);
-      heartbeatIntervalRef.current = null;
-    }
-    if (connectionTimeoutRef.current) {
-      clearTimeout(connectionTimeoutRef.current);
-      connectionTimeoutRef.current = null;
-    }
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = null;
-    }
-    if (retryIntervalRef.current) {
-      clearInterval(retryIntervalRef.current);
-      retryIntervalRef.current = null;
-    }
-  }, []);
 
   const resetConnection = useCallback(() => {
-    console.log('[SYNC] Resetting connection...');
-    
-    clearTimers();
-    
+    console.log('[SYNC] Force Clearing Connection Objects...');
     if (peerRef.current) {
-      try {
-        peerRef.current.destroy();
-      } catch (e) {
-        console.warn('[SYNC] Error destroying peer:', e);
-      }
+      peerRef.current.destroy();
       peerRef.current = null;
     }
-    
+    if (heartbeatIntervalRef.current) clearInterval(heartbeatIntervalRef.current);
+    if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
     setStatus('offline');
-    setConnectedPeers(0);
-    lastHeartbeatRef.current = 0;
-    pendingSalesRef.current.clear();
-  }, [clearTimers]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      resetConnection();
-    };
-  }, [resetConnection]);
-
-  // ============ DATA HANDLERS ============
-
-  const sendMessage = useCallback((message: SyncMessage) => {
-    if (peerRef.current?.connected) {
-      try {
-        // Compress large payloads
-        const data = JSON.stringify(message);
-        const payload = data.length > 1000 
-          ? LZString.compressToUTF16(data)
-          : data;
-        
-        peerRef.current.send(payload);
-        return true;
-      } catch (e) {
-        console.error('[SYNC] Send error:', e);
-        return false;
-      }
-    }
-    return false;
+    setLastHeartbeat(0);
   }, []);
 
-  const handleSalePush = useCallback(async (sale: Sale, sendAck: boolean = true) => {
-    if (!isAdminRef.current) return;
-
+  const handleIncomingData = useCallback(async (data: string) => {
     try {
-      // Better duplicate detection: check timestamp AND staff_id AND total
-      const exists = await db.sales
-        .where('timestamp')
-        .equals(sale.timestamp)
-        .filter(s => s.staff_id === sale.staff_id && s.total_amount === sale.total_amount)
-        .first();
+      const payload = JSON.parse(data);
 
-      if (exists) {
-        console.log('[SYNC] Duplicate sale ignored:', sale.timestamp);
+      if (payload.type === 'HEARTBEAT') {
+        setLastHeartbeat(Date.now());
+        setStatus('live');
         return;
       }
 
-      await db.transaction('rw', [db.sales, db.products, db.inventory_logs], async () => {
-        // Add sale
-        const saleId = await db.sales.add({ 
-          ...sale, 
-          sync_status: 'synced',
-          synced_at: Date.now()
-        });
-
-        // Update stock and create logs
-        for (const item of sale.items) {
-          const product = await db.products.get(item.productId);
-          if (product) {
-            const oldStock = product.stock_qty;
-            const newStock = Math.max(0, oldStock - item.quantity);
-            
-            await db.products.update(item.productId, { stock_qty: newStock });
-
-            // Create inventory log
-            await db.inventory_logs.add({
-              product_id: item.productId,
-              product_name: item.name,
-              quantity_changed: -item.quantity,
-              old_stock: oldStock,
-              new_stock: newStock,
-              type: 'sale',
-              performed_by: sale.staff_id || 'Sync',
-              timestamp: Date.now()
-            });
-          }
-        }
-      });
-
-      // Send acknowledgment
-      if (sendAck) {
-        sendMessage({ type: 'SALE_ACK', saleId: sale.id, timestamp: sale.timestamp });
-      }
-
-      console.log('[SYNC] Sale synced successfully:', sale.timestamp);
-      setLastSyncTime(Date.now());
-    } catch (e) {
-      console.error('[SYNC] Error processing sale:', e);
-    }
-  }, [sendMessage]);
-
-  const handleCatalogUpdate = useCallback(async (products: Product[]) => {
-    if (isAdminRef.current) return; // Only staff should receive catalog
-
-    try {
-      await db.transaction('rw', [db.products, db.settings], async () => {
-        // Clear and repopulate
-        await db.products.clear();
-        await db.products.bulkAdd(products);
-        
-        // Update sync timestamp
-        await db.settings.update('app_settings', { 
-          last_synced_timestamp: Date.now() 
-        });
-      });
-
-      console.log('[SYNC] Catalog updated:', products.length, 'products');
-      setLastSyncTime(Date.now());
-    } catch (e) {
-      console.error('[SYNC] Error updating catalog:', e);
-    }
-  }, []);
-
-  const handleSaleAck = useCallback((saleId: number | undefined, timestamp: number | undefined) => {
-    // Remove from pending queue
-    if (timestamp) {
-      pendingSalesRef.current.delete(timestamp);
-    }
-    console.log('[SYNC] Sale acknowledged:', saleId || timestamp);
-  }, []);
-
-  const handleIncomingData = useCallback(async (rawData: string) => {
-    try {
-      // Try to decompress if compressed
-      let data = rawData;
-      try {
-        const decompressed = LZString.decompressFromUTF16(rawData);
-        if (decompressed) data = decompressed;
-      } catch (e) {
-        // Not compressed, use raw data
-      }
-
-      const message: SyncMessage = JSON.parse(data);
-
-      switch (message.type) {
-        case 'HEARTBEAT':
-          lastHeartbeatRef.current = Date.now();
-          if (statusRef.current !== 'live') {
-            setStatus('live');
-          }
-          break;
-
-        case 'SALE_PUSH':
-          if (message.sale) {
-            await handleSalePush(message.sale);
-          }
-          break;
-
-        case 'CATALOG_UPDATE':
-          if (message.products) {
-            await handleCatalogUpdate(message.products);
-          }
-          break;
-
-        case 'SALE_ACK':
-          handleSaleAck(message.saleId, message.timestamp);
-          break;
-
-        case 'SYNC_REQUEST':
-          // Staff requesting latest catalog
-          if (isAdminRef.current) {
-            await broadcastInventory();
-          }
-          break;
-
-        default:
-          console.warn('[SYNC] Unknown message type:', message.type);
-      }
-    } catch (e) {
-      console.error('[SYNC] Error processing incoming data:', e);
-    }
-  }, [handleSalePush, handleCatalogUpdate, handleSaleAck]);
-
-  // ============ HEARTBEAT ============
-
-  const startHeartbeat = useCallback(() => {
-    // Clear existing
-    if (heartbeatIntervalRef.current) {
-      clearInterval(heartbeatIntervalRef.current);
-    }
-
-    lastHeartbeatRef.current = Date.now();
-
-    heartbeatIntervalRef.current = setInterval(() => {
-      if (!peerRef.current?.connected) return;
-
-      // Send heartbeat
-      sendMessage({ type: 'HEARTBEAT', timestamp: Date.now() });
-
-      // Check for timeout (using ref, not state)
-      const timeSinceLastHeartbeat = Date.now() - lastHeartbeatRef.current;
-      if (timeSinceLastHeartbeat > HEARTBEAT_TIMEOUT) {
-        console.warn('[SYNC] Heartbeat timeout');
-        if (statusRef.current === 'live') {
-          setStatus('reconnecting');
-        }
-      }
-    }, HEARTBEAT_INTERVAL);
-  }, [sendMessage]);
-
-  // ============ RETRY QUEUE ============
-
-  const startRetryQueue = useCallback(() => {
-    if (retryIntervalRef.current) return;
-
-    retryIntervalRef.current = setInterval(() => {
-      if (!peerRef.current?.connected) return;
-
-      const now = Date.now();
-      pendingSalesRef.current.forEach((pending, timestamp) => {
-        if (now - pending.lastAttempt > RETRY_DELAY) {
-          if (pending.attempts >= MAX_RETRY_ATTEMPTS) {
-            // Give up after max attempts
-            console.error('[SYNC] Sale failed after max retries:', timestamp);
-            pendingSalesRef.current.delete(timestamp);
-          } else {
-            // Retry
-            const sent = sendMessage({ type: 'SALE_PUSH', sale: pending.sale });
-            if (sent) {
-              pending.attempts++;
-              pending.lastAttempt = now;
+      if (isAdmin && payload.type === 'SALE_PUSH') {
+        const sale = payload.sale as Sale;
+        const exists = await db.sales.where('timestamp').equals(sale.timestamp).first();
+        if (!exists) {
+          await (db as any).transaction('rw', [db.sales, db.products], async () => {
+            await db.sales.add({ ...sale, sync_status: 'synced' });
+            for (const item of sale.items) {
+              const p = await db.products.get(item.productId);
+              if (p) await db.products.update(item.productId, { stock_qty: Math.max(0, p.stock_qty - item.quantity) });
             }
-          }
+          });
         }
-      });
-    }, RETRY_DELAY);
-  }, [sendMessage]);
+      } else if (!isAdmin && payload.type === 'CATALOG_UPDATE') {
+        await (db as any).transaction('rw', [db.products], async () => {
+          await db.products.clear();
+          await db.products.bulkAdd(payload.products);
+        });
+        await db.settings.update('app_settings', { last_synced_timestamp: Date.now() });
+      }
+    } catch (e) {
+      console.error("[SYNC] Real-time Data Error:", e);
+    }
+  }, [isAdmin]);
 
-  // ============ INITIATE SYNC ============
-
-  const initiateSync = useCallback((initiator: boolean): Peer.Instance => {
+  const initiateSync = useCallback((initiator: boolean) => {
     resetConnection();
-
-    // Generate new session ID
-    const newSessionId = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+    
+    // THE FRESH SESSION RULE
+    const newSessionId = Math.random().toString(36).substring(7);
     setSessionId(newSessionId);
-    sessionIdRef.current = newSessionId;
     setStatus('connecting');
 
-    console.log('[SYNC] Initiating sync as', initiator ? 'HOST' : 'JOINER', 'Session:', newSessionId);
-
-    const peer = new Peer({
+    const p = new Peer({
       initiator,
-      trickle: false, // Wait for complete ICE gathering
-      config: {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' }
-        ]
-      }
+      trickle: false,
+      config: { iceServers: [] }
     });
 
-    // Connection timeout
-    connectionTimeoutRef.current = setTimeout(() => {
-      if (statusRef.current === 'connecting') {
-        console.warn('[SYNC] Connection timeout');
-        setStatus('failed');
-        peer.destroy();
-      }
-    }, CONNECTION_TIMEOUT);
-
-    peer.on('signal', (data) => {
-      console.log('[SYNC] Signal generated:', data.type);
-      // Signal is handled by SyncStation component
-    });
-
-    peer.on('connect', () => {
-      console.log('[SYNC] Connected!');
-      
-      // Clear connection timeout
-      if (connectionTimeoutRef.current) {
-        clearTimeout(connectionTimeoutRef.current);
-        connectionTimeoutRef.current = null;
-      }
-
+    p.on('connect', () => {
+      console.log('[SYNC] P2P Linked Successfully!');
       setStatus('live');
-      setConnectedPeers(1);
-      lastHeartbeatRef.current = Date.now();
-      setLastSyncTime(Date.now());
-
-      // Start heartbeat
-      startHeartbeat();
-
-      // Start retry queue
-      startRetryQueue();
-
-      // If admin, send catalog immediately
-      if (isAdminRef.current) {
-        setTimeout(() => {
-          broadcastInventory();
-        }, 1000);
-      }
+      setLastHeartbeat(Date.now());
+      
+      // THE HEARTBEAT RULE: Tiny ping every 10 seconds
+      heartbeatIntervalRef.current = setInterval(() => {
+        if (p.connected) {
+          p.send(JSON.stringify({ type: 'HEARTBEAT' }));
+          // Check if we lost the other side (25s timeout)
+          if (Date.now() - lastHeartbeat > 25000) {
+            setStatus('reconnecting');
+          }
+        }
+      }, 10000);
     });
 
-    peer.on('data', (data: Buffer | string) => {
-      const dataStr = typeof data === 'string' ? data : data.toString();
-      handleIncomingData(dataStr);
-    });
+    p.on('data', (data: any) => handleIncomingData(data.toString()));
 
-    peer.on('error', (err) => {
-      console.error('[SYNC] Peer error:', err.message);
-      
-      // Don't immediately fail on all errors
-      if (err.message.includes('User-Initiated') || err.message.includes('destroyed')) {
-        return;
-      }
-      
+    p.on('error', (err: any) => {
+      console.error("[SYNC] Peer Error:", err);
       setStatus('failed');
     });
 
-    peer.on('close', () => {
-      console.log('[SYNC] Connection closed');
-      
-      clearTimers();
-      setConnectedPeers(0);
-
-      if (statusRef.current === 'live' || statusRef.current === 'reconnecting') {
+    p.on('close', () => {
+      if (status === 'live') {
         setStatus('reconnecting');
-        
-        // Auto-fail after reconnect window
+        // Auto-Reconnect window (60 seconds)
         reconnectTimeoutRef.current = setTimeout(() => {
-          if (statusRef.current === 'reconnecting') {
-            setStatus('failed');
-          }
-        }, RECONNECT_WINDOW);
+          if (status !== 'live') setStatus('failed');
+        }, 60000);
       } else {
         setStatus('offline');
       }
     });
 
-    peerRef.current = peer;
-    return peer;
-  }, [resetConnection, handleIncomingData, startHeartbeat, startRetryQueue, clearTimers]);
-
-  // ============ BROADCAST FUNCTIONS ============
+    peerRef.current = p;
+    return p;
+  }, [handleIncomingData, resetConnection, lastHeartbeat, status]);
 
   const broadcastSale = useCallback((sale: Sale) => {
-    if (!peerRef.current?.connected) {
-      console.warn('[SYNC] Cannot broadcast sale: not connected');
-      return;
+    // THE AUTO-PUSH RULE
+    if (peerRef.current?.connected) {
+      peerRef.current.send(JSON.stringify({ type: 'SALE_PUSH', sale }));
     }
-
-    const sent = sendMessage({ type: 'SALE_PUSH', sale });
-    
-    if (sent && sale.timestamp) {
-      // Add to pending queue for retry
-      pendingSalesRef.current.set(sale.timestamp, {
-        sale,
-        attempts: 1,
-        lastAttempt: Date.now()
-      });
-    }
-
-    console.log('[SYNC] Sale broadcast:', sent ? 'sent' : 'queued');
-  }, [sendMessage]);
+  }, []);
 
   const broadcastInventory = useCallback(async () => {
-    if (!peerRef.current?.connected) {
-      console.warn('[SYNC] Cannot broadcast inventory: not connected');
-      return;
-    }
-
-    if (!isAdminRef.current) {
-      console.warn('[SYNC] Only admin can broadcast inventory');
-      return;
-    }
-
-    try {
+    if (peerRef.current?.connected && isAdmin) {
       const products = await db.products.toArray();
-      const sent = sendMessage({ type: 'CATALOG_UPDATE', products });
-      
-      console.log('[SYNC] Inventory broadcast:', products.length, 'products', sent ? 'sent' : 'failed');
-    } catch (e) {
-      console.error('[SYNC] Error broadcasting inventory:', e);
+      peerRef.current.send(JSON.stringify({ type: 'CATALOG_UPDATE', products }));
     }
-  }, [sendMessage]);
+  }, [isAdmin]);
 
-  const requestSync = useCallback(() => {
-    if (!peerRef.current?.connected) return;
-    sendMessage({ type: 'SYNC_REQUEST' });
-  }, [sendMessage]);
-
-  // ============ WHATSAPP SYNC ============
-
-  const processWhatsAppSync = useCallback(async (compressedData: string): Promise<{ sales: number; products: number }> => {
-    let salesCount = 0;
-    let productCount = 0;
-
+  const processWhatsAppSync = async (compressedData: string) => {
     try {
-      // Try different decompression methods
-      let json: string | null = null;
-      
-      // Try URI-encoded compression first
-      json = LZString.decompressFromEncodedURIComponent(compressedData);
-      
-      // Try base64 compression
-      if (!json) {
-        json = LZString.decompressFromBase64(compressedData);
-      }
-      
-      // Try UTF16 compression
-      if (!json) {
-        json = LZString.decompressFromUTF16(compressedData);
-      }
-      
-      // Try raw JSON
-      if (!json) {
-        try {
-          JSON.parse(compressedData);
-          json = compressedData;
-        } catch (e) {
-          // Not valid JSON
-        }
-      }
-
-      if (!json) {
-        throw new Error('Could not decompress data. Invalid format.');
-      }
-
+      // Ensure we use the correct decompression for encoded URI components (standard for sharing)
+      const json = LZString.decompressFromEncodedURIComponent(compressedData);
+      if (!json) throw new Error("Invalid or Corrupt Data String");
       const payload = JSON.parse(json);
+      
+      let salesCount = 0;
+      let productCount = 0;
 
-      // Validate payload structure
-      if (!payload.type) {
-        throw new Error('Invalid sync data: missing type');
-      }
-
-      if (payload.type === 'WHATSAPP_EXPORT' || payload.type === 'STAFF_SALES_REPORT') {
-        // Admin importing Staff sales
-        if (isAdminRef.current && payload.sales && Array.isArray(payload.sales)) {
+      if (payload.type === 'WHATSAPP_EXPORT') {
+        // Handle Admin importing Staff sales
+        if (isAdmin && payload.sales) {
           for (const sale of payload.sales) {
-            try {
-              await handleSalePush(sale, false);
+            const exists = await db.sales.where('timestamp').equals(sale.timestamp).first();
+            if (!exists) {
+              await (db as any).transaction('rw', [db.sales, db.products], async () => {
+                await db.sales.add({ ...sale, sync_status: 'synced' });
+                for (const item of sale.items) {
+                  const p = await db.products.get(item.productId);
+                  if (p) await db.products.update(item.productId, { stock_qty: Math.max(0, p.stock_qty - item.quantity) });
+                }
+              });
               salesCount++;
-            } catch (e) {
-              console.error('[SYNC] Error importing sale:', e);
             }
           }
         }
-        // Staff importing Admin catalog
-        else if (!isAdminRef.current && payload.products && Array.isArray(payload.products)) {
-          await handleCatalogUpdate(payload.products);
+        // Handle Staff importing Admin catalog
+        else if (!isAdmin && payload.products) {
+          await (db as any).transaction('rw', [db.products], async () => {
+            await db.products.clear();
+            await db.products.bulkAdd(payload.products);
+          });
           productCount = payload.products.length;
+          await db.settings.update('app_settings', { last_synced_timestamp: Date.now() });
         }
       }
-
-      // Update sync time
-      if (salesCount > 0 || productCount > 0) {
-        setLastSyncTime(Date.now());
-      }
-
       return { sales: salesCount, products: productCount };
     } catch (e: any) {
-      console.error('[SYNC] WhatsApp sync error:', e);
-      throw new Error(`Sync Failed: ${e.message}`);
+      throw new Error("Sync Failed: " + e.message);
     }
-  }, [handleSalePush, handleCatalogUpdate]);
-
-  // ============ CONTEXT VALUE ============
-
-  const contextValue: SyncContextType = {
-    status,
-    sessionId,
-    connectedPeers,
-    lastSyncTime,
-    initiateSync,
-    broadcastSale,
-    broadcastInventory,
-    processWhatsAppSync,
-    resetConnection,
-    requestSync
   };
 
+  useEffect(() => {
+    return () => resetConnection();
+  }, [resetConnection]);
+
   return (
-    <SyncContext.Provider value={contextValue}>
+    <SyncContext.Provider value={{ 
+      status, 
+      peer: peerRef.current, 
+      sessionId,
+      initiateSync, 
+      broadcastSale, 
+      broadcastInventory,
+      processWhatsAppSync,
+      resetConnection,
+      lastHeartbeat 
+    }}>
       {children}
     </SyncContext.Provider>
   );
 };
 
-// ============ HOOK ============
-
-export const useSync = (): SyncContextType => {
+export const useSync = () => {
   const context = useContext(SyncContext);
-  if (!context) {
-    throw new Error('useSync must be used within a SyncProvider');
-  }
+  if (!context) throw new Error("useSync must be used within SyncProvider");
   return context;
 };
-
-export default SyncProvider;

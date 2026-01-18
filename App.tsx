@@ -18,20 +18,17 @@ import StaffManagement from './pages/StaffManagement';
 import BarcodeScanner from './components/BarcodeScanner';
 import { SyncProvider } from './context/SyncProvider';
 import { 
-  ShieldAlert, 
-  Key, 
   Lock, 
   User, 
   Store, 
   AlertTriangle,
   ShieldCheck,
-  UserCheck,
   Smartphone,
-  Users,
   ArrowRight,
   Camera,
-  LogOut,
-  Loader2
+  Loader2,
+  CheckCircle2,
+  Key
 } from 'lucide-react';
 
 const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-9987-b4ed4c0e3c36.png";
@@ -65,12 +62,12 @@ const AppContent: React.FC = () => {
   const [currentView, setCurrentView] = useState<View>('dashboard');
   const [isInitialized, setIsInitialized] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
-  const [initError, setInitError] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<Staff | null>(null);
   const [loginPassword, setLoginPassword] = useState('');
   const [selectedStaffId, setSelectedStaffId] = useState<number | 'admin' | ''>('');
   const [isJoining, setIsJoining] = useState(false);
   const [isProcessingJoin, setIsProcessingJoin] = useState(false);
+  const [joinSuccess, setJoinSuccess] = useState(false);
   
   const [setupData, setSetupData] = useState({ shopName: '', adminName: '', adminPin: '' });
 
@@ -91,7 +88,7 @@ const AppContent: React.FC = () => {
       try {
         await initSettings();
         
-        // 1. INVITE PRIORITY: Process URL data before checking setup status
+        // 1. Check for invite in URL on startup
         const urlParams = new URLSearchParams(window.location.search);
         const inviteData = urlParams.get('staffData') || urlParams.get('invite');
         
@@ -100,7 +97,7 @@ const AppContent: React.FC = () => {
         }
         setIsInitialized(true);
       } catch (err: any) {
-        setInitError(err?.message || "Could not connect to local database.");
+        console.error("Initialization failed", err);
       }
     };
     start();
@@ -131,64 +128,71 @@ const AppContent: React.FC = () => {
 
   const processStaffJoin = async (scannedText: string) => {
     setIsProcessingJoin(true);
+    setJoinSuccess(false);
+
     try {
-      let dataToProcess = scannedText;
-      
-      // Handle URL vs Raw string
+      let dataToParse = scannedText;
+
+      // STEP 1: Handle URL vs Raw Data
       if (scannedText.startsWith('http')) {
         const url = new URL(scannedText);
         const params = new URLSearchParams(url.search);
-        dataToProcess = params.get('staffData') || params.get('invite') || '';
+        dataToParse = params.get('staffData') || params.get('invite') || '';
       }
 
-      if (!dataToProcess) throw new Error("No data found");
+      if (!dataToParse) throw new Error("No data found");
 
-      // Decompress the data
-      let json = LZString.decompressFromEncodedURIComponent(dataToProcess);
-      
-      // Fallback for non-compressed legacy invites or base64
+      // Decompress for robust reading
+      let json = LZString.decompressFromEncodedURIComponent(dataToParse);
       if (!json) {
-        try { json = atob(dataToProcess); } catch(e) { json = dataToProcess; }
+        try { json = atob(dataToParse); } catch(e) { json = dataToParse; }
       }
 
       const parsedData = JSON.parse(json);
-      if (!parsedData.name || !parsedData.shop) throw new Error("Invalid format");
+      const shopName = parsedData.shop || parsedData.shopName;
+      if (!shopName) throw new Error("Missing shop identity");
 
-      // Immediate DB Provisioning
+      // STEP 2: Immediate Database Provisioning
       await (db as any).transaction('rw', [db.staff, db.settings], async () => {
-        // Clear potential partial setup
-        await db.staff.clear(); 
-        
-        // Add the Staff member
-        await db.staff.add({ 
-          name: parsedData.name, 
-          role: parsedData.role || 'Sales', 
-          password: parsedData.password, 
-          status: 'Active', 
-          created_at: Date.now() 
-        });
-        
-        // Provision the Shop Identity and Lock setup
+        // Update Shop Identity and Setup status
         await db.settings.update('app_settings', { 
-          shop_name: parsedData.shop, 
-          is_setup_complete: true, 
-          license_key: 'STAFF-TERMINAL-ACTIVE' 
+          shop_name: shopName, 
+          is_setup_complete: true,
+          license_key: 'STAFF-LINKED'
         });
+
+        // Add the Staff member
+        if (parsedData.name && parsedData.password) {
+          await db.staff.clear(); // Ensure clean slate for staff terminal
+          await db.staff.add({ 
+            name: parsedData.name, 
+            role: parsedData.role || 'Sales', 
+            password: parsedData.password, 
+            status: 'Active', 
+            created_at: Date.now() 
+          });
+          localStorage.setItem('invitedStaffName', parsedData.name);
+        }
       });
 
-      localStorage.setItem('isStaffDevice', 'true');
-      localStorage.setItem('invitedStaffName', parsedData.name);
+      // STEP 4: Store Signal for SyncStation
+      if (parsedData.signal) {
+        localStorage.setItem('pendingSyncSignal', JSON.stringify(parsedData.signal));
+      }
 
-      // Brief pause for visual confirmation
+      localStorage.setItem('isStaffDevice', 'true');
+
+      // STEP 5: Visual Feedback (1s Delay)
+      setJoinSuccess(true);
       setTimeout(() => {
+        // STEP 3: Force State Refresh
         window.location.reload();
       }, 1000);
+
     } catch (e) {
-      console.error("Join Error:", e);
+      console.error("Join Failed:", e);
       setIsProcessingJoin(false);
-      if (scannedText.startsWith('http') || scannedText.length > 20) {
-        alert("Invalid Invite Code. Please ask the Admin for a new QR code.");
-      }
+      alert("Invalid Invite Code. Please ask the Admin for a new QR code.");
     }
   };
 
@@ -206,22 +210,36 @@ const AppContent: React.FC = () => {
     );
   }
 
-  if (isJoining) {
+  if (isJoining || isProcessingJoin) {
     return (
       <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-center">
         {isProcessingJoin ? (
-          <div className="bg-white p-12 rounded-[3rem] space-y-6 animate-in zoom-in">
-             <Loader2 size={64} className="animate-spin text-emerald-600 mx-auto" />
-             <div className="space-y-2">
-               <h3 className="text-2xl font-black text-slate-900">Joining Shop...</h3>
-               <p className="text-slate-500 font-bold uppercase tracking-widest text-[10px]">Provisioning Local Terminal</p>
-             </div>
+          <div className="bg-white p-12 rounded-[3rem] space-y-8 animate-in zoom-in w-full max-w-sm shadow-2xl">
+             {joinSuccess ? (
+               <div className="space-y-6">
+                 <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto shadow-inner">
+                   <CheckCircle2 size={40} className="animate-bounce" />
+                 </div>
+                 <div className="space-y-2">
+                   <h3 className="text-2xl font-black text-slate-900 tracking-tight">Joining Success!</h3>
+                   <p className="text-slate-500 font-bold uppercase tracking-widest text-[10px]">Provisioning Terminal...</p>
+                 </div>
+               </div>
+             ) : (
+               <div className="space-y-6">
+                 <Loader2 size={64} className="animate-spin text-emerald-600 mx-auto" />
+                 <div className="space-y-2">
+                   <h3 className="text-2xl font-black text-slate-900 tracking-tight">Validating Invite</h3>
+                   <p className="text-slate-500 font-bold uppercase tracking-widest text-[10px]">Checking Shop Security</p>
+                 </div>
+               </div>
+             )}
           </div>
         ) : (
           <>
             <BarcodeScanner onScan={processStaffJoin} onClose={() => setIsJoining(false)} />
             <div className="fixed bottom-10 left-0 right-0 p-6 flex flex-col items-center">
-               <p className="text-white font-black uppercase tracking-widest text-xs mb-4">Scan Admin's Invite QR</p>
+               <p className="text-white font-black uppercase tracking-widest text-xs mb-4">Point Camera at Admin's Invite QR</p>
                <button onClick={() => setIsJoining(false)} className="px-8 py-3 bg-white/10 text-white rounded-xl font-bold border border-white/5">Cancel Join</button>
             </div>
           </>
@@ -260,7 +278,6 @@ const AppContent: React.FC = () => {
             <div className="flex items-center gap-2 justify-center text-[10px] font-black text-slate-400 uppercase tracking-widest"><ShieldCheck size={14} className="text-emerald-500" /> Secure Storage Active</div>
           </form>
 
-          {/* JOIN BUTTON FOR STAFF */}
           <div className="text-center space-y-4">
              <div className="flex items-center gap-4 py-2">
                 <div className="h-px flex-1 bg-slate-200"></div>
@@ -271,7 +288,7 @@ const AppContent: React.FC = () => {
                 <div className="w-8 h-8 bg-emerald-50 text-emerald-600 rounded-lg flex items-center justify-center group-hover:bg-emerald-600 group-hover:text-white transition-all"><Camera size={18} /></div>
                 <div className="text-left">
                   <p className="text-sm font-black">Invited as Staff?</p>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Click here to Join Shop</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Scan Invite QR to Join</p>
                 </div>
                 <ArrowRight size={18} className="ml-2 text-slate-300 group-hover:text-emerald-600 group-hover:translate-x-1 transition-all" />
              </button>
