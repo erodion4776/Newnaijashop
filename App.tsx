@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, ErrorInfo, ReactNode } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, initSettings } from './db/db';
@@ -38,7 +37,6 @@ import {
   RefreshCw,
   Wifi,
   XCircle,
-  UserShield,
   Settings2,
   Wrench
 } from 'lucide-react';
@@ -330,7 +328,7 @@ const AppContent: React.FC = () => {
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
-        <div className="w-full max-w-sm space-y-10">
+        <div className="w-full max-sm:space-y-10 space-y-10">
           <div className="text-center flex flex-col items-center">
              <div className="w-24 h-24 bg-white rounded-[2rem] p-4 flex items-center justify-center shadow-2xl border border-slate-100 mb-6">
                 <img src={LOGO_URL} className="w-full h-full object-contain" alt="NaijaShop Logo" />
@@ -360,7 +358,7 @@ const AppContent: React.FC = () => {
               onClick={handleAdminOverride}
               className="inline-flex items-center gap-2 text-slate-400 font-bold text-xs uppercase tracking-widest hover:text-emerald-600 transition-colors"
             >
-              <UserShield size={14} /> Master Key Login
+              <ShieldCheck size={14} /> Master Key Login
             </button>
             <div className="flex items-center justify-center gap-2 text-[10px] text-slate-300 font-medium">
               <Wrench size={12} />
