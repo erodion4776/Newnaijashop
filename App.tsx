@@ -40,7 +40,8 @@ import {
   Settings2,
   Wrench,
   QrCode,
-  ArrowLeft
+  ArrowLeft,
+  PartyPopper
 } from 'lucide-react';
 
 const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-9987-b4ed4c0e3c36.png";
@@ -83,6 +84,7 @@ const AppContent: React.FC = () => {
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState(false);
   const [showScannerForJoin, setShowScannerForJoin] = useState(false);
+  const [welcomeMessage, setWelcomeMessage] = useState<string | null>(null);
   
   const [setupData, setSetupData] = useState({ shopName: '', adminName: '', adminPin: '' });
 
@@ -96,7 +98,7 @@ const AppContent: React.FC = () => {
     return () => clearTimeout(splashTimer);
   }, []);
 
-  // 1. Restore and Enhance URL Listener
+  // Handle URL Listener for Invites and Imports
   useEffect(() => {
     const start = async () => {
       try {
@@ -104,7 +106,6 @@ const AppContent: React.FC = () => {
         
         const urlParams = new URLSearchParams(window.location.search);
         const importData = urlParams.get('importData');
-        // Handle various invite param names for robustness
         const staffOnboarding = urlParams.get('staffData') || urlParams.get('data') || urlParams.get('invite');
 
         if (importData) {
@@ -120,6 +121,23 @@ const AppContent: React.FC = () => {
     };
     start();
   }, []);
+
+  // Check for 'justJoined' flag to auto-select staff and show welcome
+  useEffect(() => {
+    if (isInitialized && !currentUser && staffList.length > 0) {
+      const justJoined = localStorage.getItem('justJoined');
+      const invitedName = localStorage.getItem('invitedStaffName');
+      
+      if (justJoined === 'true' && invitedName) {
+        const staff = staffList.find(s => s.name === invitedName);
+        if (staff && staff.id) {
+          setSelectedStaffId(staff.id);
+          setWelcomeMessage(`Welcome to ${settings?.shop_name || 'the shop'}! Please enter your PIN to start.`);
+          localStorage.removeItem('justJoined');
+        }
+      }
+    }
+  }, [isInitialized, currentUser, staffList, settings]);
 
   const handleMagicLinkImport = async (compressed: string) => {
     setIsProcessingImport(true);
@@ -139,12 +157,10 @@ const AppContent: React.FC = () => {
     }
   };
 
-  // 2. Robust Decoding & 3. Atomic Database Save
   const handleStaffInvite = async (compressed: string) => {
     setIsProcessingInvite(true);
     setInviteError(null);
     try {
-      // Robust decoding from URL
       let dataString = compressed;
       if (compressed.includes('staffData=')) dataString = compressed.split('staffData=')[1];
       else if (compressed.includes('data=')) dataString = compressed.split('data=')[1];
@@ -157,7 +173,6 @@ const AppContent: React.FC = () => {
 
       // ATOMIC PROVISIONING
       await (db as any).transaction('rw', [db.settings, db.staff], async () => {
-        // Ensure settings exist first
         const currentSettings = await db.settings.get('app_settings');
         
         await db.settings.put({
@@ -165,33 +180,33 @@ const AppContent: React.FC = () => {
           id: 'app_settings',
           shop_name: data.shop || data.shopName, 
           sync_key: data.syncKey || data.masterSyncKey,
-          is_setup_complete: true,
+          is_setup_complete: true, // Bypass Setup for Staff
           last_used_timestamp: Date.now()
         });
         
-        // Clear old staff (this is a fresh terminal join)
         await db.staff.clear();
         
-        // Add the invited staff member
+        const staffName = data.name || data.staffMember?.name;
         await db.staff.add({
-          name: data.name || data.staffMember?.name,
+          name: staffName,
           role: data.role || data.staffMember?.role || 'Sales',
           password: data.password || data.staffMember?.password,
           status: 'Active',
           created_at: Date.now()
         });
+
+        // Set flags for Login page auto-selection
+        localStorage.setItem('justJoined', 'true');
+        localStorage.setItem('invitedStaffName', staffName);
       });
 
-      // 4. URL Cleanup & Redirect
       window.history.replaceState({}, document.title, '/');
       localStorage.setItem('isStaffDevice', 'true');
       setIsStaffDevice(true);
-      
-      // Forces re-render into the Login view
       setIsInitialized(true); 
     } catch (err) {
       console.error("Invite processing error:", err);
-      setInviteError("Invite Failed. The link might be corrupt or the shop key is missing.");
+      setInviteError("Invite Failed. The link might be corrupt or expired.");
     } finally {
       setIsProcessingInvite(false);
     }
@@ -238,7 +253,6 @@ const AppContent: React.FC = () => {
     
     await db.settings.update('app_settings', updatedSettings);
     
-    // AUTO-PROMOTE TO ADMIN AFTER SETUP
     setCurrentUser({
       name: updatedSettings.admin_name,
       role: 'Admin',
@@ -252,7 +266,6 @@ const AppContent: React.FC = () => {
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    // 1. MASTER RECOVERY PIN LOGIC
     if (loginPassword === MASTER_RECOVERY_PIN) {
       if (settings) {
         setCurrentUser({ 
@@ -262,19 +275,18 @@ const AppContent: React.FC = () => {
           status: 'Active', 
           created_at: Date.now() 
         });
-        setCurrentView('settings'); // Redirect to fix settings
-        alert("Emergency Admin Access Granted. Please update your PIN in Settings.");
+        setCurrentView('settings');
+        alert("Emergency Admin Access Granted.");
         return;
       }
     }
 
-    // 2. STANDARD LOGIN LOGIC
     if (selectedStaffId === 'admin') {
       if (loginPassword === settings?.admin_pin) {
         setCurrentUser({ name: settings.admin_name, role: 'Admin', password: settings.admin_pin, status: 'Active', created_at: Date.now() });
       } else alert("Invalid PIN");
     } else {
-      const staff = staffList.find(s => s.id === selectedStaffId);
+      const staff = staffList.find(s => s.id === Number(selectedStaffId));
       if (staff && staff.password === loginPassword) {
         setCurrentUser(staff);
         if (staff.role === 'Sales') setCurrentView('pos');
@@ -331,7 +343,6 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // FIX: SHOW SETUP ONLY IF DB IS COMPLETELY NEW OR NO PIN CONFIGURED
   if (isInitialized && settings && (!settings.is_setup_complete || !settings.admin_pin)) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
@@ -364,7 +375,6 @@ const AppContent: React.FC = () => {
                <div className="relative flex justify-center text-[10px] font-black uppercase tracking-widest"><span className="bg-white px-4 text-slate-300">Or</span></div>
             </div>
 
-            {/* 6. Fix the 'Join' Button */}
             <button 
               onClick={() => setShowScannerForJoin(true)}
               className="w-full py-4 bg-slate-50 text-slate-600 rounded-[2rem] font-black text-xs uppercase tracking-widest border border-slate-200 hover:bg-slate-100 transition-all flex items-center justify-center gap-3"
@@ -388,17 +398,30 @@ const AppContent: React.FC = () => {
              <h1 className="text-4xl font-black text-slate-900 tracking-tight">{settings?.shop_name || 'NaijaShop'}</h1>
              <p className="text-slate-400 font-bold text-sm mt-1 uppercase tracking-widest">Digital POS Terminal</p>
           </div>
+
           <div className="bg-white p-10 rounded-[3rem] shadow-2xl border border-slate-200 space-y-8 relative overflow-hidden">
             {isStaffDevice && (
                <div className="absolute top-0 left-0 right-0 bg-emerald-600 text-white text-[9px] font-black uppercase tracking-widest text-center py-1.5 px-4 flex items-center justify-center gap-2">
                  <Smartphone size={10} /> Staff Terminal
                </div>
             )}
-            <form onSubmit={handleLoginSubmit} className={`space-y-6 ${isStaffDevice ? 'pt-4' : ''}`}>
+            
+            {welcomeMessage && (
+               <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-2xl flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
+                 <div className="bg-emerald-600 text-white p-2 rounded-xl">
+                   <PartyPopper size={18} />
+                 </div>
+                 <p className="text-xs font-bold text-emerald-800 leading-tight">
+                   {welcomeMessage}
+                 </p>
+               </div>
+            )}
+
+            <form onSubmit={handleLoginSubmit} className={`space-y-6 ${isStaffDevice && !welcomeMessage ? 'pt-4' : ''}`}>
               <select required className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold" value={selectedStaffId} onChange={(e) => setSelectedStaffId(e.target.value === 'admin' ? 'admin' : Number(e.target.value))}>
                 <option value="">Select Account</option>
-                <option value="admin">{settings?.admin_name || 'Owner'} (Admin)</option>
-                {staffList.map(s => <option key={s.id} value={s.id}>{s.name} ({s.role})</option>)}
+                {!isStaffDevice && <option value="admin">{settings?.admin_name || 'Owner'} (Admin)</option>}
+                {staffList.map(s => <option key={s.id} value={s.id!}>{s.name} ({s.role})</option>)}
               </select>
               <input required type="password" placeholder="PIN / Password" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} />
               <button type="submit" className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-xl hover:bg-emerald-700 shadow-xl transition-all">Unlock Terminal</button>
@@ -412,10 +435,6 @@ const AppContent: React.FC = () => {
             >
               <ShieldCheck size={14} /> Master Key Login
             </button>
-            <div className="flex items-center justify-center gap-2 text-[10px] text-slate-300 font-medium">
-              <Wrench size={12} />
-              <span>Recovery PIN is {MASTER_RECOVERY_PIN}</span>
-            </div>
           </div>
         </div>
       </div>
@@ -424,7 +443,7 @@ const AppContent: React.FC = () => {
 
   return (
     <SyncProvider currentUser={currentUser}>
-      <Layout activeView={currentView} setView={setCurrentView} shopName={settings?.shop_name || 'NaijaShop POS'} currentUser={currentUser} onLogout={() => setCurrentUser(null)}>
+      <Layout activeView={currentView} setView={setCurrentView} shopName={settings?.shop_name || 'NaijaShop POS'} currentUser={currentUser} onLogout={() => { setCurrentUser(null); setWelcomeMessage(null); }}>
         {currentView === 'dashboard' && <Dashboard currentUser={currentUser} setView={setCurrentView} />}
         {currentView === 'pos' && <POS setView={setCurrentView} currentUser={currentUser} />}
         {currentView === 'activity-log' && <ActivityLog />}
