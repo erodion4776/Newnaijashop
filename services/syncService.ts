@@ -1,7 +1,16 @@
-
 import LZString from 'lz-string';
 import { db } from '../db/db';
 import { Sale, Product } from '../types';
+
+/**
+ * Generates a unique 16-character alphanumeric sync key for the shop.
+ * Format: NS-XXXX-XXXX-XXXX
+ */
+export const generateSyncKey = (): string => {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ0123456789';
+  const part = () => Array.from({ length: 4 }, () => chars.charAt(Math.floor(Math.random() * chars.length))).join('');
+  return `NS-${part()}-${part()}-${part()}`;
+};
 
 /**
  * Encrypts/Decrypts a string using a basic XOR cipher with the shop's sync key.
@@ -75,7 +84,6 @@ export const importWhatsAppBridgeData = async (compressedString: string, key: st
             importedCount++;
           }
         }
-        // Mark sales as synced locally if it was the staff sending (but here we are on Admin)
       });
       return { success: true, type: 'SALES', count: importedCount };
     }

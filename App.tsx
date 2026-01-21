@@ -18,7 +18,7 @@ import StaffManagement from './pages/StaffManagement';
 import ActivityLog from './pages/ActivityLog';
 import BarcodeScanner from './components/BarcodeScanner';
 import { SyncProvider } from './context/SyncProvider';
-import { importWhatsAppBridgeData } from './services/syncService';
+import { importWhatsAppBridgeData, generateSyncKey } from './services/syncService';
 import { 
   Lock, 
   User, 
@@ -30,7 +30,13 @@ import {
   Camera,
   Loader2,
   CheckCircle2,
-  Key
+  Key,
+  Copy,
+  Check,
+  Zap,
+  Info,
+  // Added missing RefreshCw icon import to resolve the compilation error.
+  RefreshCw
 } from 'lucide-react';
 
 const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-9987-b4ed4c0e3c36.png";
@@ -68,6 +74,7 @@ const AppContent: React.FC = () => {
   const [loginPassword, setLoginPassword] = useState('');
   const [selectedStaffId, setSelectedStaffId] = useState<number | 'admin' | ''>('');
   const [isProcessingImport, setIsProcessingImport] = useState(false);
+  const [copiedKey, setCopiedKey] = useState(false);
   
   const [setupData, setSetupData] = useState({ shopName: '', adminName: '', adminPin: '' });
 
@@ -115,6 +122,8 @@ const AppContent: React.FC = () => {
         const result = await importWhatsAppBridgeData(compressed, currentSettings.sync_key);
         alert(`Magic Import Success!\n${result.count} items processed.`);
         window.history.replaceState({}, document.title, "/");
+      } else {
+        alert("Sync Key missing on this terminal. Please generate one in Sync Station.");
       }
     } catch (err) {
       alert("Magic Import Failed. Ensure your Sync Key matches.");
@@ -150,6 +159,14 @@ const AppContent: React.FC = () => {
       window.location.reload();
     } catch (err) {
       alert("Onboarding failed.");
+    }
+  };
+
+  const copyKeyToClipboard = () => {
+    if (settings?.sync_key) {
+      navigator.clipboard.writeText(settings.sync_key);
+      setCopiedKey(true);
+      setTimeout(() => setCopiedKey(false), 2000);
     }
   };
 
@@ -258,14 +275,65 @@ const AppContent: React.FC = () => {
         {currentView === 'sync' && <SyncStation currentUser={currentUser} setView={setCurrentView} />}
         {currentView === 'staff-management' && <StaffManagement />}
         {currentView === 'settings' && currentUser?.role === 'Admin' && (
-          <div className="max-w-4xl mx-auto space-y-6">
-             <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
-                <h3 className="text-xl font-black text-slate-800 mb-4">Security Settings</h3>
-                <div className="space-y-4">
+          <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in">
+             <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm space-y-8">
+                <div>
+                   <h3 className="text-2xl font-black text-slate-800 tracking-tight">Shop Identity</h3>
+                   <p className="text-slate-500 text-sm">Control how your business appears on receipts and terminals.</p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Master Sync Key (For WhatsApp Bridge)</label>
-                    <input className="w-full px-5 py-3 bg-slate-50 border border-slate-200 rounded-xl font-mono" value={settings?.sync_key} onChange={async (e) => await db.settings.update('app_settings', { sync_key: e.target.value })} />
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 ml-1">Business Name</label>
+                    <input className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold outline-none focus:ring-2 focus:ring-emerald-500" value={settings?.shop_name} onChange={async (e) => await db.settings.update('app_settings', { shop_name: e.target.value })} />
                   </div>
+                  <div>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 ml-1">Admin Display Name</label>
+                    <input className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold outline-none focus:ring-2 focus:ring-emerald-500" value={settings?.admin_name} onChange={async (e) => await db.settings.update('app_settings', { admin_name: e.target.value })} />
+                  </div>
+                </div>
+             </div>
+
+             <div className="bg-emerald-900 p-10 rounded-[3rem] text-white relative overflow-hidden shadow-2xl">
+                <div className="absolute right-[-20px] top-[-20px] opacity-10">
+                  <Key size={180} />
+                </div>
+                <div className="relative z-10 space-y-6">
+                   <div className="flex items-center gap-4">
+                      <div className="p-3 bg-white/20 rounded-2xl"><Zap size={24} /></div>
+                      <div>
+                        <h3 className="text-xl font-black">Shop Sync Key</h3>
+                        <p className="text-emerald-300 font-bold uppercase tracking-widest text-[10px]">Security Bridge Configuration</p>
+                      </div>
+                   </div>
+
+                   <div className="bg-white/10 p-6 rounded-3xl border border-white/10 space-y-4">
+                      <p className="text-sm leading-relaxed text-emerald-50/80 font-medium">
+                        This key must be the same on both Admin and Staff phones for WhatsApp Sync to work. Use this to manually link terminals.
+                      </p>
+                      <div className="flex flex-col sm:flex-row items-center gap-3">
+                        <div className="flex-1 w-full bg-emerald-950/50 px-6 py-4 rounded-2xl font-mono text-lg font-black tracking-widest border border-emerald-800/50 flex items-center justify-between">
+                           {settings?.sync_key || 'MISSING_KEY'}
+                           <button onClick={copyKeyToClipboard} className="text-emerald-400 hover:text-white transition-colors">
+                              {copiedKey ? <Check size={20} /> : <Copy size={20} />}
+                           </button>
+                        </div>
+                        <button 
+                           onClick={async () => {
+                             if(confirm("Regenerating the sync key will unlink all current staff terminals until they are updated with the new key. Proceed?")) {
+                               await db.settings.update('app_settings', { sync_key: generateSyncKey() });
+                             }
+                           }}
+                           className="w-full sm:w-auto px-6 py-4 bg-white text-emerald-900 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl flex items-center justify-center gap-2"
+                        >
+                           <RefreshCw size={14} /> Regenerate
+                        </button>
+                      </div>
+                   </div>
+
+                   <div className="flex items-center gap-2 text-emerald-300">
+                      <Info size={14} />
+                      <span className="text-[10px] font-black uppercase tracking-widest">Invite QR codes automatically include this key</span>
+                   </div>
                 </div>
              </div>
           </div>

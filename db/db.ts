@@ -1,8 +1,8 @@
-
 // Use named import for Dexie to ensure proper prototype inheritance and access to instance methods like version, transaction, and delete in TypeScript.
 import { Dexie } from 'dexie';
 import type { Table } from 'dexie';
 import { Product, Sale, Debt, Settings, ParkedSale, InventoryLog, Staff } from '../types';
+import { generateSyncKey } from '../services/syncService';
 
 /**
  * Main Database class for the application.
@@ -44,7 +44,7 @@ export const initSettings = async () => {
       shop_name: '',
       admin_name: '',
       admin_pin: '',
-      sync_key: Math.random().toString(36).substring(2, 15),
+      sync_key: generateSyncKey(),
       is_setup_complete: false,
       bank_name: 'Access Bank',
       account_number: '0123456789',
@@ -52,5 +52,8 @@ export const initSettings = async () => {
       last_used_timestamp: Date.now(),
       last_synced_timestamp: 0
     });
+  } else if (!settings.sync_key) {
+    // Migration for existing users who might be missing the key
+    await db.settings.update('app_settings', { sync_key: generateSyncKey() });
   }
 };
