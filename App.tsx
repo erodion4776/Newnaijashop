@@ -36,7 +36,9 @@ import {
   Info,
   RefreshCw,
   Wifi,
-  XCircle
+  XCircle,
+  UserShield,
+  Settings2
 } from 'lucide-react';
 
 const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-9987-b4ed4c0e3c36.png";
@@ -47,7 +49,7 @@ interface ErrorBoundaryState { hasError: boolean; error: Error | null; }
 class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   public state: ErrorBoundaryState = { hasError: false, error: null };
   static getDerivedStateFromError(error: Error) { return { hasError: true, error }; }
-  componentCatch(error: Error, errorInfo: ErrorInfo) { console.error("Uncaught Terminal Error:", error, errorInfo); }
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) { console.error("Uncaught Terminal Error:", error, errorInfo); }
   render() {
     const { hasError } = this.state;
     const { children } = (this as any).props;
@@ -84,7 +86,8 @@ const AppContent: React.FC = () => {
   const staffList = useLiveQuery(() => db.staff.filter(s => s.status === 'Active').toArray()) || [];
   const terminalId = useMemo(() => generateRequestCode(), []);
 
-  const [isStaffDevice] = useState(() => localStorage.getItem('isStaffDevice') === 'true');
+  // Use a state variable for isStaffDevice to allow UI updates when toggled
+  const [isStaffDevice, setIsStaffDevice] = useState(() => localStorage.getItem('isStaffDevice') === 'true');
 
   useEffect(() => {
     const splashTimer = setTimeout(() => setShowSplash(false), 2500);
@@ -120,7 +123,6 @@ const AppContent: React.FC = () => {
       const currentSettings = await db.settings.get('app_settings');
       if (currentSettings?.sync_key) {
         const result = await importWhatsAppBridgeData(compressed, currentSettings.sync_key);
-        // Clean URL after import
         window.history.replaceState({}, document.title, window.location.pathname);
         alert(`Magic Import Success!\n${result.count} items processed.`);
       } else {
@@ -133,9 +135,6 @@ const AppContent: React.FC = () => {
     }
   };
 
-  /**
-   * ATOMIC PROVISIONING: Handle staff joins with URL cleaning and state sync.
-   */
   const handleStaffInvite = async (compressed: string) => {
     setIsProcessingInvite(true);
     setInviteError(null);
@@ -145,7 +144,6 @@ const AppContent: React.FC = () => {
       
       const data = JSON.parse(json);
 
-      // 1. Atomic Provisioning
       await (db as any).transaction('rw', [db.settings, db.staff], async () => {
         await db.settings.update('app_settings', { 
           shop_name: data.shop, 
@@ -154,7 +152,6 @@ const AppContent: React.FC = () => {
           last_used_timestamp: Date.now()
         });
         
-        // Remove existing staff to ensure only the invited one is present on staff devices
         await db.staff.clear();
         await db.staff.add({
           name: data.name,
@@ -165,14 +162,9 @@ const AppContent: React.FC = () => {
         });
       });
 
-      // 2. URL Cleaning (Stop the Loop)
       window.history.replaceState({}, document.title, window.location.pathname);
-
-      // 3. State Synchronization
       localStorage.setItem('isStaffDevice', 'true');
-      localStorage.setItem('invitedStaffName', data.name);
-      
-      // Force immediate re-initialization to trigger Login View
+      setIsStaffDevice(true);
       setIsInitialized(true);
     } catch (err) {
       console.error("Invite processing error:", err);
@@ -192,14 +184,25 @@ const AppContent: React.FC = () => {
 
   const resetTerminal = async () => {
     if (confirm("This will wipe all local data and reset the terminal. Proceed?")) {
-      // Fix: Cast db to any to ensure 'delete' is recognized if inheritance is not correctly picked up by the compiler.
       await (db as any).delete();
       localStorage.clear();
       window.location.href = '/';
     }
   };
 
-  // 4. THE WELCOME GUARD: Processing invite screen
+  const handleAdminOverride = async () => {
+    const pin = prompt("Enter Master Admin PIN to restore Admin access:");
+    if (!pin) return;
+    
+    if (pin === settings?.admin_pin) {
+      localStorage.removeItem('isStaffDevice');
+      setIsStaffDevice(false);
+      alert("Admin access restored. You can now select the Admin account from the dropdown.");
+    } else {
+      alert("Incorrect Admin PIN.");
+    }
+  };
+
   if (isProcessingInvite || isProcessingImport) {
     return (
       <div className="min-h-screen bg-emerald-950 flex flex-col items-center justify-center p-6 text-center">
@@ -213,7 +216,6 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // 5. ERROR CATCHING: Invite failure UI
   if (inviteError) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center">
@@ -287,7 +289,12 @@ const AppContent: React.FC = () => {
              <h1 className="text-4xl font-black text-slate-900 tracking-tight">{settings?.shop_name || 'NaijaShop'}</h1>
              <p className="text-slate-400 font-bold text-sm mt-1 uppercase tracking-widest">Digital POS Terminal</p>
           </div>
-          <div className="bg-white p-10 rounded-[3rem] shadow-2xl border border-slate-200 space-y-8">
+          <div className="bg-white p-10 rounded-[3rem] shadow-2xl border border-slate-200 space-y-8 relative overflow-hidden">
+            {isStaffDevice && (
+               <div className="absolute top-0 left-0 right-0 bg-emerald-600 text-white text-[9px] font-black uppercase tracking-widest text-center py-1.5 px-4 flex items-center justify-center gap-2">
+                 <Smartphone size={10} /> Staff Provisioned Terminal
+               </div>
+            )}
             <form onSubmit={(e) => {
               e.preventDefault();
               if (selectedStaffId === 'admin') {
@@ -301,7 +308,7 @@ const AppContent: React.FC = () => {
                   if (staff.role === 'Sales') setCurrentView('pos');
                 } else alert("Invalid Password");
               }
-            }} className="space-y-6">
+            }} className={`space-y-6 ${isStaffDevice ? 'pt-4' : ''}`}>
               <select required className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold" value={selectedStaffId} onChange={(e) => setSelectedStaffId(e.target.value === 'admin' ? 'admin' : Number(e.target.value))}>
                 <option value="">Select Account</option>
                 {!isStaffDevice && <option value="admin">{settings?.admin_name} (Admin)</option>}
@@ -311,6 +318,17 @@ const AppContent: React.FC = () => {
               <button type="submit" className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-xl hover:bg-emerald-700 shadow-xl transition-all">Unlock Terminal</button>
             </form>
           </div>
+          
+          {isStaffDevice && (
+            <div className="text-center pt-4">
+              <button 
+                onClick={handleAdminOverride}
+                className="inline-flex items-center gap-2 text-slate-400 font-bold text-xs uppercase tracking-widest hover:text-emerald-600 transition-colors"
+              >
+                <UserShield size={14} /> Switch to Admin Device
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );
