@@ -8,6 +8,7 @@ export interface Product {
   category: string;
   expiry_date?: string;
   barcode?: string;
+  low_stock_threshold: number; // New field for alerts
 }
 
 export interface InventoryLog {
@@ -31,12 +32,14 @@ export interface SaleItem {
 
 export interface Sale {
   id?: number;
+  sale_id: string; // Unique UUID for deduplication
   items: SaleItem[];
   total_amount: number;
   payment_method: 'cash' | 'transfer' | 'pos' | 'split' | 'Bank Transfer';
   cash_amount?: number;
   debt_amount?: number;
   staff_id: string;
+  staff_name: string; // Name of staff for the activity log
   timestamp: number;
   sync_status: 'pending' | 'synced' | 'verified';
   confirmed_by?: string;

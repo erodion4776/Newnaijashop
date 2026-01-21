@@ -84,7 +84,8 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser }) => {
     stock_qty: 0,
     category: 'General',
     barcode: '',
-    expiry_date: ''
+    expiry_date: '',
+    low_stock_threshold: 5
   };
 
   const [formData, setFormData] = useState<Product>(initialFormState);
@@ -103,7 +104,8 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser }) => {
           ...formData,
           price: Number(formData.price),
           cost_price: Number(formData.cost_price),
-          stock_qty: newStock
+          stock_qty: newStock,
+          low_stock_threshold: Number(formData.low_stock_threshold)
         });
 
         if (oldStock !== newStock) {
@@ -124,7 +126,8 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser }) => {
             ...formData,
             price: Number(formData.price),
             cost_price: Number(formData.cost_price),
-            stock_qty: Number(formData.stock_qty)
+            stock_qty: Number(formData.stock_qty),
+            low_stock_threshold: Number(formData.low_stock_threshold)
           });
 
           await db.inventory_logs.add({
@@ -319,7 +322,8 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser }) => {
             price: Number(product.price) || 0,
             cost_price: Number(product.cost_price) || 0,
             stock_qty: Number(product.stock_qty) || 0,
-            category: product.category || 'General'
+            category: product.category || 'General',
+            low_stock_threshold: product.low_stock_threshold || 5
           });
 
           await db.inventory_logs.add({
@@ -392,7 +396,7 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser }) => {
                 <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Product Details</th>
                 <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Category</th>
                 <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Price</th>
-                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Stock</th>
+                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Stock / Threshold</th>
                 {isAdmin && <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Actions</th>}
               </tr>
             </thead>
@@ -413,9 +417,12 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser }) => {
                   <td className="px-8 py-5"><span className="inline-block px-3 py-1 rounded-lg bg-slate-100 text-slate-600 text-[10px] font-black uppercase">{product.category}</span></td>
                   <td className="px-8 py-5 text-right"><p className="font-black text-slate-900">₦{product.price.toLocaleString()}</p></td>
                   <td className="px-8 py-5 text-right">
-                    <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase ${product.stock_qty === 0 ? 'bg-rose-100 text-rose-600' : product.stock_qty <= 10 ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'}`}>
-                      {product.stock_qty} Units
-                    </span>
+                    <div className="flex flex-col items-end gap-1">
+                      <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase ${product.stock_qty <= product.low_stock_threshold ? 'bg-rose-100 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                        {product.stock_qty} Units
+                      </span>
+                      <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Threshold: {product.low_stock_threshold}</span>
+                    </div>
                   </td>
                   {isAdmin && (
                     <td className="px-8 py-5 text-right">
@@ -459,6 +466,10 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser }) => {
                 <div>
                   <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Category</label>
                   <select className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 font-bold" value={formData.category} onChange={(e) => setFormData({...formData, category: e.target.value})}>{CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}</select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Low Stock Alert Level</label>
+                  <input required type="number" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 font-bold" value={formData.low_stock_threshold} onChange={(e) => setFormData({...formData, low_stock_threshold: Number(e.target.value)})} />
                 </div>
                 <div>
                   <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Cost Price (₦)</label>

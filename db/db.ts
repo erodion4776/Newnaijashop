@@ -16,9 +16,9 @@ export class NaijaShopDB extends Dexie {
   constructor() {
     super('NaijaShopDB');
     
-    (this as any).version(8).stores({
+    (this as any).version(10).stores({
       products: '++id, name, category, barcode',
-      sales: '++id, timestamp, sync_status, payment_method',
+      sales: '++id, sale_id, timestamp, sync_status, payment_method, staff_name',
       debts: '++id, customer_name, status',
       staff: '++id, name, role, status',
       settings: 'id',

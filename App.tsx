@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo, ErrorInfo, ReactNode } from 'react';
+import React, { useState, useEffect, useMemo, ErrorInfo, ReactNode, Component } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, initSettings } from './db/db';
 import { View, Staff } from './types';
@@ -42,8 +42,9 @@ const MASTER_RECOVERY_PIN = "9999";
 interface ErrorBoundaryProps { children?: ReactNode; }
 interface ErrorBoundaryState { hasError: boolean; error: Error | null; }
 
-// Fixed: Explicitly using React.Component and initializing state to fix "Property 'state'/'props' does not exist" errors
+// Fix: Explicitly extend React.Component with generics to ensure this.props and this.state are correctly typed and visible
 class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  // Fix: Initialize state in a standard constructor to satisfy generic inheritance checks
   constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = { hasError: false, error: null };
@@ -58,6 +59,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
   }
 
   render() {
+    // Fix: access state property via 'this' which is now correctly recognized as React.Component instance
     if (this.state.hasError) {
       return (
         <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 text-center">
@@ -69,6 +71,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
         </div>
       );
     }
+    // Fix: access props property via 'this' which is now correctly recognized as React.Component instance
     return this.props.children;
   }
 }
