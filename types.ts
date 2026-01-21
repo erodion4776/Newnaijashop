@@ -82,7 +82,7 @@ export interface Settings {
   last_synced_timestamp: number;
 }
 
-export type View = 'dashboard' | 'pos' | 'inventory' | 'inventory-ledger' | 'debts' | 'settings' | 'ai-insights' | 'transfer-station' | 'sync' | 'staff-management';
+export type View = 'dashboard' | 'pos' | 'inventory' | 'inventory-ledger' | 'debts' | 'settings' | 'ai-insights' | 'transfer-station' | 'sync' | 'staff-management' | 'activity-log';
 
 export type SyncStatus = 'offline' | 'connecting' | 'live' | 'reconnecting' | 'failed';
 

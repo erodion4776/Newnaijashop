@@ -15,6 +15,7 @@ import AIInsights from './pages/AIInsights';
 import TransferStation from './pages/TransferStation';
 import SyncStation from './pages/SyncStation';
 import StaffManagement from './pages/StaffManagement';
+import ActivityLog from './pages/ActivityLog';
 import BarcodeScanner from './components/BarcodeScanner';
 import { SyncProvider } from './context/SyncProvider';
 import { 
@@ -301,7 +302,7 @@ const AppContent: React.FC = () => {
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
-        <div className="w-full max-w-sm space-y-10">
+        <div className="w-full max-sm:px-4 max-w-sm space-y-10">
           <div className="text-center flex flex-col items-center">
              <div className="w-24 h-24 bg-white rounded-[2rem] p-4 flex items-center justify-center shadow-2xl border border-slate-100 mb-6">
                 <img src={LOGO_URL} className="w-full h-full object-contain" alt="NaijaShop Logo" />
@@ -356,6 +357,7 @@ const AppContent: React.FC = () => {
       <Layout activeView={currentView} setView={setCurrentView} shopName={settings?.shop_name || 'NaijaShop POS'} currentUser={currentUser} onLogout={() => setCurrentUser(null)}>
         {currentView === 'dashboard' && <Dashboard currentUser={currentUser} setView={setCurrentView} />}
         {currentView === 'pos' && <POS setView={setCurrentView} currentUser={currentUser} />}
+        {currentView === 'activity-log' && <ActivityLog />}
         {currentView === 'transfer-station' && <TransferStation setView={setCurrentView} />}
         {currentView === 'inventory' && <Inventory setView={setCurrentView} currentUser={currentUser} />}
         {currentView === 'inventory-ledger' && <InventoryLedger />}

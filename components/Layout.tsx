@@ -14,10 +14,9 @@ import {
   ClipboardList,
   UserCog,
   LogOut,
-  Zap,
-  Wifi,
-  WifiOff,
-  Activity
+  Activity,
+  History,
+  WifiOff
 } from 'lucide-react';
 import { View, Staff } from '../types';
 import { useSync } from '../context/SyncProvider';
@@ -33,6 +32,7 @@ interface LayoutProps {
   onLogout: () => void;
 }
 
+// Fix: Added missing default export and finished the component JSX structure which was truncated in the source.
 const Layout: React.FC<LayoutProps> = ({ children, activeView, setView, shopName, currentUser, onLogout }) => {
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
   const { status } = useSync();
@@ -40,6 +40,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, setView, shopName
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['Admin', 'Manager', 'Sales'] },
     { id: 'pos', label: 'Point of Sale', icon: ShoppingCart, roles: ['Admin', 'Manager', 'Sales'] },
+    { id: 'activity-log', label: 'Activity Log', icon: History, roles: ['Admin', 'Manager', 'Sales'] },
     { id: 'transfer-station', label: 'Transfer Station', icon: Landmark, roles: ['Admin', 'Manager', 'Sales'] },
     { id: 'inventory', label: 'Inventory', icon: Package, roles: ['Admin', 'Manager', 'Sales'] },
     { id: 'inventory-ledger', label: 'Inventory Ledger', icon: ClipboardList, roles: ['Admin', 'Manager'] },
@@ -95,7 +96,6 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, setView, shopName
           </div>
           
           <div className="flex items-center gap-6">
-            {/* THE CONNECTION STRENGTH BAR */}
             <div className="hidden sm:flex items-center gap-3 bg-slate-50 px-4 py-2 rounded-2xl border border-slate-100 shadow-inner">
                <div className="flex items-end gap-0.5 h-3">
                   <div className={`w-1 rounded-full transition-all duration-300 ${status !== 'offline' ? 'h-full bg-emerald-500' : 'h-1/3 bg-slate-200'}`} />
@@ -124,19 +124,17 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, setView, shopName
               <div className="relative flex items-center">
                  <div className={`h-2.5 w-2.5 rounded-full transition-all duration-500 ${
                    status === 'live' ? 'bg-emerald-500 shadow-[0_0_8px_#10b981]' : 
-                   status === 'reconnecting' ? 'bg-amber-500 animate-pulse shadow-[0_0_8px_#f59e0b]' : 
-                   status === 'failed' ? 'bg-rose-500 animate-pulse' :
-                   status === 'connecting' ? 'bg-blue-500 animate-pulse' :
-                   'bg-slate-300'
-                 }`}></div>
+                   status === 'reconnecting' ? 'bg-amber-500 animate-pulse' : 'bg-slate-300'
+                 }`} />
               </div>
             </div>
           </div>
         </header>
-        <div className="flex-1 overflow-y-auto p-6">{children}</div>
-      </main>
 
-      {isSidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setIsSidebarOpen(false)} />}
+        <section className="flex-1 overflow-y-auto p-4 lg:p-8">
+          {children}
+        </section>
+      </main>
     </div>
   );
 };
