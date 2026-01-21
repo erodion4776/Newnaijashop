@@ -22,9 +22,10 @@ import {
   Loader2,
   SplitSquareVertical,
   Receipt,
-  Clock
+  Clock,
+  PlayCircle
 } from 'lucide-react';
-import { Product, SaleItem, ParkedSale, View, Staff, Sale } from '../types';
+import { Product, SaleItem, ParkedOrder, View, Staff, Sale } from '../types';
 import { useSync } from '../context/SyncProvider';
 import BarcodeScanner from '../components/BarcodeScanner';
 
@@ -40,6 +41,8 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [showParkedModal, setShowParkedModal] = useState(false);
+  const [showParkNameModal, setShowParkNameModal] = useState(false);
+  const [parkCustomerName, setParkCustomerName] = useState('');
   const [showScanner, setShowScanner] = useState(false);
   const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -50,7 +53,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
   const [customerInfo, setCustomerInfo] = useState({ name: '', phone: '' });
 
   const products = useLiveQuery(() => db.products.toArray());
-  const parkedSales = useLiveQuery(() => db.parked_sales.toArray()) || [];
+  const parkedOrders = useLiveQuery(() => db.parked_orders.toArray()) || [];
 
   const categories = useMemo(() => {
     if (!products) return ['All'];
@@ -109,25 +112,43 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
   const debtAmount = paymentType === 'split' ? Math.max(0, total - cashAmount) : 0;
   const changeAmount = paymentType === 'cash' && cashAmount > total ? cashAmount - total : 0;
 
-  const handleParkSale = async () => {
-    if (cart.length === 0) return;
+  const handleOpenParkModal = () => {
+    if (cart.length === 0) {
+      alert('Cannot park an empty cart!');
+      return;
+    }
+    setParkCustomerName('');
+    setShowParkNameModal(true);
+  };
+
+  const confirmParkSale = async () => {
+    if (!parkCustomerName.trim()) {
+      alert("Please enter a customer name or description.");
+      return;
+    }
+
     try {
-      await db.parked_sales.add({
+      await db.parked_orders.add({
+        customerName: parkCustomerName.trim(),
         items: cart,
-        total_amount: total,
+        total: total,
+        staffId: currentUser?.name || 'Staff',
         timestamp: Date.now()
       });
       setCart([]);
-      alert('Sale parked for later.');
+      setShowParkNameModal(false);
+      setParkCustomerName('');
     } catch (err) {
-      alert('Failed to park: ' + err);
+      alert('Failed to park order: ' + err);
     }
   };
 
-  const handleRetrieveParkedSale = async (parkedSale: ParkedSale) => {
-    setCart(parkedSale.items);
-    if (parkedSale.id) await db.parked_sales.delete(parkedSale.id);
+  const handleRetrieveParkedOrder = async (parkedOrder: ParkedOrder) => {
+    // Clear current cart and load items
+    setCart(parkedOrder.items);
+    if (parkedOrder.id) await db.parked_orders.delete(parkedOrder.id);
     setShowParkedModal(false);
+    setIsMobileCartOpen(true);
   };
 
   const handleCheckout = async () => {
@@ -190,6 +211,13 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
     setShowSuccessModal(false);
   };
 
+  const formatTimeAgo = (timestamp: number) => {
+    const diff = Math.floor((Date.now() - timestamp) / 60000);
+    if (diff < 1) return 'just now';
+    if (diff === 1) return '1 min ago';
+    return `${diff} mins ago`;
+  };
+
   const CartContent = ({ isMobile = false }) => (
     <div className={`flex flex-col h-full ${isMobile ? 'bg-white' : ''}`}>
       <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
@@ -203,12 +231,18 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {parkedSales.length > 0 && (
-            <button onClick={() => setShowParkedModal(true)} className="relative p-2 text-amber-500 hover:bg-amber-50 rounded-xl">
-              <Clock size={20} />
-              <span className="absolute -top-1 -right-1 w-5 h-5 bg-amber-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">{parkedSales.length}</span>
-            </button>
-          )}
+          <button 
+            onClick={() => setShowParkedModal(true)} 
+            className="relative p-2 text-amber-500 hover:bg-amber-50 rounded-xl transition-all"
+            title="Parked Orders"
+          >
+            <Clock size={20} />
+            {parkedOrders.length > 0 && (
+              <span className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-white shadow-sm animate-pulse">
+                {parkedOrders.length}
+              </span>
+            )}
+          </button>
           <button onClick={() => setCart([])} className="text-slate-300 hover:text-rose-500 p-2"><Trash2 size={20} /></button>
           {isMobile && <button onClick={() => setIsMobileCartOpen(false)} className="p-2 text-slate-400"><X size={20} /></button>}
         </div>
@@ -240,7 +274,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
 
       {cart.length > 0 && (
         <div className="px-6 pb-2">
-          <button onClick={handleParkSale} className="w-full py-3 bg-amber-50 text-amber-600 rounded-xl font-black text-xs uppercase tracking-widest border border-amber-100 flex items-center justify-center gap-2">
+          <button onClick={handleOpenParkModal} className="w-full py-3 bg-amber-50 text-amber-600 rounded-xl font-black text-xs uppercase tracking-widest border border-amber-100 flex items-center justify-center gap-2 hover:bg-amber-100 transition-all">
             <Clock size={16} /> Park Sale
           </button>
         </div>
@@ -315,6 +349,88 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
         <div className="lg:hidden fixed inset-0 z-[100] bg-slate-950/80 backdrop-blur-md animate-in fade-in">
           <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-[3rem] h-[90vh] flex flex-col animate-in slide-in-from-bottom duration-300">
             <CartContent isMobile />
+          </div>
+        </div>
+      )}
+
+      {/* Park Name Modal */}
+      {showParkNameModal && (
+        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="bg-white rounded-[2.5rem] w-full max-w-sm p-8 space-y-6 animate-in zoom-in duration-300">
+            <div className="text-center space-y-2">
+              <div className="w-16 h-16 bg-amber-50 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-2">
+                <Clock size={32} />
+              </div>
+              <h3 className="text-xl font-black text-slate-900 tracking-tight">Identify Parked Order</h3>
+              <p className="text-xs text-slate-500">Add a name or description for this sale.</p>
+            </div>
+            <div className="space-y-4">
+              <input 
+                autoFocus
+                type="text" 
+                placeholder="e.g. Musa or Blue Shirt Guy" 
+                className="w-full h-14 px-5 bg-slate-50 border border-slate-200 rounded-2xl font-bold outline-none focus:ring-2 focus:ring-amber-500 transition-all"
+                value={parkCustomerName}
+                onChange={(e) => setParkCustomerName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && confirmParkSale()}
+              />
+              <div className="flex gap-3">
+                <button onClick={() => setShowParkNameModal(false)} className="flex-1 py-4 bg-slate-100 text-slate-500 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-all">Cancel</button>
+                <button onClick={confirmParkSale} className="flex-1 py-4 bg-amber-500 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-amber-200 hover:bg-amber-600 transition-all">Confirm Park</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Parked Orders List Modal */}
+      {showParkedModal && (
+        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="bg-white rounded-[3rem] w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in duration-300 flex flex-col max-h-[80vh]">
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-amber-50 text-amber-600 rounded-xl">
+                  <Clock size={20} />
+                </div>
+                <h3 className="text-xl font-black text-slate-900 tracking-tight">Parked Orders</h3>
+              </div>
+              <button onClick={() => setShowParkedModal(false)} className="p-2 hover:bg-slate-100 rounded-full"><X size={24} /></button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+              {parkedOrders.length === 0 ? (
+                <div className="py-20 text-center space-y-4">
+                  <div className="w-16 h-16 bg-slate-50 text-slate-200 rounded-full flex items-center justify-center mx-auto">
+                    <Clock size={32} />
+                  </div>
+                  <p className="text-slate-400 font-bold uppercase tracking-widest text-[10px]">No parked orders found</p>
+                </div>
+              ) : (
+                parkedOrders.map((order) => (
+                  <div key={order.id} className="bg-slate-50 p-6 rounded-3xl border border-slate-100 group hover:border-amber-400 transition-all flex items-center justify-between">
+                    <div>
+                      <h4 className="font-black text-slate-800 text-lg leading-tight">{order.customerName}</h4>
+                      <div className="flex items-center gap-3 mt-1.5 text-xs font-bold text-slate-400">
+                        <span className="flex items-center gap-1"><Package size={12} /> {order.items.reduce((a,c) => a+c.quantity, 0)} items</span>
+                        <span className="flex items-center gap-1"><Clock size={12} /> {formatTimeAgo(order.timestamp)}</span>
+                      </div>
+                      <p className="text-emerald-600 font-black text-lg mt-2">₦{order.total.toLocaleString()}</p>
+                    </div>
+                    <button 
+                      onClick={() => handleRetrieveParkedOrder(order)}
+                      className="p-4 bg-white text-emerald-600 border border-emerald-100 rounded-2xl shadow-sm hover:bg-emerald-600 hover:text-white transition-all flex flex-col items-center gap-1 active:scale-95"
+                    >
+                      <PlayCircle size={28} />
+                      <span className="text-[10px] font-black uppercase tracking-widest">Resume</span>
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+            
+            <div className="p-6 bg-slate-50/50 border-t border-slate-100 shrink-0">
+              <p className="text-center text-[10px] text-slate-400 font-black uppercase tracking-widest">Select an order to resume checkout</p>
+            </div>
           </div>
         </div>
       )}

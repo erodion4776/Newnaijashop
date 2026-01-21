@@ -43,10 +43,12 @@ export interface Sale {
   verification_timestamp?: number;
 }
 
-export interface ParkedSale {
+export interface ParkedOrder {
   id?: number;
+  customerName: string;
   items: SaleItem[];
-  total_amount: number;
+  total: number;
+  staffId: string;
   timestamp: number;
 }
 

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, ErrorInfo, ReactNode } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, initSettings } from './db/db';
@@ -48,7 +47,7 @@ interface ErrorBoundaryState { hasError: boolean; error: Error | null; }
 class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   public state: ErrorBoundaryState = { hasError: false, error: null };
   static getDerivedStateFromError(error: Error) { return { hasError: true, error }; }
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) { console.error("Uncaught Terminal Error:", error, errorInfo); }
+  componentCatch(error: Error, errorInfo: ErrorInfo) { console.error("Uncaught Terminal Error:", error, errorInfo); }
   render() {
     const { hasError } = this.state;
     const { children } = (this as any).props;
@@ -193,7 +192,8 @@ const AppContent: React.FC = () => {
 
   const resetTerminal = async () => {
     if (confirm("This will wipe all local data and reset the terminal. Proceed?")) {
-      await db.delete();
+      // Fix: Cast db to any to ensure 'delete' is recognized if inheritance is not correctly picked up by the compiler.
+      await (db as any).delete();
       localStorage.clear();
       window.location.href = '/';
     }

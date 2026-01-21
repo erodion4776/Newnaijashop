@@ -1,7 +1,8 @@
+
 // Use named import for Dexie to ensure proper prototype inheritance and access to instance methods like version, transaction, and delete in TypeScript.
 import { Dexie } from 'dexie';
 import type { Table } from 'dexie';
-import { Product, Sale, Debt, Settings, ParkedSale, InventoryLog, Staff } from '../types';
+import { Product, Sale, Debt, Settings, ParkedOrder, InventoryLog, Staff } from '../types';
 import { generateSyncKey } from '../services/syncService';
 
 /**
@@ -14,20 +15,20 @@ export class NaijaShopDB extends Dexie {
   debts!: Table<Debt>;
   staff!: Table<Staff>;
   settings!: Table<Settings>;
-  parked_sales!: Table<ParkedSale>;
+  parked_orders!: Table<ParkedOrder>;
   inventory_logs!: Table<InventoryLog>;
 
   constructor() {
     super('NaijaShopDB');
     
     // Fix: Explicitly casting 'this' to any to ensure 'version' is recognized if inheritance is not correctly picked up by the compiler.
-    (this as any).version(6).stores({
+    (this as any).version(7).stores({
       products: '++id, name, category, barcode',
       sales: '++id, timestamp, sync_status, payment_method',
       debts: '++id, customer_name, status',
       staff: '++id, name, role, status',
       settings: 'id',
-      parked_sales: '++id, timestamp',
+      parked_orders: '++id, customerName, staffId, timestamp',
       inventory_logs: '++id, product_id, product_name, type, timestamp'
     });
   }
