@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo, ErrorInfo, ReactNode, Component } from 'react';
+import React, { useState, useEffect, useMemo, ErrorInfo, ReactNode } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, initSettings } from './db/db';
 import { View, Staff } from './types';
@@ -42,8 +42,8 @@ const MASTER_RECOVERY_PIN = "9999";
 interface ErrorBoundaryProps { children?: ReactNode; }
 interface ErrorBoundaryState { hasError: boolean; error: Error | null; }
 
-// Use Component from 'react' directly and provide type arguments for props and state to fix line 61 error
-class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+// Fixed: Explicitly using React.Component and initializing state to fix "Property 'state'/'props' does not exist" errors
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = { hasError: false, error: null };
