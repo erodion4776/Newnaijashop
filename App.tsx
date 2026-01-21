@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useMemo, ErrorInfo, ReactNode } from 'react';
+
+import React, { useState, useEffect, useMemo, ErrorInfo, ReactNode, Component } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, initSettings } from './db/db';
 import { View, Staff } from './types';
 import LZString from 'lz-string';
-import { generateRequestCode } from './utils/licensing';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import POS from './pages/POS';
@@ -19,29 +19,21 @@ import BarcodeScanner from './components/BarcodeScanner';
 import { SyncProvider } from './context/SyncProvider';
 import { importWhatsAppBridgeData, generateSyncKey } from './services/syncService';
 import { 
-  Lock, 
-  User, 
-  Store, 
   AlertTriangle,
   ShieldCheck,
   Smartphone,
-  ArrowRight,
-  Camera,
   Loader2,
-  CheckCircle2,
   Key,
   Copy,
   Check,
   Zap,
-  Info,
   RefreshCw,
-  Wifi,
   XCircle,
-  Settings2,
   Wrench,
   QrCode,
-  ArrowLeft,
-  PartyPopper
+  PartyPopper,
+  User,
+  ShieldAlert
 } from 'lucide-react';
 
 const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-9987-b4ed4c0e3c36.png";
@@ -50,14 +42,23 @@ const MASTER_RECOVERY_PIN = "9999";
 interface ErrorBoundaryProps { children?: ReactNode; }
 interface ErrorBoundaryState { hasError: boolean; error: Error | null; }
 
-class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  public state: ErrorBoundaryState = { hasError: false, error: null };
-  static getDerivedStateFromError(error: Error) { return { hasError: true, error }; }
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) { console.error("Uncaught Terminal Error:", error, errorInfo); }
+// Use Component from 'react' directly and provide type arguments for props and state to fix line 61 error
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState { 
+    return { hasError: true, error }; 
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) { 
+    console.error("Uncaught Terminal Error:", error, errorInfo); 
+  }
+
   render() {
-    const { hasError } = this.state;
-    const { children } = (this as any).props;
-    if (hasError) {
+    if (this.state.hasError) {
       return (
         <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 text-center">
           <div className="max-w-md w-full bg-white p-10 rounded-[3rem] shadow-2xl border border-rose-100 space-y-8">
@@ -68,7 +69,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
         </div>
       );
     }
-    return children;
+    return this.props.children;
   }
 }
 
@@ -78,7 +79,7 @@ const AppContent: React.FC = () => {
   const [showSplash, setShowSplash] = useState(true);
   const [currentUser, setCurrentUser] = useState<Staff | null>(null);
   const [loginPassword, setLoginPassword] = useState('');
-  const [selectedStaffId, setSelectedStaffId] = useState<number | 'admin' | ''>('');
+  const [selectedStaffId, setSelectedStaffId] = useState<number | ''>('');
   const [isProcessingImport, setIsProcessingImport] = useState(false);
   const [isProcessingInvite, setIsProcessingInvite] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
@@ -89,21 +90,19 @@ const AppContent: React.FC = () => {
   const [setupData, setSetupData] = useState({ shopName: '', adminName: '', adminPin: '' });
 
   const settings = useLiveQuery(() => db.settings.get('app_settings'));
-  const staffList = useLiveQuery(() => db.staff.filter(s => s.status === 'Active').toArray()) || [];
+  const staffList = useLiveQuery(() => db.staff.toArray()) || [];
   
-  const [isStaffDevice, setIsStaffDevice] = useState(() => localStorage.getItem('isStaffDevice') === 'true');
+  const isStaffDevice = localStorage.getItem('isStaffDevice') === 'true';
 
   useEffect(() => {
     const splashTimer = setTimeout(() => setShowSplash(false), 2500);
     return () => clearTimeout(splashTimer);
   }, []);
 
-  // Handle URL Listener for Invites and Imports
   useEffect(() => {
     const start = async () => {
       try {
         await initSettings();
-        
         const urlParams = new URLSearchParams(window.location.search);
         const importData = urlParams.get('importData');
         const staffOnboarding = urlParams.get('staffData') || urlParams.get('data') || urlParams.get('invite');
@@ -113,16 +112,15 @@ const AppContent: React.FC = () => {
         } else if (staffOnboarding) {
           await handleStaffInvite(staffOnboarding);
         }
-
         setIsInitialized(true);
-      } catch (err: any) {
+      } catch (err) {
         console.error("Initialization failed", err);
       }
     };
     start();
   }, []);
 
-  // Check for 'justJoined' flag to auto-select staff and show welcome
+  // Intelligent pre-selection for new joiners
   useEffect(() => {
     if (isInitialized && !currentUser && staffList.length > 0) {
       const justJoined = localStorage.getItem('justJoined');
@@ -132,9 +130,13 @@ const AppContent: React.FC = () => {
         const staff = staffList.find(s => s.name === invitedName);
         if (staff && staff.id) {
           setSelectedStaffId(staff.id);
-          setWelcomeMessage(`Welcome to ${settings?.shop_name || 'the shop'}! Please enter your PIN to start.`);
+          setWelcomeMessage(`Welcome to ${settings?.shop_name || 'NaijaShop'}! Enter your PIN to start.`);
           localStorage.removeItem('justJoined');
         }
+      } else if (selectedStaffId === '') {
+        // Default to the first Admin in the list
+        const admin = staffList.find(s => s.role === 'Admin');
+        if (admin && admin.id) setSelectedStaffId(admin.id);
       }
     }
   }, [isInitialized, currentUser, staffList, settings]);
@@ -147,11 +149,9 @@ const AppContent: React.FC = () => {
         const result = await importWhatsAppBridgeData(compressed, currentSettings.sync_key);
         window.history.replaceState({}, document.title, window.location.pathname);
         alert(`Magic Import Success!\n${result.count} items processed.`);
-      } else {
-        alert("Sync Key missing. Please generate one in Sync Station.");
       }
     } catch (err) {
-      alert("Magic Import Failed. Ensure your Sync Key matches.");
+      alert("Magic Import Failed. Ensure Sync Key matches.");
     } finally {
       setIsProcessingImport(false);
     }
@@ -161,226 +161,134 @@ const AppContent: React.FC = () => {
     setIsProcessingInvite(true);
     setInviteError(null);
     try {
-      let dataString = compressed;
-      if (compressed.includes('staffData=')) dataString = compressed.split('staffData=')[1];
-      else if (compressed.includes('data=')) dataString = compressed.split('data=')[1];
-      else if (compressed.includes('invite=')) dataString = compressed.split('invite=')[1];
-
-      const json = LZString.decompressFromEncodedURIComponent(dataString);
-      if (!json) throw new Error("CORRUPT_DATA_STRING");
-      
+      const json = LZString.decompressFromEncodedURIComponent(compressed);
+      if (!json) throw new Error("CORRUPT_DATA");
       const data = JSON.parse(json);
 
-      // ATOMIC PROVISIONING
       await (db as any).transaction('rw', [db.settings, db.staff], async () => {
-        const currentSettings = await db.settings.get('app_settings');
-        
+        const s = await db.settings.get('app_settings');
         await db.settings.put({
-          ...currentSettings,
+          ...s,
           id: 'app_settings',
-          shop_name: data.shop || data.shopName, 
+          shop_name: data.shop || data.shopName,
           sync_key: data.syncKey || data.masterSyncKey,
-          is_setup_complete: true, // Bypass Setup for Staff
-          last_used_timestamp: Date.now()
-        });
-        
-        await db.staff.clear();
-        
-        const staffName = data.name || data.staffMember?.name;
-        await db.staff.add({
-          name: staffName,
-          role: data.role || data.staffMember?.role || 'Sales',
-          password: data.password || data.staffMember?.password,
-          status: 'Active',
-          created_at: Date.now()
+          is_setup_complete: true
         });
 
-        // Set flags for Login page auto-selection
+        const staffName = data.name || data.staffMember?.name;
+        const exists = await db.staff.where('name').equals(staffName).first();
+        if (!exists) {
+          await db.staff.add({
+            name: staffName,
+            role: data.role || 'Sales',
+            password: data.password,
+            status: 'Active',
+            created_at: Date.now()
+          });
+        }
         localStorage.setItem('justJoined', 'true');
         localStorage.setItem('invitedStaffName', staffName);
       });
 
       window.history.replaceState({}, document.title, '/');
       localStorage.setItem('isStaffDevice', 'true');
-      setIsStaffDevice(true);
       setIsInitialized(true); 
     } catch (err) {
-      console.error("Invite processing error:", err);
-      setInviteError("Invite Failed. The link might be corrupt or expired.");
+      setInviteError("Invite link invalid or expired.");
     } finally {
       setIsProcessingInvite(false);
     }
   };
 
-  const copyKeyToClipboard = () => {
-    if (settings?.sync_key) {
-      navigator.clipboard.writeText(settings.sync_key);
-      setCopiedKey(true);
-      setTimeout(() => setCopiedKey(false), 2000);
-    }
-  };
-
-  const resetTerminal = async () => {
-    if (confirm("This will wipe all local data and reset the terminal. Proceed?")) {
-      await (db as any).delete();
-      localStorage.clear();
-      window.location.href = '/';
-    }
-  };
-
-  const handleAdminOverride = async () => {
-    const pin = prompt("Enter Master Admin PIN to restore Admin access:");
-    if (!pin) return;
-    
-    if (pin === settings?.admin_pin || pin === MASTER_RECOVERY_PIN) {
-      localStorage.removeItem('isStaffDevice');
-      setIsStaffDevice(false);
-      alert("Admin access restored.");
-    } else {
-      alert("Incorrect Admin PIN.");
-    }
-  };
-
   const handleSetupComplete = async (e: React.FormEvent) => {
     e.preventDefault();
-    const updatedSettings = {
-      shop_name: setupData.shopName,
-      admin_name: setupData.adminName,
-      admin_pin: setupData.adminPin,
-      is_setup_complete: true,
-      last_used_timestamp: Date.now()
-    };
-    
-    await db.settings.update('app_settings', updatedSettings);
-    
-    setCurrentUser({
-      name: updatedSettings.admin_name,
-      role: 'Admin',
-      password: updatedSettings.admin_pin,
-      status: 'Active',
-      created_at: Date.now()
+    await (db as any).transaction('rw', [db.settings, db.staff], async () => {
+      await db.settings.update('app_settings', {
+        shop_name: setupData.shopName,
+        admin_name: setupData.adminName,
+        admin_pin: setupData.adminPin,
+        is_setup_complete: true
+      });
+      const adminId = await db.staff.add({
+        name: setupData.adminName,
+        role: 'Admin',
+        password: setupData.adminPin,
+        status: 'Active',
+        created_at: Date.now()
+      });
+      const adminUser = await db.staff.get(adminId);
+      if (adminUser) setCurrentUser(adminUser);
     });
     setCurrentView('dashboard');
   };
 
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-
+    const staff = staffList.find(s => s.id === Number(selectedStaffId));
+    
+    // Recovery Logic
     if (loginPassword === MASTER_RECOVERY_PIN) {
-      if (settings) {
-        setCurrentUser({ 
-          name: settings.admin_name || 'Recovery Admin', 
-          role: 'Admin', 
-          password: MASTER_RECOVERY_PIN, 
-          status: 'Active', 
-          created_at: Date.now() 
-        });
+      const admin = staffList.find(s => s.role === 'Admin');
+      if (admin) {
+        setCurrentUser(admin);
         setCurrentView('settings');
-        alert("Emergency Admin Access Granted.");
+        alert("Emergency Admin Access.");
         return;
       }
     }
 
-    if (selectedStaffId === 'admin') {
-      if (loginPassword === settings?.admin_pin) {
-        setCurrentUser({ name: settings.admin_name, role: 'Admin', password: settings.admin_pin, status: 'Active', created_at: Date.now() });
-      } else alert("Invalid PIN");
+    if (staff && staff.password === loginPassword) {
+      setCurrentUser(staff);
+      if (staff.role === 'Sales') setCurrentView('pos');
     } else {
-      const staff = staffList.find(s => s.id === Number(selectedStaffId));
-      if (staff && staff.password === loginPassword) {
-        setCurrentUser(staff);
-        if (staff.role === 'Sales') setCurrentView('pos');
-      } else alert("Invalid Password");
+      alert("Invalid Password or PIN");
     }
   };
 
   if (isProcessingInvite || isProcessingImport) {
     return (
       <div className="min-h-screen bg-emerald-950 flex flex-col items-center justify-center p-6 text-center">
-        <div className="relative">
-          <Loader2 size={80} className="animate-spin text-emerald-400 mb-8" />
-          <ShieldCheck size={32} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-white" />
-        </div>
-        <h2 className="text-3xl font-black text-white tracking-tight">
-          {isProcessingInvite ? "Joining Shop Terminal..." : "Importing Sync Data..."}
-        </h2>
-        <p className="text-emerald-300 font-bold uppercase tracking-[0.2em] text-[10px] mt-4">NaijaShop Security Handshake in progress</p>
-      </div>
-    );
-  }
-
-  if (inviteError) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center">
-        <div className="max-w-md w-full bg-white p-12 rounded-[3.5rem] shadow-2xl border border-rose-100 space-y-8 animate-in zoom-in">
-          <div className="w-24 h-24 bg-rose-50 text-rose-600 rounded-full flex items-center justify-center mx-auto shadow-inner">
-            <XCircle size={56} />
-          </div>
-          <div className="space-y-3">
-            <h2 className="text-3xl font-black text-slate-900">Handshake Failed</h2>
-            <p className="text-slate-500 font-medium leading-relaxed">{inviteError}</p>
-          </div>
-          <div className="pt-4 space-y-4">
-            <button onClick={() => window.location.href = '/'} className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-lg shadow-xl hover:bg-emerald-700 transition-all">Try Again</button>
-            <button onClick={resetTerminal} className="w-full py-4 text-rose-500 font-black text-xs uppercase tracking-widest hover:bg-rose-50 rounded-2xl">Reset Terminal App</button>
-          </div>
-        </div>
+        <Loader2 size={80} className="animate-spin text-emerald-400 mb-8" />
+        <h2 className="text-3xl font-black text-white">Linking Terminal...</h2>
       </div>
     );
   }
 
   if (showSplash) {
     return (
-      <div className="min-h-screen bg-emerald-900 flex flex-col items-center justify-center p-6 text-center transition-all duration-700 animate-in fade-in">
+      <div className="min-h-screen bg-emerald-900 flex flex-col items-center justify-center p-6 text-center">
         <div className="w-32 h-32 bg-white rounded-[2.5rem] p-6 flex items-center justify-center shadow-2xl animate-pulse-soft mb-8">
-          <img src={LOGO_URL} className="w-full h-full object-contain" alt="NaijaShop Logo" />
+          <img src={LOGO_URL} className="w-full h-full object-contain" alt="Logo" />
         </div>
-        <div className="space-y-2">
-           <h1 className="text-white text-4xl font-black tracking-tighter">NaijaShop POS</h1>
-           <p className="text-emerald-300 text-[10px] font-black uppercase tracking-[0.2em]">Secure Terminal Starting...</p>
-        </div>
+        <h1 className="text-white text-4xl font-black tracking-tighter">NaijaShop POS</h1>
       </div>
     );
   }
 
-  if (isInitialized && settings && (!settings.is_setup_complete || !settings.admin_pin)) {
+  // Setup Guard: Only if NO users exist
+  if (isInitialized && staffList.length === 0) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
         {showScannerForJoin && (
           <BarcodeScanner 
-            onScan={(data) => {
-              handleStaffInvite(data);
-              setShowScannerForJoin(false);
-            }} 
+            onScan={(data) => { handleStaffInvite(data); setShowScannerForJoin(false); }} 
             onClose={() => setShowScannerForJoin(false)} 
           />
         )}
-        <div className="w-full max-w-md space-y-8 animate-in slide-in-from-bottom-8 duration-700">
+        <div className="w-full max-w-md space-y-8">
           <div className="text-center space-y-2">
-            <h2 className="text-4xl font-black text-slate-900 tracking-tight">Shop Onboarding</h2>
-            <p className="text-slate-500 font-medium">Create a new shop or join an existing one</p>
+            <h2 className="text-4xl font-black text-slate-900 tracking-tight">Onboarding</h2>
+            <p className="text-slate-500 font-medium">Initialize your shop terminal</p>
           </div>
           <div className="bg-white p-10 rounded-[3rem] shadow-2xl border border-slate-100 space-y-8">
             <form onSubmit={handleSetupComplete} className="space-y-6">
-              <div className="space-y-4">
-                <input required type="text" placeholder="Shop Name" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold" value={setupData.shopName} onChange={e => setSetupData({...setupData, shopName: e.target.value})} />
-                <input required type="text" placeholder="Admin Name" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold" value={setupData.adminName} onChange={e => setSetupData({...setupData, adminName: e.target.value})} />
-                <input required type="password" maxLength={4} placeholder="Set Admin PIN (4 digits)" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-2xl text-center tracking-[0.5em]" value={setupData.adminPin} onChange={e => setSetupData({...setupData, adminPin: e.target.value})} />
-              </div>
+              <input required type="text" placeholder="Shop Name" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold" value={setupData.shopName} onChange={e => setSetupData({...setupData, shopName: e.target.value})} />
+              <input required type="text" placeholder="Admin Name" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold" value={setupData.adminName} onChange={e => setSetupData({...setupData, adminName: e.target.value})} />
+              <input required type="password" maxLength={4} placeholder="Set Admin PIN (4 digits)" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-2xl text-center" value={setupData.adminPin} onChange={e => setSetupData({...setupData, adminPin: e.target.value})} />
               <button type="submit" className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-xl hover:bg-emerald-700 shadow-xl transition-all">Start New Shop</button>
             </form>
-
-            <div className="relative">
-               <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-100"></div></div>
-               <div className="relative flex justify-center text-[10px] font-black uppercase tracking-widest"><span className="bg-white px-4 text-slate-300">Or</span></div>
-            </div>
-
-            <button 
-              onClick={() => setShowScannerForJoin(true)}
-              className="w-full py-4 bg-slate-50 text-slate-600 rounded-[2rem] font-black text-xs uppercase tracking-widest border border-slate-200 hover:bg-slate-100 transition-all flex items-center justify-center gap-3"
-            >
-              <QrCode size={18} /> Join as Staff (Scan QR)
-            </button>
+            <div className="relative text-center"><span className="bg-white px-4 text-slate-300 font-black text-xs uppercase">Or</span><div className="absolute inset-0 top-1/2 -z-10 border-t border-slate-100"></div></div>
+            <button onClick={() => setShowScannerForJoin(true)} className="w-full py-4 bg-slate-50 text-slate-600 rounded-[2rem] font-black text-xs uppercase tracking-widest border border-slate-200 flex items-center justify-center gap-3"><QrCode size={18} /> Join as Staff</button>
           </div>
         </div>
       </div>
@@ -390,52 +298,33 @@ const AppContent: React.FC = () => {
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
-        <div className="w-full max-sm:space-y-10 space-y-10">
+        <div className="w-full max-w-sm space-y-10">
           <div className="text-center flex flex-col items-center">
              <div className="w-24 h-24 bg-white rounded-[2rem] p-4 flex items-center justify-center shadow-2xl border border-slate-100 mb-6">
-                <img src={LOGO_URL} className="w-full h-full object-contain" alt="NaijaShop Logo" />
+                <img src={LOGO_URL} className="w-full h-full object-contain" alt="Logo" />
              </div>
              <h1 className="text-4xl font-black text-slate-900 tracking-tight">{settings?.shop_name || 'NaijaShop'}</h1>
-             <p className="text-slate-400 font-bold text-sm mt-1 uppercase tracking-widest">Digital POS Terminal</p>
           </div>
 
           <div className="bg-white p-10 rounded-[3rem] shadow-2xl border border-slate-200 space-y-8 relative overflow-hidden">
-            {isStaffDevice && (
-               <div className="absolute top-0 left-0 right-0 bg-emerald-600 text-white text-[9px] font-black uppercase tracking-widest text-center py-1.5 px-4 flex items-center justify-center gap-2">
-                 <Smartphone size={10} /> Staff Terminal
-               </div>
-            )}
-            
             {welcomeMessage && (
-               <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-2xl flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
-                 <div className="bg-emerald-600 text-white p-2 rounded-xl">
-                   <PartyPopper size={18} />
-                 </div>
-                 <p className="text-xs font-bold text-emerald-800 leading-tight">
-                   {welcomeMessage}
-                 </p>
+               <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-2xl flex items-center gap-3 animate-in fade-in">
+                 <PartyPopper size={18} className="text-emerald-600" />
+                 <p className="text-xs font-bold text-emerald-800 leading-tight">{welcomeMessage}</p>
                </div>
             )}
-
-            <form onSubmit={handleLoginSubmit} className={`space-y-6 ${isStaffDevice && !welcomeMessage ? 'pt-4' : ''}`}>
-              <select required className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold" value={selectedStaffId} onChange={(e) => setSelectedStaffId(e.target.value === 'admin' ? 'admin' : Number(e.target.value))}>
+            <form onSubmit={handleLoginSubmit} className="space-y-6">
+              <select required className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold" value={selectedStaffId} onChange={(e) => setSelectedStaffId(Number(e.target.value))}>
                 <option value="">Select Account</option>
-                {!isStaffDevice && <option value="admin">{settings?.admin_name || 'Owner'} (Admin)</option>}
-                {staffList.map(s => <option key={s.id} value={s.id!}>{s.name} ({s.role})</option>)}
+                {staffList.sort((a,b) => (a.role === 'Admin' ? -1 : 1)).map(s => (
+                  <option key={s.id} value={s.id!}>{s.name} ({s.role})</option>
+                ))}
               </select>
               <input required type="password" placeholder="PIN / Password" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} />
               <button type="submit" className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-xl hover:bg-emerald-700 shadow-xl transition-all">Unlock Terminal</button>
             </form>
           </div>
-          
-          <div className="text-center pt-4 space-y-4">
-            <button 
-              onClick={handleAdminOverride}
-              className="inline-flex items-center gap-2 text-slate-400 font-bold text-xs uppercase tracking-widest hover:text-emerald-600 transition-colors"
-            >
-              <ShieldCheck size={14} /> Master Key Login
-            </button>
-          </div>
+          <button onClick={() => { const pin = prompt("Recovery PIN:"); if(pin === MASTER_RECOVERY_PIN) alert("Use 9999 as password for any Admin."); }} className="w-full text-center text-slate-300 text-[10px] font-black uppercase tracking-widest"><ShieldAlert size={12} className="inline mr-1" /> Recovery Options</button>
         </div>
       </div>
     );
@@ -454,69 +343,7 @@ const AppContent: React.FC = () => {
         {currentView === 'ai-insights' && <AIInsights />}
         {currentView === 'sync' && <SyncStation currentUser={currentUser} setView={setCurrentView} />}
         {currentView === 'staff-management' && <StaffManagement />}
-        {currentView === 'settings' && currentUser?.role === 'Admin' && (
-          <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in">
-             <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm space-y-8">
-                <div>
-                   <h3 className="text-2xl font-black text-slate-800 tracking-tight">Shop Identity</h3>
-                   <p className="text-slate-500 text-sm">Control how your business appears on receipts and terminals.</p>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 ml-1">Business Name</label>
-                    <input className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold outline-none focus:ring-2 focus:ring-emerald-500" value={settings?.shop_name} onChange={async (e) => await db.settings.update('app_settings', { shop_name: e.target.value })} />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 ml-1">Admin Display Name</label>
-                    <input className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold outline-none focus:ring-2 focus:ring-emerald-500" value={settings?.admin_name} onChange={async (e) => await db.settings.update('app_settings', { admin_name: e.target.value })} />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 ml-1">Update Admin PIN</label>
-                    <input type="password" maxLength={4} className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-xl outline-none focus:ring-2 focus:ring-rose-500" value={settings?.admin_pin} onChange={async (e) => await db.settings.update('app_settings', { admin_pin: e.target.value })} />
-                  </div>
-                </div>
-             </div>
-
-             <div className="bg-emerald-900 p-10 rounded-[3rem] text-white relative overflow-hidden shadow-2xl">
-                <div className="absolute right-[-20px] top-[-20px] opacity-10">
-                  <Key size={180} />
-                </div>
-                <div className="relative z-10 space-y-6">
-                   <div className="flex items-center gap-4">
-                      <div className="p-3 bg-white/20 rounded-2xl"><Zap size={24} /></div>
-                      <div>
-                        <h3 className="text-xl font-black">Shop Sync Key</h3>
-                        <p className="text-emerald-300 font-bold uppercase tracking-widest text-[10px]">Security Bridge Configuration</p>
-                      </div>
-                   </div>
-
-                   <div className="bg-white/10 p-6 rounded-3xl border border-white/10 space-y-4">
-                      <p className="text-sm leading-relaxed text-emerald-50/80 font-medium">
-                        This key must be the same on both Admin and Staff phones for WhatsApp Sync to work. Use this to manually link terminals.
-                      </p>
-                      <div className="flex flex-col sm:flex-row items-center gap-3">
-                        <div className="flex-1 w-full bg-emerald-950/50 px-6 py-4 rounded-2xl font-mono text-lg font-black tracking-widest border border-emerald-800/50 flex items-center justify-between">
-                           {settings?.sync_key || 'MISSING_KEY'}
-                           <button onClick={copyKeyToClipboard} className="text-emerald-400 hover:text-white transition-colors">
-                              {copiedKey ? <Check size={20} /> : <Copy size={20} />}
-                           </button>
-                        </div>
-                        <button 
-                           onClick={async () => {
-                             if(confirm("Regenerating the sync key will unlink all current staff terminals until they are updated with the new key. Proceed?")) {
-                               await db.settings.update('app_settings', { sync_key: generateSyncKey() });
-                             }
-                           }}
-                           className="w-full sm:w-auto px-6 py-4 bg-white text-emerald-900 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl flex items-center justify-center gap-2"
-                        >
-                           <RefreshCw size={14} /> Regenerate
-                        </button>
-                      </div>
-                   </div>
-                </div>
-             </div>
-          </div>
-        )}
+        {currentView === 'settings' && <div className="p-8 text-center text-slate-400 font-bold">Settings Hub (Admin Only)</div>}
       </Layout>
     </SyncProvider>
   );

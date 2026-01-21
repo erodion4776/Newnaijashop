@@ -1,14 +1,9 @@
 
-// Use named import for Dexie to ensure proper prototype inheritance and access to instance methods like version, transaction, and delete in TypeScript.
 import { Dexie } from 'dexie';
 import type { Table } from 'dexie';
 import { Product, Sale, Debt, Settings, ParkedOrder, InventoryLog, Staff } from '../types';
 import { generateSyncKey } from '../services/syncService';
 
-/**
- * Main Database class for the application.
- * Extends Dexie to provide IndexedDB functionality with TypeScript support.
- */
 export class NaijaShopDB extends Dexie {
   products!: Table<Product>;
   sales!: Table<Sale>;
@@ -21,8 +16,7 @@ export class NaijaShopDB extends Dexie {
   constructor() {
     super('NaijaShopDB');
     
-    // Fix: Explicitly casting 'this' to any to ensure 'version' is recognized if inheritance is not correctly picked up by the compiler.
-    (this as any).version(7).stores({
+    (this as any).version(8).stores({
       products: '++id, name, category, barcode',
       sales: '++id, timestamp, sync_status, payment_method',
       debts: '++id, customer_name, status',
@@ -53,8 +47,5 @@ export const initSettings = async () => {
       last_used_timestamp: Date.now(),
       last_synced_timestamp: 0
     });
-  } else if (!settings.sync_key) {
-    // Migration for existing users who might be missing the key
-    await db.settings.update('app_settings', { sync_key: generateSyncKey() });
   }
 };
