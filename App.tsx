@@ -35,8 +35,9 @@ import {
   Check,
   Zap,
   Info,
-  // Added missing RefreshCw icon import to resolve the compilation error.
-  RefreshCw
+  RefreshCw,
+  Wifi,
+  XCircle
 } from 'lucide-react';
 
 const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-9987-b4ed4c0e3c36.png";
@@ -74,6 +75,8 @@ const AppContent: React.FC = () => {
   const [loginPassword, setLoginPassword] = useState('');
   const [selectedStaffId, setSelectedStaffId] = useState<number | 'admin' | ''>('');
   const [isProcessingImport, setIsProcessingImport] = useState(false);
+  const [isProcessingInvite, setIsProcessingInvite] = useState(false);
+  const [inviteError, setInviteError] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState(false);
   
   const [setupData, setSetupData] = useState({ shopName: '', adminName: '', adminPin: '' });
@@ -83,7 +86,6 @@ const AppContent: React.FC = () => {
   const terminalId = useMemo(() => generateRequestCode(), []);
 
   const [isStaffDevice] = useState(() => localStorage.getItem('isStaffDevice') === 'true');
-  const [invitedStaffName] = useState(() => localStorage.getItem('invitedStaffName') || '');
 
   useEffect(() => {
     const splashTimer = setTimeout(() => setShowSplash(false), 2500);
@@ -95,7 +97,6 @@ const AppContent: React.FC = () => {
       try {
         await initSettings();
         
-        // Handle URL Magic Links
         const urlParams = new URLSearchParams(window.location.search);
         const importData = urlParams.get('importData');
         const staffOnboarding = urlParams.get('staffData');
@@ -103,7 +104,7 @@ const AppContent: React.FC = () => {
         if (importData) {
           await handleMagicLinkImport(importData);
         } else if (staffOnboarding) {
-          await handleStaffOnboarding(staffOnboarding);
+          await handleStaffInvite(staffOnboarding);
         }
 
         setIsInitialized(true);
@@ -120,10 +121,11 @@ const AppContent: React.FC = () => {
       const currentSettings = await db.settings.get('app_settings');
       if (currentSettings?.sync_key) {
         const result = await importWhatsAppBridgeData(compressed, currentSettings.sync_key);
+        // Clean URL after import
+        window.history.replaceState({}, document.title, window.location.pathname);
         alert(`Magic Import Success!\n${result.count} items processed.`);
-        window.history.replaceState({}, document.title, "/");
       } else {
-        alert("Sync Key missing on this terminal. Please generate one in Sync Station.");
+        alert("Sync Key missing. Please generate one in Sync Station.");
       }
     } catch (err) {
       alert("Magic Import Failed. Ensure your Sync Key matches.");
@@ -132,33 +134,52 @@ const AppContent: React.FC = () => {
     }
   };
 
-  const handleStaffOnboarding = async (compressed: string) => {
+  /**
+   * ATOMIC PROVISIONING: Handle staff joins with URL cleaning and state sync.
+   */
+  const handleStaffInvite = async (compressed: string) => {
+    setIsProcessingInvite(true);
+    setInviteError(null);
     try {
       const json = LZString.decompressFromEncodedURIComponent(compressed);
-      if (!json) return;
+      if (!json) throw new Error("CORRUPT_DATA");
+      
       const data = JSON.parse(json);
-      
-      await db.settings.update('app_settings', { 
-        shop_name: data.shop, 
-        sync_key: data.syncKey,
-        is_setup_complete: true 
+
+      // 1. Atomic Provisioning
+      await (db as any).transaction('rw', [db.settings, db.staff], async () => {
+        await db.settings.update('app_settings', { 
+          shop_name: data.shop, 
+          sync_key: data.syncKey,
+          is_setup_complete: true,
+          last_used_timestamp: Date.now()
+        });
+        
+        // Remove existing staff to ensure only the invited one is present on staff devices
+        await db.staff.clear();
+        await db.staff.add({
+          name: data.name,
+          role: data.role,
+          password: data.password,
+          status: 'Active',
+          created_at: Date.now()
+        });
       });
-      
-      await db.staff.clear();
-      await db.staff.add({
-        name: data.name,
-        role: data.role,
-        password: data.password,
-        status: 'Active',
-        created_at: Date.now()
-      });
-      
+
+      // 2. URL Cleaning (Stop the Loop)
+      window.history.replaceState({}, document.title, window.location.pathname);
+
+      // 3. State Synchronization
       localStorage.setItem('isStaffDevice', 'true');
       localStorage.setItem('invitedStaffName', data.name);
-      alert("Welcome to the shop! Your terminal is now configured.");
-      window.location.reload();
+      
+      // Force immediate re-initialization to trigger Login View
+      setIsInitialized(true);
     } catch (err) {
-      alert("Onboarding failed.");
+      console.error("Invite processing error:", err);
+      setInviteError("Invite Failed. Please ask Admin for a new link.");
+    } finally {
+      setIsProcessingInvite(false);
     }
   };
 
@@ -170,11 +191,45 @@ const AppContent: React.FC = () => {
     }
   };
 
-  if (isProcessingImport) {
+  const resetTerminal = async () => {
+    if (confirm("This will wipe all local data and reset the terminal. Proceed?")) {
+      await db.delete();
+      localStorage.clear();
+      window.location.href = '/';
+    }
+  };
+
+  // 4. THE WELCOME GUARD: Processing invite screen
+  if (isProcessingInvite || isProcessingImport) {
     return (
-      <div className="min-h-screen bg-emerald-900 flex flex-col items-center justify-center p-6 text-center">
-        <Loader2 size={64} className="animate-spin text-white mb-6" />
-        <h2 className="text-3xl font-black text-white">Decrypting Bridge Data...</h2>
+      <div className="min-h-screen bg-emerald-950 flex flex-col items-center justify-center p-6 text-center">
+        <div className="relative">
+          <Loader2 size={80} className="animate-spin text-emerald-400 mb-8" />
+          <ShieldCheck size={32} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-white" />
+        </div>
+        <h2 className="text-3xl font-black text-white tracking-tight">Establishing Secure Bridge...</h2>
+        <p className="text-emerald-300 font-bold uppercase tracking-[0.2em] text-[10px] mt-4">NaijaShop Security Handshake in progress</p>
+      </div>
+    );
+  }
+
+  // 5. ERROR CATCHING: Invite failure UI
+  if (inviteError) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center">
+        <div className="max-w-md w-full bg-white p-12 rounded-[3.5rem] shadow-2xl border border-rose-100 space-y-8 animate-in zoom-in">
+          <div className="w-24 h-24 bg-rose-50 text-rose-600 rounded-full flex items-center justify-center mx-auto shadow-inner">
+            <XCircle size={56} />
+          </div>
+          <div className="space-y-3">
+            <h2 className="text-3xl font-black text-slate-900">Handshake Failed</h2>
+            <p className="text-slate-500 font-medium leading-relaxed">{inviteError}</p>
+          </div>
+          <div className="pt-4 space-y-4">
+            <button onClick={() => window.location.href = '/'} className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-lg shadow-xl hover:bg-emerald-700 transition-all">Try Again</button>
+            <button onClick={resetTerminal} className="w-full py-4 text-rose-500 font-black text-xs uppercase tracking-widest hover:bg-rose-50 rounded-2xl">Reset Terminal App</button>
+          </div>
+        </div>
       </div>
     );
   }
