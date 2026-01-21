@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect, useRef, useLayoutEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
@@ -20,11 +21,13 @@ import {
   MessageCircle,
   ArrowRight,
   Loader2,
-  Info
+  Info,
+  Share2,
+  MessageSquare
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { View } from '../types';
-import pako from 'pako';
+import { exportDataForWhatsApp } from '../services/syncService';
 
 interface DashboardProps {
   currentUser?: Staff | null;
@@ -36,6 +39,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
   const [showSensitiveData, setShowSensitiveData] = useState(!isSales);
   const [isDataReady, setIsDataReady] = useState(false);
   const [isChartLoading, setIsChartLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
   
   // Recharts dimensions fix
   const [chartWidth, setChartWidth] = useState(0);
@@ -46,7 +50,6 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
   const products = useLiveQuery(() => db.products.toArray());
   const debts = useLiveQuery(() => db.debts.toArray());
 
-  // 1. 2-Second Safety Switch: Force loading state to false
   useEffect(() => {
     const timer = setTimeout(() => {
       setIsChartLoading(false);
@@ -54,7 +57,6 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
     return () => clearTimeout(timer);
   }, []);
 
-  // 2. Fail-Safe Data Processing: Timezone-aware grouping with try/catch
   const processedChartData = useMemo(() => {
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const fallback = days.map(d => ({ name: d, amount: 0, fullDate: 'N/A' }));
@@ -66,7 +68,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
       for (let i = 6; i >= 0; i--) {
         const d = new Date(now);
         d.setDate(now.getDate() - i);
-        d.setHours(0, 0, 0, 0); // Local WAT / System time start of day
+        d.setHours(0, 0, 0, 0); 
         
         const startTs = d.getTime();
         const endTs = startTs + 86400000;
@@ -82,8 +84,6 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
           fullDate: d.toLocaleDateString()
         });
       }
-      
-      console.log('Analytics Data:', result);
       return result;
     } catch (err) {
       console.error("Chart Processing Error:", err);
@@ -93,38 +93,20 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
 
   useLayoutEffect(() => {
     if (!chartParentRef.current) return;
-
-    const measure = () => {
-      const width = chartParentRef.current?.offsetWidth || 0;
-      if (width > 0) {
-        setChartWidth(width);
-        setIsChartLoading(false);
-      }
-    };
-
     const resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
-        const width = entry.contentRect.width;
-        if (width > 0) {
-          setChartWidth(width);
-          setIsChartLoading(false);
-        }
+        setChartWidth(entry.contentRect.width);
+        setIsChartLoading(false);
       }
     });
-
     resizeObserver.observe(chartParentRef.current);
-    measure();
-
     return () => resizeObserver.disconnect();
   }, []);
 
   useEffect(() => {
     if (sales !== undefined && products !== undefined && debts !== undefined && settings !== undefined) {
       setIsDataReady(true);
-      // Aggressive check to unlock chart
-      if (sales.length >= 0) {
-        setTimeout(() => setIsChartLoading(false), 500);
-      }
+      setTimeout(() => setIsChartLoading(false), 500);
     }
   }, [sales, products, debts, settings]);
 
@@ -170,15 +152,24 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
     return `₦${Math.floor(val).toLocaleString()}`;
   };
 
-  const handleWhatsAppReport = async () => {
+  const handleWhatsAppSync = async () => {
+    if (!settings?.sync_key) return alert("Sync Key not configured.");
+    setIsSyncing(true);
     try {
+      const compressed = await exportDataForWhatsApp('SALES', settings.sync_key);
+      const magicLink = `${window.location.origin}/?importData=${compressed}`;
+      const message = `💰 NAIJASHOP SALES REPORT (${new Date().toLocaleDateString()}):\n\nBoss, click this link to import my sales:\n${magicLink}`;
+      window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
+      
+      // Local sync update
       const pendingSales = await db.sales.where('sync_status').equals('pending').toArray();
-      const data = { type: 'SALES_PUSH', sales: pendingSales };
-      const compressed = pako.gzip(JSON.stringify(data));
-      const b64 = btoa(String.fromCharCode.apply(null, Array.from(compressed)));
-      window.open(`https://wa.me/?text=${encodeURIComponent(`📦 STAFF_SALES REPORT (${new Date().toLocaleDateString()}):\n${b64}`)}`, '_blank');
+      for (const sale of pendingSales) {
+        await db.sales.update(sale.id!, { sync_status: 'synced' });
+      }
     } catch (err) {
-      alert("Report failed: " + err);
+      alert("Sync failed: " + err);
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -186,7 +177,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
         <Loader2 size={48} className="animate-spin text-emerald-600" />
-        <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">Syncing Terminal Data...</p>
+        <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">Accessing Terminal Data...</p>
       </div>
     );
   }
@@ -241,43 +232,49 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
       </div>
 
       {isSales && (
-        <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm space-y-6">
-          <div className="flex items-center gap-3">
-             <div className="p-3 bg-emerald-600 text-white rounded-2xl">
-               <RefreshCw size={24} />
-             </div>
-             <div>
-               <h3 className="text-xl font-black text-slate-800">Sync Center</h3>
-               <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Keep your terminal up to date</p>
-             </div>
+        <div className="bg-emerald-900 p-8 rounded-[2.5rem] text-white space-y-6 shadow-2xl relative overflow-hidden">
+          <div className="absolute right-[-40px] bottom-[-40px] opacity-10">
+            <MessageSquare size={180} />
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <button 
-              onClick={() => setView && setView('sync')}
-              className="group p-6 bg-slate-50 border border-slate-200 rounded-3xl hover:border-emerald-500 hover:bg-emerald-50 transition-all flex items-center gap-4 text-left"
-            >
-              <div className="p-4 bg-white rounded-2xl shadow-sm text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white transition-all">
-                <Wifi size={24} />
-              </div>
-              <div className="flex-1">
-                <p className="font-black text-slate-800 leading-tight">Connect to Admin (Wi-Fi)</p>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Send sales & get stock</p>
-              </div>
-              <ArrowRight size={20} className="text-slate-300 group-hover:text-emerald-500 group-hover:translate-x-1 transition-all" />
-            </button>
-            <button 
-              onClick={handleWhatsAppReport}
-              className="group p-6 bg-slate-50 border border-slate-200 rounded-3xl hover:border-emerald-500 hover:bg-emerald-50 transition-all flex items-center gap-4 text-left"
-            >
-              <div className="p-4 bg-white rounded-2xl shadow-sm text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white transition-all">
+          <div className="relative z-10">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-3 bg-white/20 rounded-2xl">
                 <MessageCircle size={24} />
               </div>
-              <div className="flex-1">
-                <p className="font-black text-slate-800 leading-tight">Send WhatsApp Report</p>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Manual offline fallback</p>
+              <div>
+                <h3 className="text-xl font-black">WhatsApp Data Bridge</h3>
+                <p className="text-xs font-bold text-emerald-300 uppercase tracking-widest">Connect to Admin Terminal</p>
               </div>
-              <ArrowRight size={20} className="text-slate-300 group-hover:text-emerald-500 group-hover:translate-x-1 transition-all" />
-            </button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <button 
+                onClick={handleWhatsAppSync}
+                disabled={isSyncing}
+                className="group p-6 bg-white/10 border border-white/20 rounded-3xl hover:bg-white/20 transition-all flex items-center gap-4 text-left"
+              >
+                <div className="p-4 bg-emerald-600 rounded-2xl shadow-sm text-white">
+                  {isSyncing ? <Loader2 className="animate-spin" size={24} /> : <Share2 size={24} />}
+                </div>
+                <div className="flex-1">
+                  <p className="font-black leading-tight">Send Sales to Boss</p>
+                  <p className="text-[10px] text-emerald-300 font-bold uppercase tracking-widest mt-1">Export via WhatsApp</p>
+                </div>
+                <ArrowRight size={20} className="text-white/40 group-hover:translate-x-1 transition-all" />
+              </button>
+              <button 
+                onClick={() => setView && setView('sync')}
+                className="group p-6 bg-white/10 border border-white/20 rounded-3xl hover:bg-white/20 transition-all flex items-center gap-4 text-left"
+              >
+                <div className="p-4 bg-emerald-600 rounded-2xl shadow-sm text-white">
+                  <RefreshCw size={24} />
+                </div>
+                <div className="flex-1">
+                  <p className="font-black leading-tight">Data Sync Station</p>
+                  <p className="text-[10px] text-emerald-300 font-bold uppercase tracking-widest mt-1">Manual Import hub</p>
+                </div>
+                <ArrowRight size={20} className="text-white/40 group-hover:translate-x-1 transition-all" />
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -353,13 +350,11 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
             </select>
           </div>
           
-          {/* Fail-Safe Container: Fixed dimensions with absolute overlay loading */}
           <div 
             ref={chartParentRef}
             className="relative block w-full h-[350px] overflow-hidden"
             style={{ height: '350px', width: '100%', display: 'block' }}
           >
-            {/* Overlay loading: ensure Chart is always 'there' in the background */}
             {isChartLoading && (
                <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/95 z-20 text-gray-400 gap-3">
                  <Loader2 className="animate-spin text-emerald-600" />
@@ -397,14 +392,6 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
-          </div>
-
-          {/* Debug Text: DB Visibility */}
-          <div className="mt-4 flex items-center justify-center gap-2 text-slate-300">
-            <Info size={12} />
-            <span className="text-[9px] font-black uppercase tracking-widest">
-              Debug: Found {sales?.length || 0} sales in DB
-            </span>
           </div>
         </div>
 

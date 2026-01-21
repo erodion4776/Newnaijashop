@@ -44,6 +44,7 @@ export const initSettings = async () => {
       shop_name: '',
       admin_name: '',
       admin_pin: '',
+      sync_key: Math.random().toString(36).substring(2, 15),
       is_setup_complete: false,
       bank_name: 'Access Bank',
       account_number: '0123456789',

@@ -74,6 +74,7 @@ export interface Settings {
   shop_name: string;
   admin_name: string;
   admin_pin: string;
+  sync_key: string; // Used for encrypting WhatsApp data bridge strings
   is_setup_complete: boolean;
   bank_name: string;
   account_number: string;
