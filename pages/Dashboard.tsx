@@ -17,13 +17,13 @@ import {
   Layers,
   Staff,
   RefreshCw,
-  Wifi,
   MessageCircle,
   ArrowRight,
   Loader2,
-  Info,
   Share2,
-  MessageSquare
+  MessageSquare,
+  Lock,
+  ShieldCheck
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { View } from '../types';
@@ -41,8 +41,6 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
   const [isChartLoading, setIsChartLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   
-  // Recharts dimensions fix
-  const [chartWidth, setChartWidth] = useState(0);
   const chartParentRef = useRef<HTMLDivElement>(null);
 
   const settings = useLiveQuery(() => db.settings.get('app_settings'));
@@ -93,11 +91,8 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
 
   useLayoutEffect(() => {
     if (!chartParentRef.current) return;
-    const resizeObserver = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        setChartWidth(entry.contentRect.width);
-        setIsChartLoading(false);
-      }
+    const resizeObserver = new ResizeObserver(() => {
+      setIsChartLoading(false);
     });
     resizeObserver.observe(chartParentRef.current);
     return () => resizeObserver.disconnect();
@@ -153,7 +148,10 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
   };
 
   const handleWhatsAppSync = async () => {
-    if (!settings?.sync_key) return alert("Sync Key not configured.");
+    if (!settings?.sync_key) {
+      if (setView) setView('sync');
+      return;
+    }
     setIsSyncing(true);
     try {
       const compressed = await exportDataForWhatsApp('SALES', settings.sync_key);
@@ -161,13 +159,12 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
       const message = `💰 NAIJASHOP SALES REPORT (${new Date().toLocaleDateString()}):\n\nBoss, click this link to import my sales:\n${magicLink}`;
       window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
       
-      // Local sync update
       const pendingSales = await db.sales.where('sync_status').equals('pending').toArray();
       for (const sale of pendingSales) {
         await db.sales.update(sale.id!, { sync_status: 'synced' });
       }
     } catch (err) {
-      alert("Sync failed: " + err);
+      console.error(err);
     } finally {
       setIsSyncing(false);
     }
@@ -177,10 +174,12 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
         <Loader2 size={48} className="animate-spin text-emerald-600" />
-        <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">Accessing Terminal Data...</p>
+        <p className="text-slate-400 font-black uppercase tracking-widest text-xs">Accessing Terminal Data...</p>
       </div>
     );
   }
+
+  const isKeyMissing = !settings?.sync_key;
 
   return (
     <div className="space-y-6">
@@ -246,35 +245,49 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
                 <p className="text-xs font-bold text-emerald-300 uppercase tracking-widest">Connect to Admin Terminal</p>
               </div>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <button 
-                onClick={handleWhatsAppSync}
-                disabled={isSyncing}
-                className="group p-6 bg-white/10 border border-white/20 rounded-3xl hover:bg-white/20 transition-all flex items-center gap-4 text-left"
-              >
-                <div className="p-4 bg-emerald-600 rounded-2xl shadow-sm text-white">
-                  {isSyncing ? <Loader2 className="animate-spin" size={24} /> : <Share2 size={24} />}
-                </div>
-                <div className="flex-1">
-                  <p className="font-black leading-tight">Send Sales to Boss</p>
-                  <p className="text-[10px] text-emerald-300 font-bold uppercase tracking-widest mt-1">Export via WhatsApp</p>
-                </div>
-                <ArrowRight size={20} className="text-white/40 group-hover:translate-x-1 transition-all" />
-              </button>
-              <button 
-                onClick={() => setView && setView('sync')}
-                className="group p-6 bg-white/10 border border-white/20 rounded-3xl hover:bg-white/20 transition-all flex items-center gap-4 text-left"
-              >
-                <div className="p-4 bg-emerald-600 rounded-2xl shadow-sm text-white">
-                  <RefreshCw size={24} />
-                </div>
-                <div className="flex-1">
-                  <p className="font-black leading-tight">Data Sync Station</p>
-                  <p className="text-[10px] text-emerald-300 font-bold uppercase tracking-widest mt-1">Manual Import hub</p>
-                </div>
-                <ArrowRight size={20} className="text-white/40 group-hover:translate-x-1 transition-all" />
-              </button>
-            </div>
+            
+            {isKeyMissing ? (
+              <div className="bg-rose-500/10 border border-rose-500/20 p-6 rounded-3xl space-y-4 flex flex-col md:flex-row items-center gap-6">
+                 <div className="p-4 bg-rose-500/20 text-rose-300 rounded-2xl">
+                    <Lock size={32} />
+                 </div>
+                 <div className="flex-1 text-center md:text-left">
+                    <p className="font-black text-rose-100">Security Configuration Missing</p>
+                    <p className="text-xs text-emerald-300/70 font-medium">Your terminal has no sync key. Ask your Boss to re-invite you or manually configure your bridge.</p>
+                 </div>
+                 <button onClick={() => setView && setView('sync')} className="px-6 py-3 bg-white text-emerald-900 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-emerald-50 transition-all shadow-xl">Fix Now</button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <button 
+                  onClick={handleWhatsAppSync}
+                  disabled={isSyncing}
+                  className="group p-6 bg-white/10 border border-white/20 rounded-3xl hover:bg-white/20 transition-all flex items-center gap-4 text-left"
+                >
+                  <div className="p-4 bg-emerald-600 rounded-2xl shadow-sm text-white">
+                    {isSyncing ? <Loader2 className="animate-spin" size={24} /> : <Share2 size={24} />}
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-black leading-tight">Send Sales to Boss</p>
+                    <p className="text-[10px] text-emerald-300 font-bold uppercase tracking-widest mt-1">Export via WhatsApp</p>
+                  </div>
+                  <ArrowRight size={20} className="text-white/40 group-hover:translate-x-1 transition-all" />
+                </button>
+                <button 
+                  onClick={() => setView && setView('sync')}
+                  className="group p-6 bg-white/10 border border-white/20 rounded-3xl hover:bg-white/20 transition-all flex items-center gap-4 text-left"
+                >
+                  <div className="p-4 bg-emerald-600 rounded-2xl shadow-sm text-white">
+                    <RefreshCw size={24} />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-black leading-tight">Data Sync Station</p>
+                    <p className="text-[10px] text-emerald-300 font-bold uppercase tracking-widest mt-1">Manual Import hub</p>
+                  </div>
+                  <ArrowRight size={20} className="text-white/40 group-hover:translate-x-1 transition-all" />
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

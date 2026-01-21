@@ -1,36 +1,26 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
 import LZString from 'lz-string';
 import QRCode from 'qrcode';
 import { 
-  UserCog, 
   UserPlus, 
-  Shield, 
   Key, 
-  Smartphone, 
   Trash2, 
   Share2, 
   X, 
-  MessageCircle,
-  CheckCircle2,
-  Lock,
-  ChevronRight,
-  Edit,
-  Eye,
-  EyeOff,
-  Loader2,
-  Copy,
-  QrCode,
-  UserX,
-  UserCheck,
+  CheckCircle2, 
+  Lock, 
+  ChevronRight, 
+  Edit, 
+  Package,
   AlertTriangle,
   RefreshCw,
-  Package
+  ShieldAlert
 } from 'lucide-react';
 import { Staff } from '../types';
-import { exportDataForWhatsApp } from '../services/syncService';
+import { exportDataForWhatsApp, generateSyncKey } from '../services/syncService';
 
 const StaffManagement: React.FC = () => {
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
@@ -43,10 +33,10 @@ const StaffManagement: React.FC = () => {
   const [staffToDelete, setStaffToDelete] = useState<Staff | null>(null);
   const [staffToShare, setStaffToShare] = useState<Staff | null>(null);
   const [shareQRCode, setShareQRCode] = useState<string | null>(null);
-  const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isGeneratingKey, setIsGeneratingKey] = useState(false);
   
   const [formData, setFormData] = useState({ 
     name: '', 
@@ -57,8 +47,6 @@ const StaffManagement: React.FC = () => {
   const staffList = useLiveQuery(() => db.staff.toArray());
   const settings = useLiveQuery(() => db.settings.get('app_settings'));
   
-  const isLoading = staffList === undefined || settings === undefined;
-
   const handleAdminAuth = (e: React.FormEvent) => {
     e.preventDefault();
     setPinError(false);
@@ -71,8 +59,14 @@ const StaffManagement: React.FC = () => {
     }
   };
 
+  const handleGenerateMasterKey = async () => {
+    setIsGeneratingKey(true);
+    await db.settings.update('app_settings', { sync_key: generateSyncKey() });
+    setIsGeneratingKey(false);
+  };
+
   const handleSendStockUpdate = async (staff: Staff) => {
-    if (!settings?.sync_key) return alert("Sync Key missing.");
+    if (!settings?.sync_key) return;
     setIsSyncing(true);
     try {
       const compressed = await exportDataForWhatsApp('STOCK', settings.sync_key);
@@ -130,18 +124,11 @@ const StaffManagement: React.FC = () => {
     }
   };
 
-  const toggleStaffStatus = async (staff: Staff) => {
-    if (!staff.id) return;
-    const newStatus = staff.status === 'Active' ? 'Inactive' : 'Active';
-    await db.staff.update(staff.id, { status: newStatus });
-    showSuccess(`${staff.name} is now ${newStatus}`);
-  };
-
   const handleDeleteStaff = async () => {
     if (!staffToDelete?.id) return;
     try {
       await db.staff.delete(staffToDelete.id);
-      showSuccess(`${staffToDelete.name} has been removed`);
+      showSuccess(`${staffToDelete.name} removed`);
       setIsDeleteModalOpen(false);
       setStaffToDelete(null);
     } catch (err) {
@@ -150,6 +137,7 @@ const StaffManagement: React.FC = () => {
   };
 
   const openShareModal = async (staff: Staff) => {
+    if (!settings?.sync_key) return; // UI Guard should prevent this
     setStaffToShare(staff);
     setIsShareModalOpen(true);
     const onboarding = LZString.compressToEncodedURIComponent(JSON.stringify({
@@ -175,21 +163,12 @@ const StaffManagement: React.FC = () => {
     setIsModalOpen(false);
     setEditingStaff(null);
     setFormData({ name: '', role: 'Sales', password: '' });
-    setShowPassword(false);
   };
 
   const openEditModal = (staff: Staff) => {
     setEditingStaff(staff);
     setFormData({ name: staff.name, role: staff.role, password: staff.password });
     setIsModalOpen(true);
-  };
-
-  const generatePassword = () => {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    let password = '';
-    for (let i = 0; i < 6; i++) password += chars.charAt(Math.floor(Math.random() * chars.length));
-    setFormData({ ...formData, password });
-    setShowPassword(true);
   };
 
   const getRoleBadgeStyle = (role: string) => {
@@ -218,6 +197,8 @@ const StaffManagement: React.FC = () => {
     );
   }
 
+  const isKeyMissing = !settings?.sync_key;
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       {successMessage && (
@@ -229,19 +210,37 @@ const StaffManagement: React.FC = () => {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h3 className="text-2xl font-black text-slate-800 tracking-tight">Staff Registry</h3>
-          <p className="text-sm text-slate-500 font-medium">{(staffList || []).length} staff members • {(staffList || []).filter(s => s.status === 'Active').length} active</p>
+          <p className="text-sm text-slate-500 font-medium">{(staffList || []).length} staff members enrolled</p>
         </div>
         <button onClick={() => { setEditingStaff(null); setFormData({ name: '', role: 'Sales', password: '' }); setIsModalOpen(true); }} className="w-full md:w-auto flex items-center justify-center gap-2 bg-emerald-600 text-white px-8 py-3 rounded-2xl font-black hover:bg-emerald-700 transition-all shadow-xl shadow-emerald-600/20"><UserPlus size={20} /> Add Staff</button>
       </div>
 
+      {isKeyMissing && (
+        <div className="bg-rose-50 border-2 border-dashed border-rose-200 rounded-[2.5rem] p-10 text-center space-y-6">
+           <div className="w-16 h-16 bg-rose-100 text-rose-600 rounded-2xl flex items-center justify-center mx-auto shadow-inner">
+              <ShieldAlert size={32} />
+           </div>
+           <div className="max-w-md mx-auto space-y-2">
+             <h4 className="text-xl font-black text-slate-900">Security Bridge Required</h4>
+             <p className="text-sm text-slate-500 font-medium leading-relaxed">You must generate a Master Sync Key before inviting staff. This key secures your sales and stock data during transfers.</p>
+           </div>
+           <button 
+             onClick={handleGenerateMasterKey} 
+             disabled={isGeneratingKey}
+             className="px-10 py-4 bg-slate-900 text-white rounded-2xl font-black shadow-xl hover:bg-black transition-all flex items-center gap-2 mx-auto"
+           >
+              {isGeneratingKey ? <RefreshCw className="animate-spin" /> : <RefreshCw />}
+              Generate Security Key
+           </button>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-6">
         {(staffList || []).map((staff) => (
-          <div key={staff.id} className={`bg-white p-6 lg:p-8 rounded-[2rem] border shadow-sm transition-all group ${staff.status === 'Inactive' ? 'border-slate-200 bg-slate-50 opacity-70' : 'border-slate-200 hover:border-emerald-200'}`}>
+          <div key={staff.id} className={`bg-white p-6 lg:p-8 rounded-[2rem] border shadow-sm transition-all group ${isKeyMissing ? 'opacity-50' : 'hover:border-emerald-200'}`}>
             <div className="flex justify-between items-start mb-6">
               <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-xl shadow-inner transition-colors ${staff.status === 'Inactive' ? 'bg-slate-200 text-slate-400' : 'bg-slate-100 text-slate-800 group-hover:bg-emerald-50 group-hover:text-emerald-600'}`}>{staff.name.charAt(0).toUpperCase()}</div>
-              <div className="flex flex-col items-end gap-2">
-                <span className={`text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest border ${getRoleBadgeStyle(staff.role)}`}>{staff.role}</span>
-              </div>
+              <span className={`text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest border ${getRoleBadgeStyle(staff.role)}`}>{staff.role}</span>
             </div>
 
             <div className="space-y-3">
@@ -255,15 +254,26 @@ const StaffManagement: React.FC = () => {
                 <button onClick={() => { setStaffToDelete(staff); setIsDeleteModalOpen(true); }} className="p-2.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={18} /></button>
               </div>
               <div className="flex gap-2">
-                <button onClick={() => handleSendStockUpdate(staff)} disabled={isSyncing} className="p-2.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white rounded-xl transition-all shadow-sm flex items-center gap-1.5"><Package size={16} /><span className="text-[10px] font-black uppercase">Sync Stock</span></button>
-                <button onClick={() => openShareModal(staff)} className="p-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-all shadow-lg"><Share2 size={16} /></button>
+                <button 
+                  onClick={() => handleSendStockUpdate(staff)} 
+                  disabled={isSyncing || isKeyMissing} 
+                  className="p-2.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white rounded-xl transition-all disabled:opacity-30 shadow-sm flex items-center gap-1.5"
+                >
+                  <Package size={16} />
+                </button>
+                <button 
+                  onClick={() => openShareModal(staff)} 
+                  disabled={isKeyMissing}
+                  className="p-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-all disabled:opacity-30 shadow-lg"
+                >
+                  <Share2 size={16} />
+                </button>
               </div>
             </div>
           </div>
         ))}
       </div>
 
-      {/* Modals are kept similar but simplified for brevity in this diff */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
           <div className="bg-white rounded-[3rem] w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in duration-300">
@@ -279,13 +289,68 @@ const StaffManagement: React.FC = () => {
                 ))}
               </div>
               <input required type="text" placeholder="Password" minLength={4} className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold" value={formData.password} onChange={(e) => setFormData({...formData, password: e.target.value})} />
-              <button type="submit" className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black">{editingStaff ? 'Save Changes' : 'Add Staff'}</button>
+              <button type="submit" disabled={isSubmitting} className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black shadow-xl">
+                {isSubmitting ? 'Saving...' : editingStaff ? 'Save Changes' : 'Add Staff'}
+              </button>
             </form>
           </div>
         </div>
       )}
 
-      {/* Success, Delete and Share modals truncated for brevity but functionality remains */}
+      {isDeleteModalOpen && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+           <div className="bg-white p-8 rounded-[3rem] text-center space-y-6 w-full max-w-sm animate-in zoom-in">
+              <div className="w-20 h-20 bg-rose-50 text-rose-600 rounded-full flex items-center justify-center mx-auto shadow-inner"><AlertTriangle size={40} /></div>
+              <h3 className="text-2xl font-black text-slate-900">Remove Staff?</h3>
+              <p className="text-slate-500 font-medium">This will remove their terminal permissions.</p>
+              <div className="flex gap-4">
+                <button onClick={() => setIsDeleteModalOpen(false)} className="flex-1 py-4 bg-slate-100 text-slate-400 rounded-2xl font-black text-xs uppercase tracking-widest">Cancel</button>
+                <button onClick={handleDeleteStaff} className="flex-1 py-4 bg-rose-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-rose-200">Remove</button>
+              </div>
+           </div>
+        </div>
+      )}
+
+      {isShareModalOpen && staffToShare && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md">
+          <div className="bg-white rounded-[3rem] w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in text-center p-10 space-y-8">
+             <div className="space-y-2">
+                <h3 className="text-2xl font-black text-slate-900 tracking-tight">Staff Invite</h3>
+                <p className="text-sm text-slate-500 font-medium">Invite {staffToShare.name} to join your shop.</p>
+             </div>
+             
+             {shareQRCode && (
+               <div className="bg-slate-50 p-6 rounded-[2.5rem] border border-slate-100 inline-block shadow-inner relative group">
+                  <img src={shareQRCode} alt="Invite QR" className="w-48 h-48 mx-auto mix-blend-multiply" />
+                  <div className="absolute inset-0 bg-white/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-[2.5rem]">
+                    <Share2 size={32} className="text-slate-900" />
+                  </div>
+               </div>
+             )}
+
+             <div className="space-y-3">
+               <button 
+                  onClick={() => {
+                    const onboarding = LZString.compressToEncodedURIComponent(JSON.stringify({
+                      shop: settings?.shop_name,
+                      name: staffToShare.name,
+                      role: staffToShare.role,
+                      password: staffToShare.password,
+                      syncKey: settings?.sync_key
+                    }));
+                    const url = `${window.location.origin}/?staffData=${onboarding}`;
+                    const message = `🏪 NAIJASHOP INVITE (${settings?.shop_name})\n\n${staffToShare.name}, click this link to join our shop terminal:\n${url}`;
+                    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
+                  }}
+                  className="w-full py-5 bg-emerald-600 text-white rounded-2xl font-black text-lg shadow-xl hover:bg-emerald-700 transition-all active:scale-95 flex items-center justify-center gap-3"
+               >
+                 <Share2 size={24} /> Send WhatsApp Invite
+               </button>
+               <button onClick={() => setIsShareModalOpen(false)} className="w-full py-4 text-slate-400 font-bold text-xs uppercase tracking-widest">Close</button>
+             </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
