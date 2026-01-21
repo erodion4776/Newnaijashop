@@ -38,7 +38,9 @@ import {
   Wifi,
   XCircle,
   Settings2,
-  Wrench
+  Wrench,
+  QrCode,
+  ArrowLeft
 } from 'lucide-react';
 
 const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-9987-b4ed4c0e3c36.png";
@@ -80,6 +82,7 @@ const AppContent: React.FC = () => {
   const [isProcessingInvite, setIsProcessingInvite] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState(false);
+  const [showScannerForJoin, setShowScannerForJoin] = useState(false);
   
   const [setupData, setSetupData] = useState({ shopName: '', adminName: '', adminPin: '' });
 
@@ -93,6 +96,7 @@ const AppContent: React.FC = () => {
     return () => clearTimeout(splashTimer);
   }, []);
 
+  // 1. Restore and Enhance URL Listener
   useEffect(() => {
     const start = async () => {
       try {
@@ -100,7 +104,8 @@ const AppContent: React.FC = () => {
         
         const urlParams = new URLSearchParams(window.location.search);
         const importData = urlParams.get('importData');
-        const staffOnboarding = urlParams.get('staffData');
+        // Handle various invite param names for robustness
+        const staffOnboarding = urlParams.get('staffData') || urlParams.get('data') || urlParams.get('invite');
 
         if (importData) {
           await handleMagicLinkImport(importData);
@@ -134,40 +139,59 @@ const AppContent: React.FC = () => {
     }
   };
 
+  // 2. Robust Decoding & 3. Atomic Database Save
   const handleStaffInvite = async (compressed: string) => {
     setIsProcessingInvite(true);
     setInviteError(null);
     try {
-      const json = LZString.decompressFromEncodedURIComponent(compressed);
-      if (!json) throw new Error("CORRUPT_DATA");
+      // Robust decoding from URL
+      let dataString = compressed;
+      if (compressed.includes('staffData=')) dataString = compressed.split('staffData=')[1];
+      else if (compressed.includes('data=')) dataString = compressed.split('data=')[1];
+      else if (compressed.includes('invite=')) dataString = compressed.split('invite=')[1];
+
+      const json = LZString.decompressFromEncodedURIComponent(dataString);
+      if (!json) throw new Error("CORRUPT_DATA_STRING");
       
       const data = JSON.parse(json);
 
+      // ATOMIC PROVISIONING
       await (db as any).transaction('rw', [db.settings, db.staff], async () => {
-        await db.settings.update('app_settings', { 
-          shop_name: data.shop, 
-          sync_key: data.syncKey,
+        // Ensure settings exist first
+        const currentSettings = await db.settings.get('app_settings');
+        
+        await db.settings.put({
+          ...currentSettings,
+          id: 'app_settings',
+          shop_name: data.shop || data.shopName, 
+          sync_key: data.syncKey || data.masterSyncKey,
           is_setup_complete: true,
           last_used_timestamp: Date.now()
         });
         
+        // Clear old staff (this is a fresh terminal join)
         await db.staff.clear();
+        
+        // Add the invited staff member
         await db.staff.add({
-          name: data.name,
-          role: data.role,
-          password: data.password,
+          name: data.name || data.staffMember?.name,
+          role: data.role || data.staffMember?.role || 'Sales',
+          password: data.password || data.staffMember?.password,
           status: 'Active',
           created_at: Date.now()
         });
       });
 
-      window.history.replaceState({}, document.title, window.location.pathname);
+      // 4. URL Cleanup & Redirect
+      window.history.replaceState({}, document.title, '/');
       localStorage.setItem('isStaffDevice', 'true');
       setIsStaffDevice(true);
-      setIsInitialized(true);
+      
+      // Forces re-render into the Login view
+      setIsInitialized(true); 
     } catch (err) {
       console.error("Invite processing error:", err);
-      setInviteError("Invite Failed. Please ask Admin for a new link.");
+      setInviteError("Invite Failed. The link might be corrupt or the shop key is missing.");
     } finally {
       setIsProcessingInvite(false);
     }
@@ -265,7 +289,9 @@ const AppContent: React.FC = () => {
           <Loader2 size={80} className="animate-spin text-emerald-400 mb-8" />
           <ShieldCheck size={32} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-white" />
         </div>
-        <h2 className="text-3xl font-black text-white tracking-tight">Establishing Secure Bridge...</h2>
+        <h2 className="text-3xl font-black text-white tracking-tight">
+          {isProcessingInvite ? "Joining Shop Terminal..." : "Importing Sync Data..."}
+        </h2>
         <p className="text-emerald-300 font-bold uppercase tracking-[0.2em] text-[10px] mt-4">NaijaShop Security Handshake in progress</p>
       </div>
     );
@@ -309,17 +335,43 @@ const AppContent: React.FC = () => {
   if (isInitialized && settings && (!settings.is_setup_complete || !settings.admin_pin)) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
+        {showScannerForJoin && (
+          <BarcodeScanner 
+            onScan={(data) => {
+              handleStaffInvite(data);
+              setShowScannerForJoin(false);
+            }} 
+            onClose={() => setShowScannerForJoin(false)} 
+          />
+        )}
         <div className="w-full max-w-md space-y-8 animate-in slide-in-from-bottom-8 duration-700">
           <div className="text-center space-y-2">
-            <h2 className="text-4xl font-black text-slate-900 tracking-tight">Shop Initial Configuration</h2>
-            <p className="text-slate-500 font-medium">Create the primary terminal profile</p>
+            <h2 className="text-4xl font-black text-slate-900 tracking-tight">Shop Onboarding</h2>
+            <p className="text-slate-500 font-medium">Create a new shop or join an existing one</p>
           </div>
-          <form onSubmit={handleSetupComplete} className="bg-white p-10 rounded-[3rem] shadow-2xl border border-slate-100 space-y-6">
-            <input required type="text" placeholder="Shop Name" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold" value={setupData.shopName} onChange={e => setSetupData({...setupData, shopName: e.target.value})} />
-            <input required type="text" placeholder="Admin Name" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold" value={setupData.adminName} onChange={e => setSetupData({...setupData, adminName: e.target.value})} />
-            <input required type="password" maxLength={4} placeholder="Set Admin PIN (4 digits)" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-2xl" value={setupData.adminPin} onChange={e => setSetupData({...setupData, adminPin: e.target.value})} />
-            <button type="submit" className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-xl hover:bg-emerald-700 shadow-xl transition-all">Start Trading</button>
-          </form>
+          <div className="bg-white p-10 rounded-[3rem] shadow-2xl border border-slate-100 space-y-8">
+            <form onSubmit={handleSetupComplete} className="space-y-6">
+              <div className="space-y-4">
+                <input required type="text" placeholder="Shop Name" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold" value={setupData.shopName} onChange={e => setSetupData({...setupData, shopName: e.target.value})} />
+                <input required type="text" placeholder="Admin Name" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold" value={setupData.adminName} onChange={e => setSetupData({...setupData, adminName: e.target.value})} />
+                <input required type="password" maxLength={4} placeholder="Set Admin PIN (4 digits)" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-2xl text-center tracking-[0.5em]" value={setupData.adminPin} onChange={e => setSetupData({...setupData, adminPin: e.target.value})} />
+              </div>
+              <button type="submit" className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-xl hover:bg-emerald-700 shadow-xl transition-all">Start New Shop</button>
+            </form>
+
+            <div className="relative">
+               <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-100"></div></div>
+               <div className="relative flex justify-center text-[10px] font-black uppercase tracking-widest"><span className="bg-white px-4 text-slate-300">Or</span></div>
+            </div>
+
+            {/* 6. Fix the 'Join' Button */}
+            <button 
+              onClick={() => setShowScannerForJoin(true)}
+              className="w-full py-4 bg-slate-50 text-slate-600 rounded-[2rem] font-black text-xs uppercase tracking-widest border border-slate-200 hover:bg-slate-100 transition-all flex items-center justify-center gap-3"
+            >
+              <QrCode size={18} /> Join as Staff (Scan QR)
+            </button>
+          </div>
         </div>
       </div>
     );
