@@ -32,7 +32,6 @@ interface LayoutProps {
   onLogout: () => void;
 }
 
-// Fix: Added missing default export and finished the component JSX structure which was truncated in the source.
 const Layout: React.FC<LayoutProps> = ({ children, activeView, setView, shopName, currentUser, onLogout }) => {
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
   const { status } = useSync();
@@ -51,9 +50,12 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, setView, shopName
     { id: 'settings', label: 'Settings', icon: Settings, roles: ['Admin'] },
   ];
 
-  const visibleNavItems = navItems.filter(item => 
-    currentUser && item.roles.includes(currentUser.role)
-  );
+  // FIX: MASTER ADMIN OVERRIDE - If role is Admin, show EVERYTHING
+  const visibleNavItems = navItems.filter(item => {
+    if (!currentUser) return false;
+    if (currentUser.role === 'Admin') return true;
+    return item.roles.includes(currentUser.role);
+  });
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden">
@@ -92,7 +94,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, setView, shopName
         <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 shrink-0">
           <div className="flex items-center gap-4">
             <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-2 hover:bg-slate-100 rounded-lg"><Menu size={24} /></button>
-            <h2 className="text-lg font-bold text-slate-800">{navItems.find(i => i.id === activeView)?.label}</h2>
+            <h2 className="text-lg font-bold text-slate-800">{navItems.find(i => i.id === activeView)?.label || 'Terminal View'}</h2>
           </div>
           
           <div className="flex items-center gap-6">
@@ -118,15 +120,6 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, setView, shopName
                </div>
                {status === 'failed' && <WifiOff size={12} className="text-rose-400" />}
                {status === 'live' && <Activity size={12} className="text-emerald-500 animate-pulse" />}
-            </div>
-
-            <div className="flex items-center gap-2">
-              <div className="relative flex items-center">
-                 <div className={`h-2.5 w-2.5 rounded-full transition-all duration-500 ${
-                   status === 'live' ? 'bg-emerald-500 shadow-[0_0_8px_#10b981]' : 
-                   status === 'reconnecting' ? 'bg-amber-500 animate-pulse' : 'bg-slate-300'
-                 }`} />
-              </div>
             </div>
           </div>
         </header>

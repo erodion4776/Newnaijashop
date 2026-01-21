@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, ErrorInfo, ReactNode } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, initSettings } from './db/db';
@@ -38,10 +39,12 @@ import {
   Wifi,
   XCircle,
   UserShield,
-  Settings2
+  Settings2,
+  Wrench
 } from 'lucide-react';
 
 const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-9987-b4ed4c0e3c36.png";
+const MASTER_RECOVERY_PIN = "9999";
 
 interface ErrorBoundaryProps { children?: ReactNode; }
 interface ErrorBoundaryState { hasError: boolean; error: Error | null; }
@@ -84,9 +87,7 @@ const AppContent: React.FC = () => {
 
   const settings = useLiveQuery(() => db.settings.get('app_settings'));
   const staffList = useLiveQuery(() => db.staff.filter(s => s.status === 'Active').toArray()) || [];
-  const terminalId = useMemo(() => generateRequestCode(), []);
-
-  // Use a state variable for isStaffDevice to allow UI updates when toggled
+  
   const [isStaffDevice, setIsStaffDevice] = useState(() => localStorage.getItem('isStaffDevice') === 'true');
 
   useEffect(() => {
@@ -194,12 +195,68 @@ const AppContent: React.FC = () => {
     const pin = prompt("Enter Master Admin PIN to restore Admin access:");
     if (!pin) return;
     
-    if (pin === settings?.admin_pin) {
+    if (pin === settings?.admin_pin || pin === MASTER_RECOVERY_PIN) {
       localStorage.removeItem('isStaffDevice');
       setIsStaffDevice(false);
-      alert("Admin access restored. You can now select the Admin account from the dropdown.");
+      alert("Admin access restored.");
     } else {
       alert("Incorrect Admin PIN.");
+    }
+  };
+
+  const handleSetupComplete = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const updatedSettings = {
+      shop_name: setupData.shopName,
+      admin_name: setupData.adminName,
+      admin_pin: setupData.adminPin,
+      is_setup_complete: true,
+      last_used_timestamp: Date.now()
+    };
+    
+    await db.settings.update('app_settings', updatedSettings);
+    
+    // AUTO-PROMOTE TO ADMIN AFTER SETUP
+    setCurrentUser({
+      name: updatedSettings.admin_name,
+      role: 'Admin',
+      password: updatedSettings.admin_pin,
+      status: 'Active',
+      created_at: Date.now()
+    });
+    setCurrentView('dashboard');
+  };
+
+  const handleLoginSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    // 1. MASTER RECOVERY PIN LOGIC
+    if (loginPassword === MASTER_RECOVERY_PIN) {
+      if (settings) {
+        setCurrentUser({ 
+          name: settings.admin_name || 'Recovery Admin', 
+          role: 'Admin', 
+          password: MASTER_RECOVERY_PIN, 
+          status: 'Active', 
+          created_at: Date.now() 
+        });
+        setCurrentView('settings'); // Redirect to fix settings
+        alert("Emergency Admin Access Granted. Please update your PIN in Settings.");
+        return;
+      }
+    }
+
+    // 2. STANDARD LOGIN LOGIC
+    if (selectedStaffId === 'admin') {
+      if (loginPassword === settings?.admin_pin) {
+        setCurrentUser({ name: settings.admin_name, role: 'Admin', password: settings.admin_pin, status: 'Active', created_at: Date.now() });
+      } else alert("Invalid PIN");
+    } else {
+      const staff = staffList.find(s => s.id === selectedStaffId);
+      if (staff && staff.password === loginPassword) {
+        setCurrentUser(staff);
+        if (staff.role === 'Sales') setCurrentView('pos');
+      } else alert("Invalid Password");
     }
   };
 
@@ -250,28 +307,20 @@ const AppContent: React.FC = () => {
     );
   }
 
-  if (isInitialized && settings && !settings.is_setup_complete) {
+  // FIX: SHOW SETUP ONLY IF DB IS COMPLETELY NEW OR NO PIN CONFIGURED
+  if (isInitialized && settings && (!settings.is_setup_complete || !settings.admin_pin)) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
         <div className="w-full max-w-md space-y-8 animate-in slide-in-from-bottom-8 duration-700">
           <div className="text-center space-y-2">
-            <h2 className="text-4xl font-black text-slate-900 tracking-tight">Setup Your Shop</h2>
+            <h2 className="text-4xl font-black text-slate-900 tracking-tight">Shop Initial Configuration</h2>
             <p className="text-slate-500 font-medium">Create the primary terminal profile</p>
           </div>
-          <form onSubmit={async (e) => {
-            e.preventDefault();
-            await db.settings.update('app_settings', {
-              shop_name: setupData.shopName,
-              admin_name: setupData.adminName,
-              admin_pin: setupData.adminPin,
-              is_setup_complete: true,
-              last_used_timestamp: Date.now()
-            });
-          }} className="bg-white p-10 rounded-[3rem] shadow-2xl border border-slate-100 space-y-6">
+          <form onSubmit={handleSetupComplete} className="bg-white p-10 rounded-[3rem] shadow-2xl border border-slate-100 space-y-6">
             <input required type="text" placeholder="Shop Name" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold" value={setupData.shopName} onChange={e => setSetupData({...setupData, shopName: e.target.value})} />
             <input required type="text" placeholder="Admin Name" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold" value={setupData.adminName} onChange={e => setSetupData({...setupData, adminName: e.target.value})} />
-            <input required type="password" maxLength={4} placeholder="Admin PIN" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-2xl" value={setupData.adminPin} onChange={e => setSetupData({...setupData, adminPin: e.target.value})} />
-            <button type="submit" className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-xl hover:bg-emerald-700 shadow-xl transition-all">Complete Setup</button>
+            <input required type="password" maxLength={4} placeholder="Set Admin PIN (4 digits)" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-2xl" value={setupData.adminPin} onChange={e => setSetupData({...setupData, adminPin: e.target.value})} />
+            <button type="submit" className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-xl hover:bg-emerald-700 shadow-xl transition-all">Start Trading</button>
           </form>
         </div>
       </div>
@@ -292,26 +341,13 @@ const AppContent: React.FC = () => {
           <div className="bg-white p-10 rounded-[3rem] shadow-2xl border border-slate-200 space-y-8 relative overflow-hidden">
             {isStaffDevice && (
                <div className="absolute top-0 left-0 right-0 bg-emerald-600 text-white text-[9px] font-black uppercase tracking-widest text-center py-1.5 px-4 flex items-center justify-center gap-2">
-                 <Smartphone size={10} /> Staff Provisioned Terminal
+                 <Smartphone size={10} /> Staff Terminal
                </div>
             )}
-            <form onSubmit={(e) => {
-              e.preventDefault();
-              if (selectedStaffId === 'admin') {
-                if (loginPassword === settings?.admin_pin) {
-                  setCurrentUser({ name: settings.admin_name, role: 'Admin', password: settings.admin_pin, status: 'Active', created_at: Date.now() });
-                } else alert("Invalid PIN");
-              } else {
-                const staff = staffList.find(s => s.id === selectedStaffId);
-                if (staff && staff.password === loginPassword) {
-                  setCurrentUser(staff);
-                  if (staff.role === 'Sales') setCurrentView('pos');
-                } else alert("Invalid Password");
-              }
-            }} className={`space-y-6 ${isStaffDevice ? 'pt-4' : ''}`}>
+            <form onSubmit={handleLoginSubmit} className={`space-y-6 ${isStaffDevice ? 'pt-4' : ''}`}>
               <select required className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold" value={selectedStaffId} onChange={(e) => setSelectedStaffId(e.target.value === 'admin' ? 'admin' : Number(e.target.value))}>
                 <option value="">Select Account</option>
-                {!isStaffDevice && <option value="admin">{settings?.admin_name} (Admin)</option>}
+                <option value="admin">{settings?.admin_name || 'Owner'} (Admin)</option>
                 {staffList.map(s => <option key={s.id} value={s.id}>{s.name} ({s.role})</option>)}
               </select>
               <input required type="password" placeholder="PIN / Password" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} />
@@ -319,16 +355,18 @@ const AppContent: React.FC = () => {
             </form>
           </div>
           
-          {isStaffDevice && (
-            <div className="text-center pt-4">
-              <button 
-                onClick={handleAdminOverride}
-                className="inline-flex items-center gap-2 text-slate-400 font-bold text-xs uppercase tracking-widest hover:text-emerald-600 transition-colors"
-              >
-                <UserShield size={14} /> Switch to Admin Device
-              </button>
+          <div className="text-center pt-4 space-y-4">
+            <button 
+              onClick={handleAdminOverride}
+              className="inline-flex items-center gap-2 text-slate-400 font-bold text-xs uppercase tracking-widest hover:text-emerald-600 transition-colors"
+            >
+              <UserShield size={14} /> Master Key Login
+            </button>
+            <div className="flex items-center justify-center gap-2 text-[10px] text-slate-300 font-medium">
+              <Wrench size={12} />
+              <span>Recovery PIN is {MASTER_RECOVERY_PIN}</span>
             </div>
-          )}
+          </div>
         </div>
       </div>
     );
@@ -362,6 +400,10 @@ const AppContent: React.FC = () => {
                   <div>
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 ml-1">Admin Display Name</label>
                     <input className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold outline-none focus:ring-2 focus:ring-emerald-500" value={settings?.admin_name} onChange={async (e) => await db.settings.update('app_settings', { admin_name: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 ml-1">Update Admin PIN</label>
+                    <input type="password" maxLength={4} className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-xl outline-none focus:ring-2 focus:ring-rose-500" value={settings?.admin_pin} onChange={async (e) => await db.settings.update('app_settings', { admin_pin: e.target.value })} />
                   </div>
                 </div>
              </div>
@@ -401,11 +443,6 @@ const AppContent: React.FC = () => {
                            <RefreshCw size={14} /> Regenerate
                         </button>
                       </div>
-                   </div>
-
-                   <div className="flex items-center gap-2 text-emerald-300">
-                      <Info size={14} />
-                      <span className="text-[10px] font-black uppercase tracking-widest">Invite QR codes automatically include this key</span>
                    </div>
                 </div>
              </div>
