@@ -19,9 +19,36 @@ import {
   Lock,
   Database,
   Smartphone,
-  WifiOff
+  WifiOff,
+  Search,
+  ChevronDown,
+  ChevronUp,
+  MessageCircle
 } from 'lucide-react';
 import { Staff } from '../types';
+
+const FAQ_DATA = [
+  {
+    q: "Does this app need data to work?",
+    a: "No. NaijaShop is Offline-First. You can make sales, check stock, and view profits without 1kb of data. You only need internet for AI scanning and WhatsApp backups."
+  },
+  {
+    q: "How do I stop my staff from seeing my profits?",
+    a: "Go to 'Manage Staff' and create a 'Staff' account. When they log in, the app automatically hides all profit, cost price, and settings data. Only the Admin PIN can see these."
+  },
+  {
+    q: "What if I lose my phone?",
+    a: "Always use the 'Backup to WhatsApp' feature every night. If you get a new phone, simply install the app and 'Restore' your backup file to get all your data back."
+  },
+  {
+    q: "How do I verify bank transfers?",
+    a: "Use the 'Transfer Station' to show your details to the customer. Always wait for your bank's SMS or App alert before clicking 'Confirm Alert Received' in the app."
+  },
+  {
+    q: "Can I use a barcode scanner?",
+    a: "Yes! You can use your phone's camera or connect a Bluetooth/USB barcode scanner to your device for faster checkout."
+  }
+];
 
 const Settings: React.FC<{ currentUser: Staff | null }> = ({ currentUser }) => {
   const settings = useLiveQuery(() => db.settings.get('app_settings'));
@@ -33,6 +60,15 @@ const Settings: React.FC<{ currentUser: Staff | null }> = ({ currentUser }) => {
   const [bankName, setBankName] = useState('');
   const [accountNumber, setAccountNumber] = useState('');
   const [accountName, setAccountName] = useState('');
+
+  // FAQ states
+  const [faqSearch, setFaqSearch] = useState('');
+  const [activeFaq, setActiveFaq] = useState<number | null>(null);
+
+  const filteredFaq = FAQ_DATA.filter(item => 
+    item.q.toLowerCase().includes(faqSearch.toLowerCase()) || 
+    item.a.toLowerCase().includes(faqSearch.toLowerCase())
+  );
 
   useEffect(() => {
     if (settings) {
@@ -176,6 +212,64 @@ const Settings: React.FC<{ currentUser: Staff | null }> = ({ currentUser }) => {
               </div>
             </div>
           </form>
+
+          {/* Help Center & FAQ */}
+          <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl"><HelpCircle size={24} /></div>
+                <h3 className="text-xl font-black text-slate-800 tracking-tight">Help Center & FAQ</h3>
+              </div>
+              <div className="relative flex-1 max-w-xs">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                <input 
+                  type="text" 
+                  placeholder="Search answers..." 
+                  className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-emerald-500 font-bold"
+                  value={faqSearch}
+                  onChange={e => setFaqSearch(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="divide-y divide-slate-100">
+              {filteredFaq.map((item, idx) => (
+                <div key={idx} className="group">
+                  <button 
+                    onClick={() => setActiveFaq(activeFaq === idx ? null : idx)}
+                    className="flex items-center justify-between w-full py-5 text-left transition-all"
+                  >
+                    <span className="font-black text-slate-700 group-hover:text-emerald-600 transition-colors pr-4">{item.q}</span>
+                    {activeFaq === idx ? (
+                      <ChevronUp size={20} className="text-emerald-500 shrink-0" />
+                    ) : (
+                      <ChevronDown size={20} className="text-slate-300 shrink-0" />
+                    )}
+                  </button>
+                  {activeFaq === idx && (
+                    <div className="pb-6 text-slate-500 font-medium leading-relaxed animate-in slide-in-from-top-2 duration-200">
+                      {item.a}
+                    </div>
+                  )}
+                </div>
+              ))}
+              {filteredFaq.length === 0 && (
+                <div className="py-10 text-center text-slate-400 font-bold uppercase tracking-widest text-[10px]">
+                  No answers found for "{faqSearch}"
+                </div>
+              )}
+            </div>
+
+            <div className="pt-4 border-t border-slate-100">
+              <button 
+                onClick={() => window.open(`https://wa.me/2348123456789?text=${encodeURIComponent("Hello NaijaShop Support, I need help with my terminal.")}`, '_blank')}
+                className="w-full py-4 bg-emerald-50 text-emerald-700 rounded-2xl font-black text-sm uppercase tracking-widest flex items-center justify-center gap-3 hover:bg-emerald-100 transition-all border border-emerald-100 shadow-sm shadow-emerald-100/50"
+              >
+                <MessageCircle size={20} />
+                Contact Support on WhatsApp
+              </button>
+            </div>
+          </div>
         </div>
 
         <div className="space-y-6">
