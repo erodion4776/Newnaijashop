@@ -30,6 +30,7 @@ import {
 import { Product, SaleItem, ParkedOrder, View, Staff, Sale } from '../types';
 import BarcodeScanner from '../components/BarcodeScanner';
 import { performAutoSnapshot } from '../utils/backup';
+import NotificationService from '../services/NotificationService';
 
 interface POSProps {
   setView: (view: View) => void;
@@ -257,6 +258,14 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
               }
             }
           }
+        }
+      });
+
+      // Post-transaction logic: Check for items that hit 0 and trigger notification
+      cart.forEach(async (item) => {
+        const product = await db.products.get(item.productId);
+        if (product && product.stock_qty <= 0) {
+          NotificationService.sendLowStockAlert(product.name);
         }
       });
 

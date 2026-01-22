@@ -28,7 +28,42 @@ class NotificationService {
   }
 
   /**
-   * Send a local notification
+   * Specifically handles low stock alerts using the Service Worker
+   * This ensures the notification works effectively on Android/PWAs
+   */
+  public async sendLowStockAlert(productName: string) {
+    console.log('Low stock check triggered for:', productName);
+    
+    if (Notification.permission !== 'granted') {
+      console.warn('Notification permission not granted. Skipping alert for:', productName);
+      return;
+    }
+
+    if ('serviceWorker' in navigator) {
+      try {
+        const registration = await navigator.serviceWorker.ready;
+        registration.showNotification('⚠️ Out of Stock', {
+          body: `${productName} has just finished! Remember to restock.`,
+          icon: LOGO_URL,
+          badge: LOGO_URL,
+          vibrate: [200, 100, 200],
+          tag: 'low-stock-' + productName,
+          renotify: true
+        } as any);
+      } catch (err) {
+        console.error('Failed to send Service Worker notification:', err);
+      }
+    } else {
+      // Fallback for environments without Service Worker (though PWA should have it)
+      new Notification('⚠️ Out of Stock', {
+        body: `${productName} has just finished!`,
+        icon: LOGO_URL
+      });
+    }
+  }
+
+  /**
+   * Send a general local notification
    */
   public async sendNotification(title: string, body: string) {
     if (Notification.permission === 'granted') {
@@ -62,10 +97,7 @@ class NotificationService {
       if ('stock_qty' in mods && mods.stock_qty === 0 && obj.stock_qty > 0) {
         // We use a small delay to ensure the transaction completes before notifying
         setTimeout(() => {
-          this.sendNotification(
-            '⚠️ Out of Stock',
-            `${obj.name} just finished. Remember to restock!`
-          );
+          this.sendLowStockAlert(obj.name);
         }, 1000);
       }
     });
