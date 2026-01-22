@@ -28,6 +28,7 @@ export interface SaleItem {
   name: string;
   quantity: number;
   price: number;
+  isStockAlreadyDeducted?: boolean;
 }
 
 export interface Sale {

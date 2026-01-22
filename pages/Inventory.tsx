@@ -16,7 +16,6 @@ import {
   CheckCircle2, 
   ClipboardList,
   AlertCircle,
-  // Fix: Added missing AlertTriangle import from lucide-react
   AlertTriangle,
   PackageCheck,
   RefreshCw,
@@ -39,7 +38,8 @@ import {
   Settings2,
   Filter,
   Layers,
-  ShoppingBag
+  ShoppingBag,
+  Clock
 } from 'lucide-react';
 import { Product, View, Staff } from '../types';
 import { processHandwrittenLedger, RateLimitError } from '../services/geminiService';
@@ -52,9 +52,6 @@ interface InventoryProps {
 
 const CATEGORIES = ['General', 'Electronics', 'Food & Drinks', 'Clothing', 'Health', 'Beauty', 'Home', 'Office', 'Other'];
 
-/**
- * Resizes an image to a maximum width to optimize for AI processing
- */
 const resizeImage = (file: File, maxWidth: number = 1024): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -104,7 +101,6 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
   const [restockQty, setRestockQty] = useState<number>(0);
   const [restockType, setRestockType] = useState<'add' | 'remove' | 'set'>('add');
   
-  // Bulk Updater State
   const [bulkTarget, setBulkTarget] = useState<'all' | 'category'>('all');
   const [bulkCategory, setBulkCategory] = useState('General');
   const [bulkType, setBulkType] = useState<'percent' | 'fixed'>('percent');
@@ -117,8 +113,19 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
 
   const allProductsData = useLiveQuery(() => db.products.toArray());
   const allProducts = allProductsData || [];
+  const parkedOrders = useLiveQuery(() => db.parked_orders.toArray()) || [];
 
-  // Logic: Identify items where stock is at or below threshold
+  // Point 5: UI Feedback Logic - Map Product IDs to Parked/Reserved Quantities
+  const reservedMap = useMemo(() => {
+    const map: Record<number, number> = {};
+    parkedOrders.forEach(order => {
+      order.items.forEach(item => {
+        map[item.productId] = (map[item.productId] || 0) + item.quantity;
+      });
+    });
+    return map;
+  }, [parkedOrders]);
+
   const lowStockItems = useMemo(() => {
     return allProducts.filter(p => p.stock_qty <= (p.low_stock_threshold || 5));
   }, [allProducts]);
@@ -135,7 +142,7 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
     );
   }, [allProducts, lowStockItems, searchTerm, stockFilter]);
 
-  // Inventory Valuation Logic
+  // Point 6: Valuation Logic adjusted to include reserved (parked) stock
   const valuation = useMemo(() => {
     const totals = {
       totalCost: 0,
@@ -144,17 +151,18 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
     };
 
     allProducts.forEach(p => {
-      const qty = Number(p.stock_qty || 0);
+      const reserved = reservedMap[p.id!] || 0;
+      const totalQty = Number(p.stock_qty || 0) + reserved;
       const cost = Number(p.cost_price || 0);
       const price = Number(p.price || 0);
 
-      totals.totalCost += (cost * qty);
-      totals.totalSelling += (price * qty);
+      totals.totalCost += (cost * totalQty);
+      totals.totalSelling += (price * totalQty);
     });
 
     totals.expectedProfit = totals.totalSelling - totals.totalCost;
     return totals;
-  }, [allProducts]);
+  }, [allProducts, reservedMap]);
 
   const formatCurrency = (val: number, sensitive: boolean = true) => {
     if (sensitive && !showValuation) return "₦ ****";
@@ -264,8 +272,6 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
         }
 
         let newPrice = bulkDirection === 'increase' ? p.price + adjustment : p.price - adjustment;
-        
-        // Naija Rounding Rule: nearest ₦50
         newPrice = Math.round(newPrice / 50) * 50;
         
         return { ...p, price: Math.max(0, newPrice) };
@@ -273,7 +279,6 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
 
       await db.products.bulkPut(updatedProducts);
       
-      // Log the bulk update
       await db.inventory_logs.add({
         product_id: 0,
         product_name: `Bulk Price Update: ${bulkTarget === 'all' ? 'All' : bulkCategory}`,
@@ -444,7 +449,6 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
         </div>
       </div>
 
-      {/* Valuation Summary - Hidden from Staff */}
       {!isStaff && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm flex items-center gap-5">
@@ -501,7 +505,6 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
       )}
 
       <div className="flex flex-col md:flex-row gap-4">
-        {/* Inventory Filter Bar */}
         <div className="bg-white p-1.5 rounded-2xl border border-slate-200 flex shrink-0 shadow-sm">
            <button 
              onClick={() => setStockFilter('all')}
@@ -543,6 +546,7 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
           </div>
         ) : (
           products.map((product) => {
+            const reserved = reservedMap[product.id!] || 0;
             const isLowStock = product.stock_qty <= (product.low_stock_threshold || 5);
             const isSoldOut = product.stock_qty === 0;
 
@@ -551,15 +555,22 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
                 <div>
                   <div className="flex justify-between items-start mb-4">
                     <span className="text-[9px] font-black px-2.5 py-1 bg-slate-100 rounded-full text-slate-500 uppercase tracking-widest border border-slate-200">{product.category}</span>
-                    {isSoldOut ? (
-                      <span className="flex items-center gap-1 text-[9px] font-black px-2.5 py-1 bg-slate-900 text-white rounded-full uppercase tracking-widest">
-                        Sold Out
-                      </span>
-                    ) : isLowStock && (
-                      <span className="flex items-center gap-1 text-[9px] font-black px-2.5 py-1 bg-rose-600 text-white rounded-full uppercase tracking-widest animate-pulse">
-                        <AlertTriangle size={10} /> Low
-                      </span>
-                    )}
+                    <div className="flex gap-1">
+                      {reserved > 0 && (
+                        <div className="flex items-center gap-1 text-[9px] font-black px-2.5 py-1 bg-amber-500 text-white rounded-full uppercase tracking-widest" title={`${reserved} units are currently held in parked orders.`}>
+                          <Clock size={10} /> {reserved} Parked
+                        </div>
+                      )}
+                      {isSoldOut ? (
+                        <span className="flex items-center gap-1 text-[9px] font-black px-2.5 py-1 bg-slate-900 text-white rounded-full uppercase tracking-widest">
+                          Sold Out
+                        </span>
+                      ) : isLowStock && (
+                        <span className="flex items-center gap-1 text-[9px] font-black px-2.5 py-1 bg-rose-600 text-white rounded-full uppercase tracking-widest animate-pulse">
+                          <AlertTriangle size={10} /> Low
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <h4 className="font-black text-slate-800 line-clamp-2 leading-tight min-h-[2.5rem]">{product.name}</h4>
                   <div className="mt-4 space-y-1">
@@ -602,7 +613,6 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
         )}
       </div>
 
-      {/* Standard Product Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
           <div className="bg-white rounded-[3rem] w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in duration-300">
@@ -645,7 +655,6 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
         </div>
       )}
 
-      {/* Bulk Price Adjuster Modal */}
       {isBulkModalOpen && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
           <div className="bg-white rounded-[3rem] p-8 w-full max-w-md space-y-8 animate-in zoom-in duration-300">
@@ -719,7 +728,6 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
         </div>
       )}
 
-      {/* Restock Modal */}
       {isRestockModalOpen && restockProduct && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
           <div className="bg-white rounded-[3rem] p-8 w-full max-w-sm space-y-8 animate-in zoom-in duration-300">
@@ -745,7 +753,6 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
         </div>
       )}
 
-      {/* Delete Modal */}
       {isDeleteModalOpen && deleteProduct && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
            <div className="bg-white p-10 rounded-[3rem] text-center space-y-8 w-full max-w-sm animate-in zoom-in">
@@ -762,7 +769,6 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
         </div>
       )}
       
-      {/* Migration Modal for AI Import */}
       {isMigrationModalOpen && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-emerald-950/90 backdrop-blur-xl">
           <div className="bg-white rounded-[3rem] w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">

@@ -97,23 +97,44 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
       return;
     }
     
-    // Logic: Default to 'Quick Order' if name is empty
     const customerName = tempName.trim() || 'Quick Order';
 
     try {
-      // Logic: Ensure the customerName state is explicitly included in the object being saved
-      await db.parked_orders.add({
-        customerName: customerName,
-        items: [...cart],
-        total: total,
-        staffId: currentUser?.id?.toString() || '0',
-        timestamp: Date.now()
+      // Logic: Subtract quantities from products table immediately and log
+      await (db as any).transaction('rw', [db.products, db.parked_orders, db.inventory_logs], async () => {
+        for (const item of cart) {
+          const product = await db.products.get(item.productId);
+          if (product) {
+            const oldStock = product.stock_qty || 0;
+            const newStock = Math.max(0, oldStock - item.quantity);
+            
+            await db.products.update(item.productId, { stock_qty: newStock });
+            
+            await db.inventory_logs.add({
+              product_id: item.productId,
+              product_name: product.name,
+              quantity_changed: -item.quantity,
+              old_stock: oldStock,
+              new_stock: newStock,
+              type: 'Adjustment', // Categorized as Reservation
+              timestamp: Date.now(),
+              performed_by: `Reserved for ${customerName}`
+            });
+          }
+        }
+
+        await db.parked_orders.add({
+          customerName: customerName,
+          items: cart.map(item => ({ ...item, isStockAlreadyDeducted: true })),
+          total: total,
+          staffId: currentUser?.id?.toString() || '0',
+          timestamp: Date.now()
+        });
       });
 
       setCart([]);
       setTempName('');
       setShowParkModal(false);
-      console.log('Order parked successfully');
     } catch (err) {
       alert("Failed to park order: " + err);
     }
@@ -121,7 +142,6 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
 
   const handleResumeOrder = async (orderId: number) => {
     try {
-      // 1. Fetch the order from the database
       const order = await db.parked_orders.get(orderId);
       if (!order) {
         alert("Order not found!");
@@ -132,37 +152,52 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
         if (!confirm("Your current cart is not empty. Resuming this order will overwrite your current cart. Continue?")) return;
       }
 
-      // 2. Logic: Ensure items are loaded into POS cart state (handle potential string format)
-      let itemsToLoad = order.items;
-      if (typeof itemsToLoad === 'string') {
-        try {
-          itemsToLoad = JSON.parse(itemsToLoad);
-        } catch (e) {
-          console.error("Failed to parse items", e);
-          itemsToLoad = [];
-        }
-      }
-      
-      if (!Array.isArray(itemsToLoad)) {
-        alert("Invalid item data in parked order.");
-        return;
-      }
+      // Logic: Ensure items are loaded into POS cart state with isStockAlreadyDeducted flag
+      setCart(order.items.map(item => ({ ...item, isStockAlreadyDeducted: true })));
 
-      setCart([...itemsToLoad]);
-
-      // 3. Wait for the state to update (sequential execution), then delete from parked_orders
       await db.parked_orders.delete(orderId);
-      
-      // 4. UI Cleanup
       setShowParkedListModal(false);
-      console.log('Order resumed successfully');
     } catch (error: any) {
       alert('Resume Failed: ' + error.message);
     }
   };
 
+  const handleCancelParkedOrder = async (orderId: number) => {
+    if(!confirm("Delete this parked order? This will return the items to stock.")) return;
+
+    try {
+      await (db as any).transaction('rw', [db.products, db.parked_orders, db.inventory_logs], async () => {
+        const order = await db.parked_orders.get(orderId);
+        if (order) {
+          for (const item of order.items) {
+            const product = await db.products.get(item.productId);
+            if (product) {
+              const oldStock = product.stock_qty || 0;
+              const newStock = oldStock + item.quantity;
+              
+              await db.products.update(item.productId, { stock_qty: newStock });
+              
+              await db.inventory_logs.add({
+                product_id: item.productId,
+                product_name: product.name,
+                quantity_changed: item.quantity,
+                old_stock: oldStock,
+                new_stock: newStock,
+                type: 'Adjustment',
+                timestamp: Date.now(),
+                performed_by: `Return (Cancelled ${order.customerName})`
+              });
+            }
+          }
+          await db.parked_orders.delete(orderId);
+        }
+      });
+    } catch (error: any) {
+      alert('Cancel Failed: ' + error.message);
+    }
+  };
+
   const handleCompleteSale = async () => {
-    // 1. Validation & State Lock
     if (cart.length === 0) return;
     if (isProcessing) return;
     if (!paymentType) {
@@ -193,45 +228,38 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
 
       let lowItems: string[] = [];
       
-      // 2. Atomic Transaction (Engine)
       await (db as any).transaction('rw', [db.sales, db.products, db.inventory_logs], async () => {
-        // Step A: Record Sale
         await db.sales.add(saleData);
 
-        // Step B: Loop products with existence guards
         for (const item of cart) {
-          const product = await db.products.get(item.productId);
-          
-          if (product) {
-            const oldStock = product.stock_qty || 0;
-            const newStock = Math.max(0, oldStock - item.quantity);
-            
-            // Step C: Update Stock
-            await db.products.update(item.productId, { 
-              stock_qty: newStock 
-            });
-            
-            // Step D: Log Movement
-            await db.inventory_logs.add({
-              product_id: item.productId,
-              product_name: product.name,
-              quantity_changed: -item.quantity,
-              old_stock: oldStock,
-              new_stock: newStock,
-              type: 'Sale',
-              timestamp: Date.now(),
-              performed_by: currentUser?.name || 'Staff'
-            });
+          // Point 3: Only deduct if the stock was NOT already deducted during parking
+          if (!item.isStockAlreadyDeducted) {
+            const product = await db.products.get(item.productId);
+            if (product) {
+              const oldStock = product.stock_qty || 0;
+              const newStock = Math.max(0, oldStock - item.quantity);
+              
+              await db.products.update(item.productId, { stock_qty: newStock });
+              
+              await db.inventory_logs.add({
+                product_id: item.productId,
+                product_name: product.name,
+                quantity_changed: -item.quantity,
+                old_stock: oldStock,
+                new_stock: newStock,
+                type: 'Sale',
+                timestamp: Date.now(),
+                performed_by: currentUser?.name || 'Staff'
+              });
 
-            if (newStock <= (product.low_stock_threshold || 5)) {
-              lowItems.push(product.name);
+              if (newStock <= (product.low_stock_threshold || 5)) {
+                lowItems.push(product.name);
+              }
             }
           }
         }
       });
 
-      // 3. Success Flow
-      console.log('Sale successful!');
       setCart([]);
       setCashAmount(0);
       setPaymentType(null);
@@ -245,11 +273,9 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
       }
 
     } catch (error: any) {
-      // 4. Detailed Error Reporting
       console.error("Sale Processing Error:", error);
       alert('Database Error: ' + error.message);
     } finally {
-      // Always unlock the button
       setIsProcessing(false);
     }
   };
@@ -305,11 +331,16 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
                  <p className="mt-4 font-black text-xs uppercase tracking-widest">Cart is Empty</p>
                </div>
              ) : (
-               cart.map(item => (
-                 <div key={item.productId} className="flex justify-between items-center bg-slate-50 p-3 rounded-2xl border border-slate-100">
+               cart.map((item, idx) => (
+                 <div key={`${item.productId}-${idx}`} className="flex justify-between items-center bg-slate-50 p-3 rounded-2xl border border-slate-100">
                     <div className="flex-1 min-w-0 pr-2">
                       <p className="font-bold text-sm truncate text-slate-800">{item.name}</p>
-                      <p className="text-[10px] font-black text-emerald-600">₦{item.price.toLocaleString()}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-[10px] font-black text-emerald-600">₦{item.price.toLocaleString()}</p>
+                        {item.isStockAlreadyDeducted && (
+                          <span className="text-[8px] font-black text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100 uppercase tracking-widest">Resumed</span>
+                        )}
+                      </div>
                     </div>
                     <div className="flex items-center gap-3">
                       <button onClick={() => updateQuantity(item.productId, -1)} className="p-1.5 bg-white rounded-lg border border-slate-200 text-rose-500 shadow-sm"><Minus size={12} /></button>
@@ -352,7 +383,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
                <div className="text-center space-y-2">
                   <div className="w-16 h-16 bg-amber-50 text-amber-600 rounded-3xl flex items-center justify-center mx-auto mb-2"><FolderOpen size={32} /></div>
                   <h3 className="text-2xl font-black text-slate-900">Name this Order</h3>
-                  <p className="text-slate-400 text-sm font-medium">Save this cart to finish it later.</p>
+                  <p className="text-slate-400 text-sm font-medium">Items will be deducted from stock now and held for this customer.</p>
                </div>
                <form onSubmit={handleParkSale} className="space-y-6">
                   <div className="relative">
@@ -369,7 +400,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                      <button type="button" onClick={() => setShowParkModal(false)} className="py-4 bg-slate-100 text-slate-400 rounded-2xl font-black text-xs uppercase tracking-widest">Cancel</button>
-                     <button type="submit" className="py-4 bg-amber-500 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl">Park Order</button>
+                     <button type="submit" className="py-4 bg-amber-500 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl">Park & Reserve</button>
                   </div>
                </form>
             </div>
@@ -383,7 +414,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
                <div className="p-8 border-b border-slate-100 flex items-center justify-between">
                   <div>
                     <h3 className="text-2xl font-black text-slate-900 tracking-tight">Parked Orders</h3>
-                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Waiting to be completed</p>
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Reserved Stock List</p>
                   </div>
                   <button onClick={() => setShowParkedListModal(false)} className="p-2 hover:bg-slate-100 rounded-full"><X size={24} /></button>
                </div>
@@ -408,8 +439,9 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
                          </div>
                          <div className="flex items-center gap-2">
                             <button 
-                              onClick={async () => { if(confirm("Delete this parked order?")) await db.parked_orders.delete(order.id!); }}
+                              onClick={() => handleCancelParkedOrder(order.id!)}
                               className="p-3 text-rose-400 hover:text-rose-600 transition-colors"
+                              title="Delete & Return to Stock"
                             >
                               <Trash2 size={20} />
                             </button>
