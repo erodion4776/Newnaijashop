@@ -129,6 +129,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
   };
 
   const handleCompleteSale = async () => {
+    // 1. Validation & State Lock
     if (cart.length === 0) return;
     if (isProcessing) return;
     if (!paymentType) {
@@ -159,20 +160,28 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
 
       let lowItems: string[] = [];
       
+      // 2. Atomic Transaction (Engine)
       await (db as any).transaction('rw', [db.sales, db.products, db.inventory_logs], async () => {
+        // Step A: Record Sale
         await db.sales.add(saleData);
 
+        // Step B: Loop products with existence guards
         for (const item of cart) {
-          const p = await db.products.get(item.productId);
-          if (p) {
-            const oldStock = p.stock_qty;
+          const product = await db.products.get(item.productId);
+          
+          if (product) {
+            const oldStock = product.stock_qty || 0;
             const newStock = Math.max(0, oldStock - item.quantity);
             
-            await db.products.update(item.productId, { stock_qty: newStock });
+            // Step C: Update Stock
+            await db.products.update(item.productId, { 
+              stock_qty: newStock 
+            });
             
+            // Step D: Log Movement
             await db.inventory_logs.add({
               product_id: item.productId,
-              product_name: p.name,
+              product_name: product.name,
               quantity_changed: -item.quantity,
               old_stock: oldStock,
               new_stock: newStock,
@@ -181,13 +190,15 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
               performed_by: currentUser?.name || 'Staff'
             });
 
-            if (newStock <= (p.low_stock_threshold || 5)) {
-              lowItems.push(p.name);
+            if (newStock <= (product.low_stock_threshold || 5)) {
+              lowItems.push(product.name);
             }
           }
         }
       });
 
+      // 3. Success Flow
+      console.log('Sale successful!');
       setCart([]);
       setCashAmount(0);
       setPaymentType(null);
@@ -201,9 +212,11 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
       }
 
     } catch (error: any) {
+      // 4. Detailed Error Reporting
       console.error("Sale Processing Error:", error);
-      alert('Sale Failed: ' + error.message);
+      alert('Database Error: ' + error.message);
     } finally {
+      // Always unlock the button
       setIsProcessing(false);
     }
   };
