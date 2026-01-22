@@ -16,6 +16,7 @@ import ActivityLog from './pages/ActivityLog';
 import SecurityBackups from './pages/SecurityBackups';
 import Settings from './pages/Settings';
 import InstallModal from './components/InstallModal';
+import SupportChat from './components/SupportChat';
 import { performAutoSnapshot } from './utils/backup';
 import { 
   AlertTriangle,
@@ -31,13 +32,11 @@ interface ErrorBoundaryProps { children?: ReactNode; }
 interface ErrorBoundaryState { hasError: boolean; error: Error | null; }
 
 class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  // Fix: Explicitly declare state and props to resolve TypeScript "Property does not exist" errors
   state: ErrorBoundaryState;
   props: ErrorBoundaryProps;
 
   constructor(props: ErrorBoundaryProps) {
     super(props);
-    // Fix: Explicitly initialize state and props in the constructor
     this.state = { hasError: false, error: null };
     this.props = props;
   }
@@ -51,7 +50,6 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   }
 
   render() {
-    // Accessing this.state which is now explicitly declared
     if (this.state.hasError) {
       return (
         <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 text-center">
@@ -63,7 +61,6 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
         </div>
       );
     }
-    // Accessing this.props which is now explicitly declared
     return this.props.children;
   }
 }
@@ -77,7 +74,6 @@ const AppContent: React.FC = () => {
   const [selectedStaffId, setSelectedStaffId] = useState<number | ''>('');
   const [isStaffLock, setIsStaffLock] = useState(localStorage.getItem('isStaffLock') === 'true');
   
-  // PWA States
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showInstallModal, setShowInstallModal] = useState(false);
   const [isPWA, setIsPWA] = useState(false);
@@ -89,8 +85,6 @@ const AppContent: React.FC = () => {
 
   useEffect(() => {
     const splashTimer = setTimeout(() => setShowSplash(false), 2000);
-    
-    // PWA Check
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone;
     setIsPWA(isStandalone);
 
@@ -139,7 +133,6 @@ const AppContent: React.FC = () => {
     });
     
     setCurrentView('dashboard');
-    // Trigger Install Modal after setup if on mobile/not installed
     if (!isPWA) {
       setTimeout(() => setShowInstallModal(true), 1500);
     }
@@ -155,7 +148,6 @@ const AppContent: React.FC = () => {
         alert('NaijaShop is now on your Home Screen!');
       }
     } else {
-      // iOS Fallback
       alert('To install: Tap the "Share" button in Safari and select "Add to Home Screen".');
     }
   };
@@ -246,31 +238,34 @@ const AppContent: React.FC = () => {
   }
 
   return (
-    <Layout 
-      activeView={currentView} 
-      setView={setCurrentView} 
-      shopName={settings?.shop_name || 'NaijaShop POS'} 
-      currentUser={currentUser} 
-      isStaffLock={isStaffLock}
-      toggleStaffLock={toggleStaffLock}
-      adminPin={settings?.admin_pin || ''}
-      onLogout={() => { setCurrentUser(null); }}
-      canInstall={!!deferredPrompt || (!isPWA && /iPhone|iPad|iPod/.test(navigator.userAgent))}
-      onInstall={handleInstallClick}
-    >
-      {showInstallModal && <InstallModal onInstall={handleInstallClick} onClose={() => setShowInstallModal(false)} />}
-      {currentView === 'dashboard' && <Dashboard currentUser={currentUser} setView={setCurrentView} isStaffLock={isStaffLock} />}
-      {currentView === 'pos' && <POS setView={setCurrentView} currentUser={currentUser} />}
-      {currentView === 'activity-log' && <ActivityLog />}
-      {currentView === 'transfer-station' && <TransferStation setView={setCurrentView} />}
-      {currentView === 'inventory' && <Inventory setView={setCurrentView} currentUser={currentUser} isStaffLock={isStaffLock} />}
-      {currentView === 'inventory-ledger' && <InventoryLedger />}
-      {currentView === 'debts' && <Debts />}
-      {currentView === 'ai-insights' && <AIInsights />}
-      {currentView === 'staff-management' && <StaffManagement />}
-      {currentView === 'security-backups' && <SecurityBackups currentUser={currentUser} />}
-      {currentView === 'settings' && <Settings currentUser={currentUser} />}
-    </Layout>
+    <>
+      <Layout 
+        activeView={currentView} 
+        setView={setCurrentView} 
+        shopName={settings?.shop_name || 'NaijaShop POS'} 
+        currentUser={currentUser} 
+        isStaffLock={isStaffLock}
+        toggleStaffLock={toggleStaffLock}
+        adminPin={settings?.admin_pin || ''}
+        onLogout={() => { setCurrentUser(null); }}
+        canInstall={!!deferredPrompt || (!isPWA && /iPhone|iPad|iPod/.test(navigator.userAgent))}
+        onInstall={handleInstallClick}
+      >
+        {showInstallModal && <InstallModal onInstall={handleInstallClick} onClose={() => setShowInstallModal(false)} />}
+        {currentView === 'dashboard' && <Dashboard currentUser={currentUser} setView={setCurrentView} isStaffLock={isStaffLock} />}
+        {currentView === 'pos' && <POS setView={setCurrentView} currentUser={currentUser} />}
+        {currentView === 'activity-log' && <ActivityLog />}
+        {currentView === 'transfer-station' && <TransferStation setView={setCurrentView} />}
+        {currentView === 'inventory' && <Inventory setView={setCurrentView} currentUser={currentUser} isStaffLock={isStaffLock} />}
+        {currentView === 'inventory-ledger' && <InventoryLedger />}
+        {currentView === 'debts' && <Debts />}
+        {currentView === 'ai-insights' && <AIInsights />}
+        {currentView === 'staff-management' && <StaffManagement />}
+        {currentView === 'security-backups' && <SecurityBackups currentUser={currentUser} />}
+        {currentView === 'settings' && <Settings currentUser={currentUser} />}
+      </Layout>
+      <SupportChat />
+    </>
   );
 };
 
