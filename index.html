@@ -62,9 +62,23 @@
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js')
-            .then(reg => console.log('NaijaShop SW Registered'))
-            .catch(err => console.log('SW Registration Failed', err));
+          navigator.serviceWorker.register('/sw.js').then(reg => {
+            console.log('NaijaShop SW Registered');
+            
+            // Check for service worker updates
+            reg.onupdatefound = () => {
+              const installingWorker = reg.installing;
+              if (installingWorker) {
+                installingWorker.onstatechange = () => {
+                  if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                    console.log('New content is available; please refresh.');
+                    // Force refresh to use the new service worker
+                    window.location.reload();
+                  }
+                };
+              }
+            };
+          }).catch(err => console.log('SW Registration Failed', err));
         });
       }
     </script>

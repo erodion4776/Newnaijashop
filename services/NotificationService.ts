@@ -28,6 +28,14 @@ class NotificationService {
   }
 
   /**
+   * Debugging utility to check permission status and test notification delivery
+   */
+  public async sendTestNotification() {
+    alert('Permission Status: ' + Notification.permission);
+    await this.sendNotification('NaijaShop Test', 'If you see this, notifications are correctly configured!');
+  }
+
+  /**
    * Specifically handles low stock alerts using the Service Worker
    * This ensures the notification works effectively on Android/PWAs
    */
