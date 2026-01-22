@@ -20,11 +20,13 @@ import {
   WifiOff,
   Banknote,
   PiggyBank,
-  Briefcase
+  Briefcase,
+  BellRing
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { Staff, Product, Sale } from '../types';
 import { getAIInsights } from '../services/geminiService';
+import NotificationService from '../services/NotificationService';
 
 interface DashboardProps {
   currentUser?: Staff | null;
@@ -41,6 +43,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, isStaffLock
   const [guruTip, setGuruTip] = useState<any>(null);
   const [isLoadingTip, setIsLoadingTip] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission>(Notification.permission);
   
   const chartParentRef = useRef<HTMLDivElement>(null);
 
@@ -53,6 +56,11 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, isStaffLock
     const handleOffline = () => setIsOnline(false);
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+    
+    // Check for daily report and inactivity
+    NotificationService.checkDailyReport();
+    NotificationService.checkInactivityReminder();
+
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
@@ -77,6 +85,11 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, isStaffLock
       }).catch(() => setIsLoadingTip(false));
     }
   }, [isOnline, isDataReady, sales, products]);
+
+  const handleEnableNotifs = async () => {
+    const result = await NotificationService.requestPermission();
+    setNotifPermission(result);
+  };
 
   // Product lookup map for efficient interest calculations
   const productMap = useMemo(() => {
@@ -154,6 +167,24 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, isStaffLock
 
   return (
     <div className="space-y-6">
+      {/* Notification Banner */}
+      {notifPermission === 'default' && (
+        <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-2xl flex items-center justify-between animate-in slide-in-from-top-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center">
+              <BellRing size={20} />
+            </div>
+            <p className="text-sm font-bold text-emerald-900">🔔 Stay Updated: Enable notifications for daily sales reports and security alerts.</p>
+          </div>
+          <button 
+            onClick={handleEnableNotifs}
+            className="px-6 py-2 bg-emerald-600 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-sm"
+          >
+            Enable
+          </button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-black text-slate-800 tracking-tight">Store Performance</h2>
