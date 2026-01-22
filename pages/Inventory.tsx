@@ -26,7 +26,12 @@ import {
   Trash,
   ShieldAlert,
   ChevronRight,
-  Eye
+  Eye,
+  EyeOff,
+  TrendingUp,
+  Banknote,
+  Wallet,
+  Coins
 } from 'lucide-react';
 import { Product, View, Staff } from '../types';
 import { processHandwrittenLedger, RateLimitError } from '../services/geminiService';
@@ -73,8 +78,10 @@ const resizeImage = (file: File, maxWidth: number = 1024): Promise<string> => {
 
 const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock = false }) => {
   const canEdit = currentUser?.role === 'Admin' || (currentUser?.role === 'Manager' && !isStaffLock);
+  const isStaff = currentUser?.role === 'Sales';
   
   const [searchTerm, setSearchTerm] = useState('');
+  const [showValuation, setShowValuation] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isMigrationModalOpen, setIsMigrationModalOpen] = useState(false);
   const [isRestockModalOpen, setIsRestockModalOpen] = useState(false);
@@ -101,6 +108,32 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
       p.barcode?.includes(term)
     );
   }, [allProducts, searchTerm]);
+
+  // Inventory Valuation Logic
+  const valuation = useMemo(() => {
+    const totals = {
+      totalCost: 0,
+      totalSelling: 0,
+      expectedProfit: 0
+    };
+
+    allProducts.forEach(p => {
+      const qty = Number(p.stock_qty || 0);
+      const cost = Number(p.cost_price || 0);
+      const price = Number(p.price || 0);
+
+      totals.totalCost += (cost * qty);
+      totals.totalSelling += (price * qty);
+    });
+
+    totals.expectedProfit = totals.totalSelling - totals.totalCost;
+    return totals;
+  }, [allProducts]);
+
+  const formatCurrency = (val: number, sensitive: boolean = true) => {
+    if (sensitive && !showValuation) return "₦ ****";
+    return `₦${Math.floor(val).toLocaleString()}`;
+  };
 
   const initialFormState: Product = {
     name: '',
@@ -237,7 +270,6 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
     setIsProcessingAI(true);
     setFailedImagePreview(null);
     try {
-      // Step 3: Compress/Resize Image to 1024px before sending
       const resizedBase64 = await resizeImage(file, 1024);
       
       try {
@@ -262,7 +294,6 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
       alert("Image processing failed. Please try a different photo.");
     } finally {
       setIsProcessingAI(false);
-      // Reset input
       e.target.value = '';
     }
   };
@@ -286,27 +317,79 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
           <p className="text-sm text-slate-500 font-medium">Manage and monitor your shop products</p>
         </div>
         
-        {canEdit ? (
-          <div className="flex gap-2 w-full md:w-auto">
+        <div className="flex gap-2 w-full md:w-auto">
+          {!isStaff && (
             <button 
-              onClick={() => { setEditingProduct(null); setFormData(initialFormState); setIsModalOpen(true); }}
-              className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-emerald-600 text-white px-6 py-3 rounded-2xl font-black hover:bg-emerald-700 transition-all shadow-xl shadow-emerald-600/20"
+              onClick={() => setShowValuation(!showValuation)} 
+              className={`flex items-center gap-2 px-6 py-3 rounded-2xl border transition-all shadow-sm font-black text-xs uppercase tracking-widest ${showValuation ? 'bg-slate-900 text-white border-slate-900' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}
             >
-              <Plus size={20} /> New Item
+              {showValuation ? <EyeOff size={18} /> : <Eye size={18} />}
+              {showValuation ? 'Hide Valuation' : 'Show Valuation'}
             </button>
-            <label className={`flex-1 md:flex-none flex items-center justify-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-2xl font-black transition-all shadow-xl cursor-pointer ${isProcessingAI ? 'opacity-50 cursor-not-allowed' : 'hover:bg-black'}`}>
-              {isProcessingAI ? <Loader2 className="animate-spin" size={20} /> : <Sparkles size={20} />}
-              <span className="hidden sm:inline">{isProcessingAI ? 'Scanning...' : 'AI Import'}</span>
-              <input type="file" accept="image/*" className="hidden" onChange={handleAIMigration} disabled={isProcessingAI} />
-            </label>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 border border-amber-100 rounded-full text-amber-600">
-            <ShieldAlert size={14} />
-            <span className="text-[10px] font-black uppercase tracking-widest">View Only Mode</span>
-          </div>
-        )}
+          )}
+          {canEdit ? (
+            <>
+              <button 
+                onClick={() => { setEditingProduct(null); setFormData(initialFormState); setIsModalOpen(true); }}
+                className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-emerald-600 text-white px-6 py-3 rounded-2xl font-black hover:bg-emerald-700 transition-all shadow-xl shadow-emerald-600/20"
+              >
+                <Plus size={20} /> New Item
+              </button>
+              <label className={`flex-1 md:flex-none flex items-center justify-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-2xl font-black transition-all shadow-xl cursor-pointer ${isProcessingAI ? 'opacity-50 cursor-not-allowed' : 'hover:bg-black'}`}>
+                {isProcessingAI ? <Loader2 className="animate-spin" size={20} /> : <Sparkles size={20} />}
+                <span className="hidden sm:inline">{isProcessingAI ? 'Scanning...' : 'AI Import'}</span>
+                <input type="file" accept="image/*" className="hidden" onChange={handleAIMigration} disabled={isProcessingAI} />
+              </label>
+            </>
+          ) : (
+            <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 border border-amber-100 rounded-full text-amber-600">
+              <ShieldAlert size={14} />
+              <span className="text-[10px] font-black uppercase tracking-widest">View Only Mode</span>
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* Valuation Summary - Hidden from Staff */}
+      {!isStaff && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm flex items-center gap-5">
+            <div className="w-14 h-14 bg-slate-100 text-slate-600 rounded-2xl flex items-center justify-center shrink-0 shadow-inner">
+              <Wallet size={24} />
+            </div>
+            <div>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Stock Cost</p>
+              <p className="text-xl font-black text-slate-900 tracking-tight">{formatCurrency(valuation.totalCost)}</p>
+            </div>
+          </div>
+          
+          <div className="bg-emerald-600 p-6 rounded-[2.5rem] shadow-lg relative overflow-hidden flex items-center gap-5">
+            <div className="absolute right-[-10px] top-[-10px] opacity-10">
+              <Banknote size={80} />
+            </div>
+            <div className="w-14 h-14 bg-white/20 backdrop-blur-md text-white rounded-2xl flex items-center justify-center shrink-0 shadow-lg">
+              <TrendingUp size={24} />
+            </div>
+            <div className="relative z-10">
+              <p className="text-white/70 text-[10px] font-black uppercase tracking-widest">Total Stock Value</p>
+              <p className="text-xl font-black text-white tracking-tight">{formatCurrency(valuation.totalSelling)}</p>
+            </div>
+          </div>
+
+          <div className="bg-amber-500 p-6 rounded-[2.5rem] shadow-lg relative overflow-hidden flex items-center gap-5">
+            <div className="absolute right-[-10px] top-[-10px] opacity-10">
+              <Coins size={80} />
+            </div>
+            <div className="w-14 h-14 bg-white/20 backdrop-blur-md text-white rounded-2xl flex items-center justify-center shrink-0 shadow-lg">
+              <Sparkles size={24} />
+            </div>
+            <div className="relative z-10">
+              <p className="text-white/70 text-[10px] font-black uppercase tracking-widest">Expected Profit</p>
+              <p className="text-xl font-black text-white tracking-tight">{formatCurrency(valuation.expectedProfit)}</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {failedImagePreview && (
         <div className="bg-rose-50 border border-rose-200 p-6 rounded-[2rem] flex flex-col md:flex-row items-center gap-6 animate-in slide-in-from-top-4">
