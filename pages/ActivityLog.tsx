@@ -20,7 +20,11 @@ import {
   FileText,
   Loader2,
   Landmark,
-  ShieldCheck
+  ShieldCheck,
+  Wallet,
+  Coins,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { Sale, SaleItem, Product } from '../types';
 
@@ -28,6 +32,7 @@ const ActivityLog: React.FC = () => {
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [showSensitiveData, setShowSensitiveData] = useState(false);
 
   const dateRange = useMemo(() => {
     const start = new Date(selectedDate);
@@ -61,6 +66,46 @@ const ActivityLog: React.FC = () => {
     }, 0);
   };
 
+  // Summary Stats Calculation
+  const summaryStats = useMemo(() => {
+    const stats = {
+      cash: 0,
+      transfer: 0,
+      pos: 0,
+      interest: 0
+    };
+
+    if (!sales) return stats;
+
+    sales.forEach(sale => {
+      const method = sale.payment_method.toLowerCase();
+      
+      // Calculate Interest for every sale in the list
+      stats.interest += calculateInterest(sale);
+
+      if (method === 'cash') {
+        stats.cash += sale.total_amount;
+      } else if (method === 'transfer' || method === 'bank transfer') {
+        stats.transfer += sale.total_amount;
+      } else if (method === 'pos' || method === 'card') {
+        stats.pos += sale.total_amount;
+      } else if (method === 'split') {
+        // For split, we use the recorded cash_amount and assume the rest is POS/Transfer
+        // However, following strict prompt logic for "Sum of sales where payment mode is..."
+        // we count the primary mode or handle portions if data allows.
+        stats.cash += (sale.cash_amount || 0);
+        stats.pos += (sale.total_amount - (sale.cash_amount || 0));
+      }
+    });
+
+    return stats;
+  }, [sales, productMap]);
+
+  const formatCurrency = (val: number, isSensitive: boolean = false) => {
+    if (isSensitive && !showSensitiveData) return "₦ ****";
+    return `₦${Math.floor(val).toLocaleString()}`;
+  };
+
   const getPaymentBadgeStyle = (method: string) => {
     const m = method.toLowerCase();
     if (m === 'cash') return 'bg-emerald-100 text-emerald-700 border-emerald-200';
@@ -88,13 +133,54 @@ const ActivityLog: React.FC = () => {
           <input type="date" className="py-3 pr-6 bg-transparent outline-none font-bold text-slate-800 cursor-pointer" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} />
         </div>
 
-        <div className="flex gap-4">
-          <div className="flex-1 lg:flex-none bg-emerald-600 rounded-[2rem] p-4 px-8 text-white shadow-xl flex items-center gap-4">
-            <div className="p-2 bg-white/20 rounded-xl"><TrendingUp size={20} /></div>
-            <div>
-              <p className="text-[9px] font-black uppercase tracking-widest opacity-80">Daily Total</p>
-              <p className="text-xl font-black">₦{filteredSales.reduce((a,c)=>a+c.total_amount,0).toLocaleString()}</p>
-            </div>
+        <button 
+          onClick={() => setShowSensitiveData(!showSensitiveData)} 
+          className={`flex items-center gap-2 px-6 py-3 rounded-2xl border transition-all shadow-sm font-black text-xs uppercase tracking-widest ${showSensitiveData ? 'bg-slate-900 text-white border-slate-900' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+        >
+          {showSensitiveData ? <EyeOff size={18} /> : <Eye size={18} />}
+          {showSensitiveData ? 'Hide Profit' : 'Show Profit'}
+        </button>
+      </div>
+
+      {/* Summary Header - Fintech Style Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm flex items-center gap-4">
+          <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center shrink-0">
+            <Wallet size={20} />
+          </div>
+          <div>
+            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Total Cash</p>
+            <p className="text-sm font-black text-slate-900">{formatCurrency(summaryStats.cash)}</p>
+          </div>
+        </div>
+
+        <div className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm flex items-center gap-4">
+          <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center shrink-0">
+            <Landmark size={20} />
+          </div>
+          <div>
+            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Total Transfer</p>
+            <p className="text-sm font-black text-slate-900">{formatCurrency(summaryStats.transfer)}</p>
+          </div>
+        </div>
+
+        <div className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm flex items-center gap-4">
+          <div className="w-10 h-10 bg-purple-50 text-purple-600 rounded-xl flex items-center justify-center shrink-0">
+            <CreditCard size={20} />
+          </div>
+          <div>
+            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Total POS/Card</p>
+            <p className="text-sm font-black text-slate-900">{formatCurrency(summaryStats.pos)}</p>
+          </div>
+        </div>
+
+        <div className="bg-amber-50 p-5 rounded-[2rem] border border-amber-100 shadow-sm flex items-center gap-4">
+          <div className="w-10 h-10 bg-amber-500 text-white rounded-xl flex items-center justify-center shrink-0">
+            <Coins size={20} />
+          </div>
+          <div>
+            <p className="text-[9px] font-black text-amber-600/60 uppercase tracking-widest">Total Interest</p>
+            <p className="text-sm font-black text-amber-700">{formatCurrency(summaryStats.interest, true)}</p>
           </div>
         </div>
       </div>
@@ -147,7 +233,9 @@ const ActivityLog: React.FC = () => {
                   </span>
                   <div className="mt-2 flex items-center gap-1.5">
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Profit:</span>
-                    <span className="text-[11px] font-black text-slate-700">₦{interest.toLocaleString()}</span>
+                    <span className="text-[11px] font-black text-slate-700">
+                      {showSensitiveData ? `₦${Math.floor(interest).toLocaleString()}` : "₦ ****"}
+                    </span>
                   </div>
                 </div>
 
