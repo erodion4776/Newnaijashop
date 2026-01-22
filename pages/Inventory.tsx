@@ -25,7 +25,8 @@ import {
   Save,
   Trash,
   ShieldAlert,
-  ChevronRight
+  ChevronRight,
+  Eye
 } from 'lucide-react';
 import { Product, View, Staff } from '../types';
 import { processHandwrittenLedger, RateLimitError } from '../services/geminiService';
@@ -37,6 +38,38 @@ interface InventoryProps {
 }
 
 const CATEGORIES = ['General', 'Electronics', 'Food & Drinks', 'Clothing', 'Health', 'Beauty', 'Home', 'Office', 'Other'];
+
+/**
+ * Resizes an image to a maximum width to optimize for AI processing
+ */
+const resizeImage = (file: File, maxWidth: number = 1024): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth) {
+          height = (maxWidth / width) * height;
+          width = maxWidth;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.8));
+      };
+      img.onerror = reject;
+    };
+    reader.onerror = reject;
+  });
+};
 
 const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock = false }) => {
   const canEdit = currentUser?.role === 'Admin' || (currentUser?.role === 'Manager' && !isStaffLock);
@@ -54,6 +87,7 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
   
   const [isProcessingAI, setIsProcessingAI] = useState(false);
   const [migrationData, setMigrationData] = useState<Product[]>([]);
+  const [failedImagePreview, setFailedImagePreview] = useState<string | null>(null);
 
   const allProductsData = useLiveQuery(() => db.products.toArray());
   const allProducts = allProductsData || [];
@@ -201,32 +235,35 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
     if (!file) return;
 
     setIsProcessingAI(true);
+    setFailedImagePreview(null);
     try {
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        try {
-          const base64 = reader.result as string;
-          const products = await processHandwrittenLedger(base64);
-          if (products) {
-            setMigrationData(products);
-            setIsMigrationModalOpen(true);
-          } else {
-            alert("Could not extract product data from this image. Please ensure handwriting is clear.");
-          }
-        } catch (err) {
-          if (err instanceof RateLimitError) {
-            alert(err.message);
-          } else {
-            alert("AI Error: Could not process the image. Please try again.");
-          }
-        } finally {
-          setIsProcessingAI(false);
+      // Step 3: Compress/Resize Image to 1024px before sending
+      const resizedBase64 = await resizeImage(file, 1024);
+      
+      try {
+        const extractedProducts = await processHandwrittenLedger(resizedBase64);
+        if (extractedProducts && extractedProducts.length > 0) {
+          setMigrationData(extractedProducts);
+          setIsMigrationModalOpen(true);
+        } else {
+          setFailedImagePreview(resizedBase64);
+          alert("NaijaShop Guru couldn't read this ledger. Is it too blurry or dark? Please check the preview.");
         }
-      };
-      reader.readAsDataURL(file);
+      } catch (err) {
+        if (err instanceof RateLimitError) {
+          alert(err.message);
+        } else {
+          setFailedImagePreview(resizedBase64);
+          alert("OCR Error: The AI struggled with this image. Please check the preview below.");
+        }
+      }
     } catch (err) {
       console.error(err);
+      alert("Image processing failed. Please try a different photo.");
+    } finally {
       setIsProcessingAI(false);
+      // Reset input
+      e.target.value = '';
     }
   };
 
@@ -259,7 +296,7 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
             </button>
             <label className={`flex-1 md:flex-none flex items-center justify-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-2xl font-black transition-all shadow-xl cursor-pointer ${isProcessingAI ? 'opacity-50 cursor-not-allowed' : 'hover:bg-black'}`}>
               {isProcessingAI ? <Loader2 className="animate-spin" size={20} /> : <Sparkles size={20} />}
-              <span className="hidden sm:inline">{isProcessingAI ? 'AI Scanning...' : 'AI Import'}</span>
+              <span className="hidden sm:inline">{isProcessingAI ? 'Scanning...' : 'AI Import'}</span>
               <input type="file" accept="image/*" className="hidden" onChange={handleAIMigration} disabled={isProcessingAI} />
             </label>
           </div>
@@ -270,6 +307,21 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
           </div>
         )}
       </div>
+
+      {failedImagePreview && (
+        <div className="bg-rose-50 border border-rose-200 p-6 rounded-[2rem] flex flex-col md:flex-row items-center gap-6 animate-in slide-in-from-top-4">
+           <div className="w-24 h-24 bg-white rounded-2xl border border-rose-100 overflow-hidden shrink-0 shadow-sm">
+             <img src={failedImagePreview} alt="Failed Preview" className="w-full h-full object-cover" />
+           </div>
+           <div className="flex-1 text-center md:text-left">
+              <h4 className="font-black text-rose-800 flex items-center gap-2 justify-center md:justify-start">
+                <AlertCircle size={18} /> OCR Scan Preview
+              </h4>
+              <p className="text-sm text-rose-600/80 font-medium">This is what the AI saw. If it's blurry, dark, or messy, Guru will fail. Try taking a clearer photo from directly above.</p>
+           </div>
+           <button onClick={() => setFailedImagePreview(null)} className="p-2 text-rose-400 hover:text-rose-600"><X size={20} /></button>
+        </div>
+      )}
 
       <div className="relative">
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />

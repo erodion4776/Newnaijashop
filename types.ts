@@ -35,6 +35,8 @@ export interface Sale {
   sale_id: string;
   items: SaleItem[];
   total_amount: number;
+  subtotal?: number;
+  tax?: number;
   payment_method: 'cash' | 'transfer' | 'pos' | 'split' | 'Bank Transfer';
   cash_amount?: number;
   debt_amount?: number;

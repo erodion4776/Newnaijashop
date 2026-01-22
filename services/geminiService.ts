@@ -14,6 +14,16 @@ export class RateLimitError extends Error {
   }
 }
 
+/**
+ * Strips markdown code blocks and other conversational noise from AI responses
+ */
+const cleanJsonResponse = (responseText: string): string => {
+  return responseText
+    .replace(/```json/g, '')
+    .replace(/```/g, '')
+    .trim();
+};
+
 const handleGenAIError = (error: any) => {
   console.error("GenAI Error:", error);
   const errorMessage = error?.message || "";
@@ -64,7 +74,7 @@ export const getAIInsights = async (sales: Sale[], products: Product[]) => {
       }
     });
 
-    const jsonStr = response.text?.trim();
+    const jsonStr = cleanJsonResponse(response.text || "");
     if (!jsonStr) return null;
     return JSON.parse(jsonStr).insights;
   } catch (error) {
@@ -91,11 +101,11 @@ export const processHandwrittenLedger = async (base64Image: string) => {
               mimeType: 'image/jpeg' 
             } 
           },
-          { text: "Act as an OCR expert. Extract product names, prices (convert 'k' to thousands), cost prices, and quantities from this image. Return ONLY a JSON array." }
+          { text: "Act as a data entry clerk for a Nigerian retail shop. Analyze this image of a handwritten ledger. Extract the Product Name, Price, and Quantity. Return the data ONLY as a valid JSON array. Do not include any conversational text, markdown formatting, or explanations. Example format: [{\"name\": \"Milo 500g\", \"price\": 2500, \"stock\": 10}]." }
         ]
       },
       config: {
-        systemInstruction: "Extract product data from store notebooks. Ensure prices and quantities are numbers. Ignore currency symbols.",
+        systemInstruction: "You are a professional retail data entry clerk. Your goal is to extract structured data from handwritten shop notebooks. Ensure prices and quantities are returned as clean numbers. If you see 'k' (e.g., 2k), convert it to 1000s (e.g., 2000). Always return JSON.",
         responseMimeType: 'application/json',
         responseSchema: {
           type: Type.OBJECT,
@@ -111,7 +121,7 @@ export const processHandwrittenLedger = async (base64Image: string) => {
                   stock_qty: { type: Type.NUMBER },
                   category: { type: Type.STRING }
                 },
-                required: ['name', 'price', 'cost_price', 'stock_qty']
+                required: ['name', 'price', 'stock_qty']
               }
             }
           }
@@ -119,9 +129,26 @@ export const processHandwrittenLedger = async (base64Image: string) => {
       }
     });
 
-    const jsonStr = response.text?.trim();
-    if (!jsonStr) return null;
-    return JSON.parse(jsonStr).products;
+    const text = response.text || "";
+    const jsonStr = cleanJsonResponse(text);
+    
+    if (!jsonStr) {
+      console.warn("Empty response from AI");
+      return null;
+    }
+
+    const parsed = JSON.parse(jsonStr);
+    
+    // Fallback normalization: map 'stock' from AI example to 'stock_qty' if schema was ignored
+    const normalizedProducts = (parsed.products || parsed).map((p: any) => ({
+      name: p.name || "Unknown Product",
+      price: Number(p.price) || 0,
+      cost_price: Number(p.cost_price || (p.price * 0.85)) || 0, // Fallback cost price estimation
+      stock_qty: Number(p.stock_qty || p.stock) || 0,
+      category: p.category || "General"
+    }));
+
+    return normalizedProducts;
   } catch (error) {
     return handleGenAIError(error);
   }
