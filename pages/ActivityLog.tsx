@@ -22,7 +22,7 @@ import {
   Landmark,
   ShieldCheck
 } from 'lucide-react';
-import { Sale, SaleItem } from '../types';
+import { Sale, SaleItem, Product } from '../types';
 
 const ActivityLog: React.FC = () => {
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -38,11 +38,36 @@ const ActivityLog: React.FC = () => {
   }, [selectedDate]);
 
   const settings = useLiveQuery(() => db.settings.get('app_settings'));
+  const products = useLiveQuery(() => db.products.toArray()) || [];
 
   const sales = useLiveQuery(
     () => db.sales.where('timestamp').between(dateRange.start, dateRange.end).reverse().toArray(),
     [dateRange]
   );
+
+  // Map products for easy cost price lookup
+  const productMap = useMemo(() => {
+    const map: Record<number, Product> = {};
+    products.forEach(p => { if (p.id) map[p.id] = p; });
+    return map;
+  }, [products]);
+
+  const calculateInterest = (sale: Sale) => {
+    return sale.items.reduce((acc, item) => {
+      const product = productMap[item.productId];
+      // Fallback to 0 if product or cost_price is missing
+      const cost = product?.cost_price || 0;
+      return acc + ((item.price - cost) * item.quantity);
+    }, 0);
+  };
+
+  const getPaymentBadgeStyle = (method: string) => {
+    const m = method.toLowerCase();
+    if (m === 'cash') return 'bg-emerald-100 text-emerald-700 border-emerald-200';
+    if (m.includes('transfer') || m === 'pos') return 'bg-blue-100 text-blue-700 border-blue-200';
+    // Use orange (amber) for split/debt/others as requested
+    return 'bg-amber-100 text-amber-700 border-amber-200';
+  };
 
   const filteredSales = useMemo(() => {
     if (!sales) return [];
@@ -79,73 +104,128 @@ const ActivityLog: React.FC = () => {
         <input type="text" placeholder="Search by Staff or ID..." className="w-full h-16 pl-14 pr-6 bg-white border border-slate-200 rounded-[2rem] shadow-sm outline-none font-medium" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
       </div>
 
-      <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead className="bg-slate-50 border-b border-slate-200">
-              <tr>
-                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Time</th>
-                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Source (Staff)</th>
-                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">ID Reference</th>
-                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Amount</th>
-                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Verification</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filteredSales.map((sale) => (
-                <tr key={sale.id} className="hover:bg-slate-50/80 transition-colors cursor-pointer group" onClick={() => setSelectedSale(sale)}>
-                  <td className="px-8 py-5"><span className="text-xs font-bold text-slate-500 tabular-nums">{new Date(sale.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></td>
-                  <td className="px-8 py-5">
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-black text-[10px] uppercase">{sale.staff_name?.substring(0, 2) || 'ST'}</div>
-                      <span className="font-bold text-slate-800 text-sm">{sale.staff_name || 'System Terminal'}</span>
-                    </div>
-                  </td>
-                  <td className="px-8 py-5 font-mono text-[9px] text-slate-400 tracking-tighter uppercase">{sale.sale_id?.substring(0,13) || 'LEGACY-ID'}...</td>
-                  <td className="px-8 py-5"><p className="font-black text-slate-900">₦{sale.total_amount.toLocaleString()}</p></td>
-                  <td className="px-8 py-5 text-right">
+      <div className="space-y-3">
+        {filteredSales.length === 0 && !sales ? (
+           <div className="py-20 flex flex-col items-center justify-center gap-4 opacity-50">
+             <Loader2 size={48} className="animate-spin text-emerald-600" />
+             <p className="font-black text-xs uppercase tracking-widest">Loading Records...</p>
+           </div>
+        ) : filteredSales.length === 0 ? (
+          <div className="py-20 text-center bg-white border border-dashed border-slate-200 rounded-[3rem] space-y-4">
+            <History size={64} className="mx-auto text-slate-100" />
+            <p className="text-slate-400 font-black uppercase tracking-widest text-[10px]">No sales found for this date</p>
+          </div>
+        ) : (
+          filteredSales.map((sale) => {
+            const interest = calculateInterest(sale);
+            const timeStr = new Date(sale.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            
+            return (
+              <div 
+                key={sale.id} 
+                className="bg-white p-5 rounded-[2.5rem] border border-slate-200 shadow-sm flex items-center justify-between hover:border-emerald-200 transition-all cursor-pointer group active:scale-[0.98]"
+                onClick={() => setSelectedSale(sale)}
+              >
+                {/* Left side: Time & Sale ID */}
+                <div className="w-1/3 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Clock size={12} className="text-slate-300" />
+                    <span className="text-xs font-black text-slate-500 tabular-nums">{timeStr}</span>
+                  </div>
+                  <p className="text-[9px] font-mono text-slate-400 uppercase tracking-tighter truncate">
+                    ID: {sale.sale_id.substring(0, 12)}...
+                  </p>
+                  <p className="text-[8px] font-black text-slate-300 uppercase tracking-widest mt-1 flex items-center gap-1">
+                    <User size={8} /> {sale.staff_name || 'System'}
+                  </p>
+                </div>
+
+                {/* Middle: Payment Mode Badge & Interest */}
+                <div className="flex-1 flex flex-col items-center">
+                  <span className={`px-4 py-1 rounded-full text-[9px] font-black uppercase tracking-[0.1em] border ${getPaymentBadgeStyle(sale.payment_method)}`}>
+                    {sale.payment_method}
+                  </span>
+                  <div className="mt-2 flex items-center gap-1.5">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Profit:</span>
+                    <span className="text-[11px] font-black text-slate-700">₦{interest.toLocaleString()}</span>
+                  </div>
+                </div>
+
+                {/* Right side: Total Amount (Large & Bold) */}
+                <div className="w-1/3 text-right">
+                  <p className="text-xl font-black text-slate-900 tracking-tight leading-none">
+                    ₦{sale.total_amount.toLocaleString()}
+                  </p>
+                  <div className="mt-2">
                     {sale.sync_status === 'synced' ? (
-                      <span className="inline-flex items-center gap-1 text-[9px] font-black text-emerald-600 uppercase tracking-widest bg-emerald-50 px-2 py-1 rounded-full"><ShieldCheck size={10} /> Audited</span>
+                      <span className="inline-flex items-center gap-1 text-[8px] font-black text-emerald-500 uppercase tracking-widest">
+                        <ShieldCheck size={10} /> Audited
+                      </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1 text-[9px] font-black text-amber-600 uppercase tracking-widest bg-amber-50 px-2 py-1 rounded-full"><Clock size={10} /> Local Only</span>
+                      <span className="inline-flex items-center gap-1 text-[8px] font-black text-amber-500 uppercase tracking-widest">
+                        <Clock size={10} /> Local
+                      </span>
                     )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
       </div>
 
       {selectedSale && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-          <div className="bg-white rounded-[3rem] w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in flex flex-col">
+          <div className="bg-white rounded-[3rem] w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in flex flex-col max-h-[90vh]">
             <div className="p-6 border-b border-slate-100 flex items-center justify-between shrink-0">
               <h3 className="text-xl font-black text-slate-900 tracking-tight">Digital Receipt</h3>
-              <button onClick={() => setSelectedSale(null)} className="p-2 hover:bg-slate-100 rounded-full"><X size={24} /></button>
+              <button onClick={() => setSelectedSale(null)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X size={24} /></button>
             </div>
-            <div className="flex-1 overflow-y-auto p-8 space-y-6">
+            <div className="flex-1 overflow-y-auto p-8 space-y-6 scrollbar-hide">
                <div className="text-center pb-6 border-b-2 border-dashed border-slate-100">
                   <h4 className="text-2xl font-black text-slate-900">{settings?.shop_name}</h4>
                   <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Terminal Audit Log</p>
                   <p className="text-[9px] font-mono text-slate-300 mt-4 break-all uppercase">TX: {selectedSale.sale_id}</p>
                </div>
-               <div className="space-y-3">
+               <div className="space-y-4">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-50 pb-2">Items Purchased</p>
                   {selectedSale.items.map((item, idx) => (
-                    <div key={idx} className="flex justify-between text-sm">
-                      <span className="text-slate-600 font-medium">{item.name} x{item.quantity}</span>
+                    <div key={idx} className="flex justify-between items-start text-sm">
+                      <div className="flex-1 pr-4">
+                        <span className="text-slate-800 font-bold block">{item.name}</span>
+                        <span className="text-[10px] text-slate-400 font-medium">Qty: {item.quantity} x ₦{item.price.toLocaleString()}</span>
+                      </div>
                       <span className="font-black text-slate-900">₦{(item.price * item.quantity).toLocaleString()}</span>
                     </div>
                   ))}
                </div>
-               <div className="pt-6 border-t-2 border-dashed border-slate-100 flex justify-between items-center">
-                  <span className="font-black text-slate-400 uppercase text-xs">Total Amount</span>
-                  <span className="text-3xl font-black text-emerald-600 tracking-tighter">₦{selectedSale.total_amount.toLocaleString()}</span>
+               <div className="pt-6 border-t-2 border-dashed border-slate-100 space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-slate-400 uppercase text-[10px] tracking-widest">Payment Mode</span>
+                    <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-widest border ${getPaymentBadgeStyle(selectedSale.payment_method)}`}>
+                      {selectedSale.payment_method}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="font-black text-slate-800 uppercase text-xs">Total Amount</span>
+                    <span className="text-3xl font-black text-emerald-600 tracking-tighter">₦{selectedSale.total_amount.toLocaleString()}</span>
+                  </div>
                </div>
-               <div className="bg-slate-50 p-4 rounded-2xl flex justify-between items-center text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                  <span>Logged By</span>
-                  <span className="text-slate-800">{selectedSale.staff_name}</span>
+               <div className="bg-slate-50 p-5 rounded-[2rem] flex justify-between items-center text-[10px] font-black text-slate-400 uppercase tracking-widest border border-slate-100">
+                  <div className="space-y-1">
+                    <span>Logged By</span>
+                    <p className="text-slate-800">{selectedSale.staff_name || 'System Terminal'}</p>
+                  </div>
+                  <div className="text-right space-y-1">
+                    <span>Audit Status</span>
+                    <p className={selectedSale.sync_status === 'synced' ? 'text-emerald-600' : 'text-amber-600'}>
+                      {selectedSale.sync_status === 'synced' ? 'Verified' : 'Pending Audit'}
+                    </p>
+                  </div>
                </div>
+            </div>
+            <div className="p-6 bg-slate-50 border-t border-slate-100 shrink-0">
+               <button onClick={() => setSelectedSale(null)} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-sm uppercase tracking-widest active:scale-[0.98] transition-all">Close Receipt</button>
             </div>
           </div>
         </div>
