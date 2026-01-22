@@ -28,7 +28,7 @@ import {
   ChevronRight
 } from 'lucide-react';
 import { Product, View, Staff } from '../types';
-import { processHandwrittenLedger } from '../services/geminiService';
+import { processHandwrittenLedger, RateLimitError } from '../services/geminiService';
 
 interface InventoryProps {
   setView?: (view: View) => void;
@@ -39,10 +39,8 @@ interface InventoryProps {
 const CATEGORIES = ['General', 'Electronics', 'Food & Drinks', 'Clothing', 'Health', 'Beauty', 'Home', 'Office', 'Other'];
 
 const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock = false }) => {
-  // Master Permission Logic: Admin is NEVER restricted.
   const canEdit = currentUser?.role === 'Admin' || (currentUser?.role === 'Manager' && !isStaffLock);
-  const isRestricted = currentUser?.role === 'Sales' || (currentUser?.role === 'Manager' && isStaffLock);
-
+  
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isMigrationModalOpen, setIsMigrationModalOpen] = useState(false);
@@ -58,7 +56,6 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
   const [migrationData, setMigrationData] = useState<Product[]>([]);
 
   const allProductsData = useLiveQuery(() => db.products.toArray());
-  const isLoading = allProductsData === undefined;
   const allProducts = allProductsData || [];
 
   const products = useMemo(() => {
@@ -195,6 +192,11 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
   };
 
   const handleAIMigration = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!navigator.onLine) {
+      alert("AI features require internet connection. Please turn on data to use the Notebook Scanner.");
+      return;
+    }
+
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -202,15 +204,24 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
     try {
       const reader = new FileReader();
       reader.onloadend = async () => {
-        const base64 = reader.result as string;
-        const products = await processHandwrittenLedger(base64);
-        if (products) {
-          setMigrationData(products);
-          setIsMigrationModalOpen(true);
-        } else {
-          alert("Could not extract product data from this image. Please ensure handwriting is clear.");
+        try {
+          const base64 = reader.result as string;
+          const products = await processHandwrittenLedger(base64);
+          if (products) {
+            setMigrationData(products);
+            setIsMigrationModalOpen(true);
+          } else {
+            alert("Could not extract product data from this image. Please ensure handwriting is clear.");
+          }
+        } catch (err) {
+          if (err instanceof RateLimitError) {
+            alert(err.message);
+          } else {
+            alert("AI Error: Could not process the image. Please try again.");
+          }
+        } finally {
+          setIsProcessingAI(false);
         }
-        setIsProcessingAI(false);
       };
       reader.readAsDataURL(file);
     } catch (err) {
@@ -246,9 +257,9 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
             >
               <Plus size={20} /> New Item
             </button>
-            <label className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-2xl font-black hover:bg-black transition-all shadow-xl cursor-pointer">
+            <label className={`flex-1 md:flex-none flex items-center justify-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-2xl font-black transition-all shadow-xl cursor-pointer ${isProcessingAI ? 'opacity-50 cursor-not-allowed' : 'hover:bg-black'}`}>
               {isProcessingAI ? <Loader2 className="animate-spin" size={20} /> : <Sparkles size={20} />}
-              <span className="hidden sm:inline">AI Import</span>
+              <span className="hidden sm:inline">{isProcessingAI ? 'AI Scanning...' : 'AI Import'}</span>
               <input type="file" accept="image/*" className="hidden" onChange={handleAIMigration} disabled={isProcessingAI} />
             </label>
           </div>
@@ -392,10 +403,49 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
                 <p className="text-slate-500 text-sm font-medium">Permanently delete <b>{deleteProduct.name}</b> from terminal?</p>
               </div>
               <div className="flex gap-4">
-                <button onClick={() => setIsDeleteModalOpen(false)} className="flex-1 py-4 bg-slate-100 text-slate-500 rounded-2xl font-black text-xs uppercase tracking-widest">Cancel</button>
+                <button onClick={() => setIsDeleteModalOpen(false)} className="flex-1 py-4 bg-slate-100 text-slate-400 rounded-2xl font-black text-xs uppercase tracking-widest">Cancel</button>
                 <button onClick={async () => { await db.products.delete(deleteProduct.id!); setIsDeleteModalOpen(false); }} className="flex-1 py-4 bg-rose-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl">Confirm</button>
               </div>
            </div>
+        </div>
+      )}
+      
+      {/* Migration Modal for AI Import */}
+      {isMigrationModalOpen && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-emerald-950/90 backdrop-blur-xl">
+          <div className="bg-white rounded-[3rem] w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-8 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-2xl font-black text-slate-900">Scan Results</h3>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Found {migrationData.length} items from ledger</p>
+              </div>
+              <button onClick={() => setIsMigrationModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full"><X size={24} /></button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-8 space-y-4">
+              {migrationData.map((prod, idx) => (
+                <div key={idx} className="bg-slate-50 p-4 rounded-2xl flex justify-between items-center border border-slate-100">
+                  <div className="flex-1">
+                    <p className="font-black text-slate-800">{prod.name}</p>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{prod.category}</p>
+                  </div>
+                  <div className="flex gap-6 text-right">
+                    <div>
+                      <p className="text-[9px] font-black text-slate-400 uppercase">Price</p>
+                      <p className="font-black text-emerald-600">₦{prod.price.toLocaleString()}</p>
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-black text-slate-400 uppercase">Stock</p>
+                      <p className="font-black text-slate-900">{prod.stock_qty}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="p-8 bg-slate-50 border-t border-slate-200 flex gap-4">
+              <button onClick={() => setIsMigrationModalOpen(false)} className="flex-1 py-4 bg-white border border-slate-200 text-slate-500 rounded-2xl font-black uppercase text-xs">Discard</button>
+              <button onClick={saveMigrationData} className="flex-[2] py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase text-xs shadow-xl shadow-emerald-600/20">Import {migrationData.length} Items</button>
+            </div>
+          </div>
         </div>
       )}
     </div>

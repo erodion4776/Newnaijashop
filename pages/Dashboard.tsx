@@ -8,18 +8,20 @@ import {
   AlertTriangle, 
   Wallet,
   ArrowUpRight,
-  ArrowDownRight,
   ShieldAlert,
   Eye,
   EyeOff,
   Coins,
-  Briefcase,
   Layers,
   ChevronRight,
-  Loader2
+  Loader2,
+  Sparkles,
+  Lightbulb,
+  WifiOff
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { Staff } from '../types';
+import { getAIInsights } from '../services/geminiService';
 
 interface DashboardProps {
   currentUser?: Staff | null;
@@ -28,12 +30,14 @@ interface DashboardProps {
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, isStaffLock = false }) => {
-  // Master Rule: Admins are never restricted. Managers restricted if isStaffLock is true. Sales always restricted.
   const canSeeFinancials = currentUser?.role === 'Admin' || (currentUser?.role === 'Manager' && !isStaffLock);
   
   const [showSensitiveData, setShowSensitiveData] = useState(false);
   const [isDataReady, setIsDataReady] = useState(false);
   const [isChartLoading, setIsChartLoading] = useState(true);
+  const [guruTip, setGuruTip] = useState<any>(null);
+  const [isLoadingTip, setIsLoadingTip] = useState(false);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
   
   const chartParentRef = useRef<HTMLDivElement>(null);
 
@@ -42,11 +46,34 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, isStaffLock
   const debts = useLiveQuery(() => db.debts.toArray());
 
   useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  useEffect(() => {
     if (sales !== undefined && products !== undefined && debts !== undefined) {
       setIsDataReady(true);
       setTimeout(() => setIsChartLoading(false), 500);
     }
   }, [sales, products, debts]);
+
+  useEffect(() => {
+    if (isOnline && isDataReady && sales && sales.length >= 5 && !guruTip && !isLoadingTip) {
+      setIsLoadingTip(true);
+      getAIInsights(sales, products || []).then(insights => {
+        if (insights && insights.length > 0) {
+          setGuruTip(insights[0]);
+        }
+        setIsLoadingTip(false);
+      }).catch(() => setIsLoadingTip(false));
+    }
+  }, [isOnline, isDataReady, sales, products]);
 
   const todaySales = useMemo(() => {
     if (!sales) return [];
@@ -107,6 +134,45 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, isStaffLock
           </button>
         )}
       </div>
+
+      {/* AI Guru Quick Tip Section */}
+      {isOnline ? (
+        (guruTip || isLoadingTip) && (
+          <div className="bg-emerald-900 rounded-[2.5rem] p-6 text-white relative overflow-hidden border border-emerald-700 shadow-xl animate-in fade-in slide-in-from-bottom-4">
+             <div className="absolute right-[-20px] top-[-20px] opacity-10">
+               <Sparkles size={140} />
+             </div>
+             <div className="relative z-10 flex items-start gap-4">
+                <div className="w-12 h-12 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center shrink-0 border border-white/10">
+                   {isLoadingTip ? <Loader2 size={24} className="animate-spin text-emerald-300" /> : <Lightbulb size={24} className="text-amber-300" />}
+                </div>
+                <div className="flex-1">
+                   <p className="text-[10px] font-black uppercase tracking-widest text-emerald-400 mb-1 flex items-center gap-2">
+                     <Sparkles size={12} /> NaijaShop Guru Tip
+                   </p>
+                   {isLoadingTip ? (
+                     <p className="text-sm font-medium animate-pulse">Analyzing sales velocity for insights...</p>
+                   ) : (
+                     <div>
+                       <h4 className="font-black text-lg leading-tight mb-1">{guruTip.title}</h4>
+                       <p className="text-sm text-emerald-100/80 font-medium">{guruTip.description}</p>
+                     </div>
+                   )}
+                </div>
+                {setView && (
+                  <button onClick={() => setView('ai-insights')} className="hidden sm:flex self-center items-center gap-1 text-[10px] font-black uppercase tracking-widest bg-white/10 px-3 py-2 rounded-xl hover:bg-white/20 transition-all">
+                    More Hub <ChevronRight size={14} />
+                  </button>
+                )}
+             </div>
+          </div>
+        )
+      ) : (
+        <div className="bg-amber-50 border border-amber-100 rounded-[2.5rem] p-6 flex items-center gap-4 text-amber-800">
+           <WifiOff size={24} className="shrink-0" />
+           <p className="text-sm font-bold">Guru Tips offline. Turn on data for smart business insights.</p>
+        </div>
+      )}
 
       {lowStockItems.length > 0 && (
         <div className="bg-rose-50 border border-rose-100 p-6 rounded-[2.5rem] flex flex-col md:flex-row items-center gap-6 animate-in slide-in-from-top-4">

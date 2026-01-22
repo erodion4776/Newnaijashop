@@ -2,22 +2,47 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Product, Sale } from "../types";
 
+const MODEL_NAME = 'gemini-3-flash-preview';
+
+/**
+ * Custom error class for rate limiting to provide specific UI feedback
+ */
+export class RateLimitError extends Error {
+  constructor(message: string = "AI is busy. Please wait 60 seconds and try again.") {
+    super(message);
+    this.name = "RateLimitError";
+  }
+}
+
+const handleGenAIError = (error: any) => {
+  console.error("GenAI Error:", error);
+  const errorMessage = error?.message || "";
+  if (errorMessage.includes("429") || errorMessage.toLowerCase().includes("too many requests")) {
+    throw new RateLimitError();
+  }
+  throw error;
+};
+
 export const getAIInsights = async (sales: Sale[], products: Product[]) => {
-  // Always create a new instance right before use to ensure correct configuration
+  if (!process.env.API_KEY) {
+    console.error('API Key is missing from Environment Variables');
+    return null;
+  }
+
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   const contents = `
-    Analyze this data and provide 3 actionable business insights.
+    Analyze this store data:
     Products: ${JSON.stringify(products.map(p => ({ name: p.name, stock: p.stock_qty, price: p.price })))}
-    Recent Sales: ${JSON.stringify(sales.slice(-10).map(s => ({ total: s.total_amount, items: s.items.length })))}
+    Recent Sales: ${JSON.stringify(sales.slice(-20).map(s => ({ total: s.total_amount, date: new Date(s.timestamp).toLocaleDateString() })))}
   `;
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
+      model: MODEL_NAME,
       contents: contents,
       config: {
-        systemInstruction: "You are a retail expert for Nigerian businesses. Return the response as JSON with a list of insights, each having a 'title', 'description', and 'priority' (High, Medium, Low).",
+        systemInstruction: "Act as 'NaijaShop Guru'. Provide 3 direct, actionable retail insights for a Nigerian trader. Be brief. Use JSON format.",
         responseMimeType: 'application/json',
         responseSchema: {
           type: Type.OBJECT,
@@ -39,29 +64,25 @@ export const getAIInsights = async (sales: Sale[], products: Product[]) => {
       }
     });
 
-    // The text property returns the string output directly
     const jsonStr = response.text?.trim();
     if (!jsonStr) return null;
     return JSON.parse(jsonStr).insights;
   } catch (error) {
-    console.error("AI Insights Error:", error);
-    return null;
+    return handleGenAIError(error);
   }
 };
 
 export const processHandwrittenLedger = async (base64Image: string) => {
-  // Always create a new instance right before use to ensure correct configuration
+  if (!process.env.API_KEY) {
+    console.error('API Key is missing from Environment Variables');
+    return null;
+  }
+
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
-  const textPart = {
-    text: "Extract products from this handwritten ledger image. Look for product names, selling prices, cost prices, and quantities. If prices use 'k' suffix, convert to thousands (e.g. 5k = 5000)."
-  };
-
   try {
     const response = await ai.models.generateContent({
-      // Upgraded to gemini-3-pro-preview for better complex reasoning and extraction from images
-      model: 'gemini-3-pro-preview',
-      // Multi-part content must be wrapped in a parts array within a Content object
+      model: MODEL_NAME,
       contents: {
         parts: [
           { 
@@ -70,11 +91,11 @@ export const processHandwrittenLedger = async (base64Image: string) => {
               mimeType: 'image/jpeg' 
             } 
           },
-          textPart
+          { text: "Act as an OCR expert. Extract product names, prices (convert 'k' to thousands), cost prices, and quantities from this image. Return ONLY a JSON array." }
         ]
       },
       config: {
-        systemInstruction: "You are a data extraction expert. Respond in JSON format.",
+        systemInstruction: "Extract product data from store notebooks. Ensure prices and quantities are numbers. Ignore currency symbols.",
         responseMimeType: 'application/json',
         responseSchema: {
           type: Type.OBJECT,
@@ -98,12 +119,10 @@ export const processHandwrittenLedger = async (base64Image: string) => {
       }
     });
 
-    // The text property returns the string output directly
     const jsonStr = response.text?.trim();
     if (!jsonStr) return null;
     return JSON.parse(jsonStr).products;
   } catch (error) {
-    console.error("Ledger Migration Error:", error);
-    return null;
+    return handleGenAIError(error);
   }
 };
