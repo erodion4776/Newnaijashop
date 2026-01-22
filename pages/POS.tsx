@@ -102,6 +102,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
     }
 
     try {
+      // Ensure data integrity by saving customer name and items correctly
       await db.parked_orders.add({
         customerName: parkName,
         items: [...cart],
@@ -113,19 +114,52 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
       setCart([]);
       setParkName('');
       setShowParkModal(false);
+      console.log('Order parked successfully');
     } catch (err) {
       alert("Failed to park order: " + err);
     }
   };
 
-  const handleResumeOrder = async (order: ParkedOrder) => {
-    if (cart.length > 0) {
-      if (!confirm("Your current cart is not empty. Resuming this order will overwrite your cart. Continue?")) return;
-    }
+  const handleResumeOrder = async (orderId: number) => {
+    try {
+      // 1. Fetch the order from the database
+      const order = await db.parked_orders.get(orderId);
+      if (!order) {
+        alert("Order not found!");
+        return;
+      }
 
-    setCart(order.items);
-    await db.parked_orders.delete(order.id!);
-    setShowParkedListModal(false);
+      if (cart.length > 0) {
+        if (!confirm("Your current cart is not empty. Resuming this order will overwrite your current cart. Continue?")) return;
+      }
+
+      // 2. Logic: Ensure items are loaded into POS cart state (handle potential string format)
+      let itemsToLoad = order.items;
+      if (typeof itemsToLoad === 'string') {
+        try {
+          itemsToLoad = JSON.parse(itemsToLoad);
+        } catch (e) {
+          console.error("Failed to parse items", e);
+          itemsToLoad = [];
+        }
+      }
+      
+      if (!Array.isArray(itemsToLoad)) {
+        alert("Invalid item data in parked order.");
+        return;
+      }
+
+      setCart([...itemsToLoad]);
+
+      // 3. Delete from parked_orders table after successfully loading items
+      await db.parked_orders.delete(orderId);
+      
+      // 4. UI Cleanup
+      setShowParkedListModal(false);
+      console.log('Order resumed successfully');
+    } catch (error: any) {
+      alert('Resume Failed: ' + error.message);
+    }
   };
 
   const handleCompleteSale = async () => {
@@ -381,7 +415,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
                               <Trash2 size={20} />
                             </button>
                             <button 
-                              onClick={() => handleResumeOrder(order)}
+                              onClick={() => handleResumeOrder(order.id!)}
                               className="px-6 py-3 bg-slate-900 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg flex items-center gap-2"
                             >
                                <PlayCircle size={16} /> Resume Order
@@ -469,8 +503,8 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
 
        {showLowStockAlert && (
          <div className="fixed inset-0 z-[600] flex items-center justify-center bg-slate-950/90 backdrop-blur-md">
-            <div className="bg-white rounded-[3rem] p-10 text-center space-y-8 max-w-sm animate-in zoom-in duration-500">
-               <div className="w-20 h-20 bg-rose-50 text-rose-500 rounded-full flex items-center justify-center mx-auto">
+            <div className="bg-white rounded-[3rem] p-10 text-center space-y-8 max-sm animate-in zoom-in duration-500">
+               <div className="w-20 h-20 bg-rose-50 text-rose-600 rounded-full flex items-center justify-center mx-auto">
                  <AlertTriangle size={48} className="animate-pulse" />
                </div>
                <div className="space-y-2">
