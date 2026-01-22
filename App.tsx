@@ -1,9 +1,8 @@
 
-import React, { useState, useEffect, useMemo, ErrorInfo, ReactNode, Component } from 'react';
+import React, { useState, useEffect, ErrorInfo, ReactNode, Component } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, initSettings } from './db/db';
 import { View, Staff } from './types';
-import LZString from 'lz-string';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import POS from './pages/POS';
@@ -12,27 +11,16 @@ import InventoryLedger from './pages/InventoryLedger';
 import Debts from './pages/Debts';
 import AIInsights from './pages/AIInsights';
 import TransferStation from './pages/TransferStation';
-import SyncStation from './pages/SyncStation';
 import StaffManagement from './pages/StaffManagement';
 import ActivityLog from './pages/ActivityLog';
-import BarcodeScanner from './components/BarcodeScanner';
-import { SyncProvider } from './context/SyncProvider';
-import { importWhatsAppBridgeData, generateSyncKey } from './services/syncService';
+import SecurityBackups from './pages/SecurityBackups';
+import Settings from './pages/Settings';
+import InstallModal from './components/InstallModal';
+import { performAutoSnapshot } from './utils/backup';
 import { 
   AlertTriangle,
-  ShieldCheck,
-  Smartphone,
   Loader2,
-  Key,
-  Copy,
-  Check,
-  Zap,
-  RefreshCw,
-  XCircle,
-  Wrench,
-  QrCode,
-  PartyPopper,
-  User,
+  Lock,
   ShieldAlert
 } from 'lucide-react';
 
@@ -42,12 +30,16 @@ const MASTER_RECOVERY_PIN = "9999";
 interface ErrorBoundaryProps { children?: ReactNode; }
 interface ErrorBoundaryState { hasError: boolean; error: Error | null; }
 
-// Fix: Explicitly extend React.Component with generics to ensure this.props and this.state are correctly typed and visible
-class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  // Fix: Initialize state in a standard constructor to satisfy generic inheritance checks
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  // Fix: Explicitly declare state and props to resolve TypeScript "Property does not exist" errors
+  state: ErrorBoundaryState;
+  props: ErrorBoundaryProps;
+
   constructor(props: ErrorBoundaryProps) {
     super(props);
+    // Fix: Explicitly initialize state and props in the constructor
     this.state = { hasError: false, error: null };
+    this.props = props;
   }
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState { 
@@ -59,7 +51,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
   }
 
   render() {
-    // Fix: access state property via 'this' which is now correctly recognized as React.Component instance
+    // Accessing this.state which is now explicitly declared
     if (this.state.hasError) {
       return (
         <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 text-center">
@@ -71,7 +63,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
         </div>
       );
     }
-    // Fix: access props property via 'this' which is now correctly recognized as React.Component instance
+    // Accessing this.props which is now explicitly declared
     return this.props.children;
   }
 }
@@ -83,125 +75,48 @@ const AppContent: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<Staff | null>(null);
   const [loginPassword, setLoginPassword] = useState('');
   const [selectedStaffId, setSelectedStaffId] = useState<number | ''>('');
-  const [isProcessingImport, setIsProcessingImport] = useState(false);
-  const [isProcessingInvite, setIsProcessingInvite] = useState(false);
-  const [inviteError, setInviteError] = useState<string | null>(null);
-  const [copiedKey, setCopiedKey] = useState(false);
-  const [showScannerForJoin, setShowScannerForJoin] = useState(false);
-  const [welcomeMessage, setWelcomeMessage] = useState<string | null>(null);
+  const [isStaffLock, setIsStaffLock] = useState(localStorage.getItem('isStaffLock') === 'true');
   
+  // PWA States
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [showInstallModal, setShowInstallModal] = useState(false);
+  const [isPWA, setIsPWA] = useState(false);
+
   const [setupData, setSetupData] = useState({ shopName: '', adminName: '', adminPin: '' });
 
   const settings = useLiveQuery(() => db.settings.get('app_settings'));
   const staffList = useLiveQuery(() => db.staff.toArray()) || [];
-  
-  const isStaffDevice = localStorage.getItem('isStaffDevice') === 'true';
 
   useEffect(() => {
-    const splashTimer = setTimeout(() => setShowSplash(false), 2500);
-    return () => clearTimeout(splashTimer);
+    const splashTimer = setTimeout(() => setShowSplash(false), 2000);
+    
+    // PWA Check
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone;
+    setIsPWA(isStandalone);
+
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    return () => {
+      clearTimeout(splashTimer);
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
   }, []);
 
   useEffect(() => {
-    const start = async () => {
-      try {
-        await initSettings();
-        const urlParams = new URLSearchParams(window.location.search);
-        const importData = urlParams.get('importData');
-        const staffOnboarding = urlParams.get('staffData') || urlParams.get('data') || urlParams.get('invite');
-
-        if (importData) {
-          await handleMagicLinkImport(importData);
-        } else if (staffOnboarding) {
-          await handleStaffInvite(staffOnboarding);
-        }
-        setIsInitialized(true);
-      } catch (err) {
-        console.error("Initialization failed", err);
+    initSettings().then(() => setIsInitialized(true));
+    
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        performAutoSnapshot();
       }
     };
-    start();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, []);
-
-  // Intelligent pre-selection for new joiners
-  useEffect(() => {
-    if (isInitialized && !currentUser && staffList.length > 0) {
-      const justJoined = localStorage.getItem('justJoined');
-      const invitedName = localStorage.getItem('invitedStaffName');
-      
-      if (justJoined === 'true' && invitedName) {
-        const staff = staffList.find(s => s.name === invitedName);
-        if (staff && staff.id) {
-          setSelectedStaffId(staff.id);
-          setWelcomeMessage(`Welcome to ${settings?.shop_name || 'NaijaShop'}! Enter your PIN to start.`);
-          localStorage.removeItem('justJoined');
-        }
-      } else if (selectedStaffId === '') {
-        // Default to the first Admin in the list
-        const admin = staffList.find(s => s.role === 'Admin');
-        if (admin && admin.id) setSelectedStaffId(admin.id);
-      }
-    }
-  }, [isInitialized, currentUser, staffList, settings]);
-
-  const handleMagicLinkImport = async (compressed: string) => {
-    setIsProcessingImport(true);
-    try {
-      const currentSettings = await db.settings.get('app_settings');
-      if (currentSettings?.sync_key) {
-        const result = await importWhatsAppBridgeData(compressed, currentSettings.sync_key);
-        window.history.replaceState({}, document.title, window.location.pathname);
-        alert(`Magic Import Success!\n${result.count} items processed.`);
-      }
-    } catch (err) {
-      alert("Magic Import Failed. Ensure Sync Key matches.");
-    } finally {
-      setIsProcessingImport(false);
-    }
-  };
-
-  const handleStaffInvite = async (compressed: string) => {
-    setIsProcessingInvite(true);
-    setInviteError(null);
-    try {
-      const json = LZString.decompressFromEncodedURIComponent(compressed);
-      if (!json) throw new Error("CORRUPT_DATA");
-      const data = JSON.parse(json);
-
-      await (db as any).transaction('rw', [db.settings, db.staff], async () => {
-        const s = await db.settings.get('app_settings');
-        await db.settings.put({
-          ...s,
-          id: 'app_settings',
-          shop_name: data.shop || data.shopName,
-          sync_key: data.syncKey || data.masterSyncKey,
-          is_setup_complete: true
-        });
-
-        const staffName = data.name || data.staffMember?.name;
-        const exists = await db.staff.where('name').equals(staffName).first();
-        if (!exists) {
-          await db.staff.add({
-            name: staffName,
-            role: data.role || 'Sales',
-            password: data.password,
-            status: 'Active',
-            created_at: Date.now()
-          });
-        }
-        localStorage.setItem('justJoined', 'true');
-        localStorage.setItem('invitedStaffName', staffName);
-      });
-
-      window.history.replaceState({}, document.title, '/');
-      localStorage.setItem('isStaffDevice', 'true');
-      setIsInitialized(true); 
-    } catch (err) {
-      setInviteError("Invite link invalid or expired.");
-    } finally {
-      setIsProcessingInvite(false);
-    }
-  };
 
   const handleSetupComplete = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -222,24 +137,40 @@ const AppContent: React.FC = () => {
       const adminUser = await db.staff.get(adminId);
       if (adminUser) setCurrentUser(adminUser);
     });
+    
     setCurrentView('dashboard');
+    // Trigger Install Modal after setup if on mobile/not installed
+    if (!isPWA) {
+      setTimeout(() => setShowInstallModal(true), 1500);
+    }
+  };
+
+  const handleInstallClick = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setDeferredPrompt(null);
+        setShowInstallModal(false);
+        alert('NaijaShop is now on your Home Screen!');
+      }
+    } else {
+      // iOS Fallback
+      alert('To install: Tap the "Share" button in Safari and select "Add to Home Screen".');
+    }
   };
 
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const staff = staffList.find(s => s.id === Number(selectedStaffId));
-    
-    // Recovery Logic
     if (loginPassword === MASTER_RECOVERY_PIN) {
       const admin = staffList.find(s => s.role === 'Admin');
       if (admin) {
         setCurrentUser(admin);
         setCurrentView('settings');
-        alert("Emergency Admin Access.");
         return;
       }
     }
-
     if (staff && staff.password === loginPassword) {
       setCurrentUser(staff);
       if (staff.role === 'Sales') setCurrentView('pos');
@@ -248,16 +179,12 @@ const AppContent: React.FC = () => {
     }
   };
 
-  if (isProcessingInvite || isProcessingImport) {
-    return (
-      <div className="min-h-screen bg-emerald-950 flex flex-col items-center justify-center p-6 text-center">
-        <Loader2 size={80} className="animate-spin text-emerald-400 mb-8" />
-        <h2 className="text-3xl font-black text-white">Linking Terminal...</h2>
-      </div>
-    );
-  }
+  const toggleStaffLock = (active: boolean) => {
+    setIsStaffLock(active);
+    localStorage.setItem('isStaffLock', active.toString());
+  };
 
-  if (showSplash) {
+  if (showSplash || !isInitialized) {
     return (
       <div className="min-h-screen bg-emerald-900 flex flex-col items-center justify-center p-6 text-center">
         <div className="w-32 h-32 bg-white rounded-[2.5rem] p-6 flex items-center justify-center shadow-2xl animate-pulse-soft mb-8">
@@ -268,16 +195,9 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // Setup Guard: Only if NO users exist
   if (isInitialized && staffList.length === 0) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
-        {showScannerForJoin && (
-          <BarcodeScanner 
-            onScan={(data) => { handleStaffInvite(data); setShowScannerForJoin(false); }} 
-            onClose={() => setShowScannerForJoin(false)} 
-          />
-        )}
         <div className="w-full max-w-md space-y-8">
           <div className="text-center space-y-2">
             <h2 className="text-4xl font-black text-slate-900 tracking-tight">Onboarding</h2>
@@ -290,8 +210,6 @@ const AppContent: React.FC = () => {
               <input required type="password" maxLength={4} placeholder="Set Admin PIN (4 digits)" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-2xl text-center" value={setupData.adminPin} onChange={e => setSetupData({...setupData, adminPin: e.target.value})} />
               <button type="submit" className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-xl hover:bg-emerald-700 shadow-xl transition-all">Start New Shop</button>
             </form>
-            <div className="relative text-center"><span className="bg-white px-4 text-slate-300 font-black text-xs uppercase">Or</span><div className="absolute inset-0 top-1/2 -z-10 border-t border-slate-100"></div></div>
-            <button onClick={() => setShowScannerForJoin(true)} className="w-full py-4 bg-slate-50 text-slate-600 rounded-[2rem] font-black text-xs uppercase tracking-widest border border-slate-200 flex items-center justify-center gap-3"><QrCode size={18} /> Join as Staff</button>
           </div>
         </div>
       </div>
@@ -310,12 +228,6 @@ const AppContent: React.FC = () => {
           </div>
 
           <div className="bg-white p-10 rounded-[3rem] shadow-2xl border border-slate-200 space-y-8 relative overflow-hidden">
-            {welcomeMessage && (
-               <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-2xl flex items-center gap-3 animate-in fade-in">
-                 <PartyPopper size={18} className="text-emerald-600" />
-                 <p className="text-xs font-bold text-emerald-800 leading-tight">{welcomeMessage}</p>
-               </div>
-            )}
             <form onSubmit={handleLoginSubmit} className="space-y-6">
               <select required className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold" value={selectedStaffId} onChange={(e) => setSelectedStaffId(Number(e.target.value))}>
                 <option value="">Select Account</option>
@@ -334,21 +246,31 @@ const AppContent: React.FC = () => {
   }
 
   return (
-    <SyncProvider currentUser={currentUser}>
-      <Layout activeView={currentView} setView={setCurrentView} shopName={settings?.shop_name || 'NaijaShop POS'} currentUser={currentUser} onLogout={() => { setCurrentUser(null); setWelcomeMessage(null); }}>
-        {currentView === 'dashboard' && <Dashboard currentUser={currentUser} setView={setCurrentView} />}
-        {currentView === 'pos' && <POS setView={setCurrentView} currentUser={currentUser} />}
-        {currentView === 'activity-log' && <ActivityLog />}
-        {currentView === 'transfer-station' && <TransferStation setView={setCurrentView} />}
-        {currentView === 'inventory' && <Inventory setView={setCurrentView} currentUser={currentUser} />}
-        {currentView === 'inventory-ledger' && <InventoryLedger />}
-        {currentView === 'debts' && <Debts />}
-        {currentView === 'ai-insights' && <AIInsights />}
-        {currentView === 'sync' && <SyncStation currentUser={currentUser} setView={setCurrentView} />}
-        {currentView === 'staff-management' && <StaffManagement />}
-        {currentView === 'settings' && <div className="p-8 text-center text-slate-400 font-bold">Settings Hub (Admin Only)</div>}
-      </Layout>
-    </SyncProvider>
+    <Layout 
+      activeView={currentView} 
+      setView={setCurrentView} 
+      shopName={settings?.shop_name || 'NaijaShop POS'} 
+      currentUser={currentUser} 
+      isStaffLock={isStaffLock}
+      toggleStaffLock={toggleStaffLock}
+      adminPin={settings?.admin_pin || ''}
+      onLogout={() => { setCurrentUser(null); }}
+      canInstall={!!deferredPrompt || (!isPWA && /iPhone|iPad|iPod/.test(navigator.userAgent))}
+      onInstall={handleInstallClick}
+    >
+      {showInstallModal && <InstallModal onInstall={handleInstallClick} onClose={() => setShowInstallModal(false)} />}
+      {currentView === 'dashboard' && <Dashboard currentUser={currentUser} setView={setCurrentView} isStaffLock={isStaffLock} />}
+      {currentView === 'pos' && <POS setView={setCurrentView} currentUser={currentUser} />}
+      {currentView === 'activity-log' && <ActivityLog />}
+      {currentView === 'transfer-station' && <TransferStation setView={setCurrentView} />}
+      {currentView === 'inventory' && <Inventory setView={setCurrentView} currentUser={currentUser} isStaffLock={isStaffLock} />}
+      {currentView === 'inventory-ledger' && <InventoryLedger />}
+      {currentView === 'debts' && <Debts />}
+      {currentView === 'ai-insights' && <AIInsights />}
+      {currentView === 'staff-management' && <StaffManagement />}
+      {currentView === 'security-backups' && <SecurityBackups currentUser={currentUser} />}
+      {currentView === 'settings' && <Settings currentUser={currentUser} />}
+    </Layout>
   );
 };
 

@@ -6,20 +6,18 @@ export const getAIInsights = async (sales: Sale[], products: Product[]) => {
   // Always create a new instance right before use to ensure correct configuration
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
-  const prompt = `
-    Act as a retail expert for Nigerian businesses. 
+  const contents = `
     Analyze this data and provide 3 actionable business insights.
     Products: ${JSON.stringify(products.map(p => ({ name: p.name, stock: p.stock_qty, price: p.price })))}
     Recent Sales: ${JSON.stringify(sales.slice(-10).map(s => ({ total: s.total_amount, items: s.items.length })))}
-    
-    Return the response as JSON with a list of insights, each having a 'title', 'description', and 'priority' (High, Medium, Low).
   `;
 
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-pro-preview',
-      contents: prompt,
+      contents: contents,
       config: {
+        systemInstruction: "You are a retail expert for Nigerian businesses. Return the response as JSON with a list of insights, each having a 'title', 'description', and 'priority' (High, Medium, Low).",
         responseMimeType: 'application/json',
         responseSchema: {
           type: Type.OBJECT,
@@ -55,12 +53,9 @@ export const processHandwrittenLedger = async (base64Image: string) => {
   // Always create a new instance right before use to ensure correct configuration
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
-  const prompt = `
-    Extract products from this handwritten ledger image. 
-    Look for product names, selling prices, cost prices, and quantities.
-    If prices use 'k' suffix, convert to thousands (e.g. 5k = 5000).
-    Respond in JSON format.
-  `;
+  const textPart = {
+    text: "Extract products from this handwritten ledger image. Look for product names, selling prices, cost prices, and quantities. If prices use 'k' suffix, convert to thousands (e.g. 5k = 5000)."
+  };
 
   try {
     const response = await ai.models.generateContent({
@@ -75,10 +70,11 @@ export const processHandwrittenLedger = async (base64Image: string) => {
               mimeType: 'image/jpeg' 
             } 
           },
-          { text: prompt }
+          textPart
         ]
       },
       config: {
+        systemInstruction: "You are a data extraction expert. Respond in JSON format.",
         responseMimeType: 'application/json',
         responseSchema: {
           type: Type.OBJECT,

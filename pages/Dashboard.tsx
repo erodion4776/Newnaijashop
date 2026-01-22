@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect, useRef, useLayoutEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
 import { 
@@ -15,46 +15,38 @@ import {
   Coins,
   Briefcase,
   Layers,
-  RefreshCw,
-  MessageCircle,
-  Loader2,
-  Share2,
-  MessageSquare,
-  Lock,
-  ShieldCheck,
   ChevronRight,
-  ArrowRight
+  Loader2
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { View, Staff } from '../types';
-import { exportDataForWhatsApp } from '../services/syncService';
+import { Staff } from '../types';
 
 interface DashboardProps {
   currentUser?: Staff | null;
-  setView?: (view: View) => void;
+  setView?: (view: any) => void;
+  isStaffLock?: boolean;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
-  const isSales = currentUser?.role === 'Sales';
-  const isAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'Manager';
-  const [showSensitiveData, setShowSensitiveData] = useState(!isSales);
+const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, isStaffLock = false }) => {
+  // Master Rule: Admins are never restricted. Managers restricted if isStaffLock is true. Sales always restricted.
+  const canSeeFinancials = currentUser?.role === 'Admin' || (currentUser?.role === 'Manager' && !isStaffLock);
+  
+  const [showSensitiveData, setShowSensitiveData] = useState(false);
   const [isDataReady, setIsDataReady] = useState(false);
   const [isChartLoading, setIsChartLoading] = useState(true);
-  const [isSyncing, setIsSyncing] = useState(false);
   
   const chartParentRef = useRef<HTMLDivElement>(null);
 
-  const settings = useLiveQuery(() => db.settings.get('app_settings'));
   const sales = useLiveQuery(() => db.sales.toArray());
   const products = useLiveQuery(() => db.products.toArray());
   const debts = useLiveQuery(() => db.debts.toArray());
 
   useEffect(() => {
-    if (sales !== undefined && products !== undefined && debts !== undefined && settings !== undefined) {
+    if (sales !== undefined && products !== undefined && debts !== undefined) {
       setIsDataReady(true);
       setTimeout(() => setIsChartLoading(false), 500);
     }
-  }, [sales, products, debts, settings]);
+  }, [sales, products, debts]);
 
   const todaySales = useMemo(() => {
     if (!sales) return [];
@@ -66,50 +58,37 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
   const totalStockValue = (products || []).reduce((acc, p) => acc + (p.cost_price * p.stock_qty), 0);
   const expectedProfitOnStock = (products || []).reduce((acc, p) => acc + ((p.price - p.cost_price) * p.stock_qty), 0);
 
-  // Point 3: Admin Side Global Low Stock Detection
   const lowStockItems = useMemo(() => {
     if (!products) return [];
     return products.filter(p => p.stock_qty <= (p.low_stock_threshold || 5));
   }, [products]);
 
   const formatCurrency = (val: number) => {
-    if (!showSensitiveData) return "₦ ****";
+    if (!canSeeFinancials) return "₦ ****";
     return `₦${Math.floor(val).toLocaleString()}`;
   };
 
-  const handleWhatsAppSync = async () => {
-    if (!settings?.sync_key) {
-      if (setView) setView('sync');
-      return;
+  const processedChartData = useMemo(() => {
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const result = [];
+    const now = new Date();
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(now.getDate() - i);
+      d.setHours(0, 0, 0, 0); 
+      const startTs = d.getTime();
+      const endTs = startTs + 86400000;
+      const dayTotal = (sales || []).filter(s => s.timestamp >= startTs && s.timestamp < endTs).reduce((sum, s) => sum + (s.total_amount || 0), 0);
+      result.push({ name: days[d.getDay()], amount: dayTotal });
     }
-    setIsSyncing(true);
-    try {
-      const { raw, summary } = await exportDataForWhatsApp('SALES', settings.sync_key, currentUser?.name);
-      const magicLink = `${window.location.origin}/?importData=${raw}`;
-      const message = `${summary}\n\nClick link to import:\n${magicLink}`;
-      window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
-      
-      const pendingSales = await db.sales.where('sync_status').equals('pending').toArray();
-      for (const sale of pendingSales) {
-        await db.sales.update(sale.id!, { sync_status: 'synced' });
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  const handleRequestStockUpdate = () => {
-    const message = `🏪 NAIJASHOP REQUEST: ${currentUser?.name}\n\nBoss, my inventory levels are getting low. Please send me a fresh Stock JSON link so I can verify real quantities in the main store.`;
-    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
-  };
+    return result;
+  }, [sales]);
 
   if (!isDataReady) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
         <Loader2 size={48} className="animate-spin text-emerald-600" />
-        <p className="text-slate-400 font-black uppercase tracking-widest text-xs">Connecting Terminal...</p>
+        <p className="text-slate-400 font-black uppercase tracking-widest text-xs">Loading Terminal Data...</p>
       </div>
     );
   }
@@ -118,26 +97,25 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-black text-slate-800 tracking-tight">Terminal Overview</h2>
-          <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Status: Operational</p>
+          <h2 className="text-2xl font-black text-slate-800 tracking-tight">Store Performance</h2>
+          <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Status: Active</p>
         </div>
-        {!isSales && (
+        {canSeeFinancials && (
           <button onClick={() => setShowSensitiveData(!showSensitiveData)} className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-2xl text-slate-600 hover:bg-slate-50 transition-all shadow-sm font-bold text-sm">
             {showSensitiveData ? <EyeOff size={18} /> : <Eye size={18} />}
-            {showSensitiveData ? 'Hide Financials' : 'View Financials'}
+            {showSensitiveData ? 'Hide Profits' : 'Show Profits'}
           </button>
         )}
       </div>
 
-      {/* Point 3: Admin Critical Notification */}
-      {isAdmin && lowStockItems.length > 0 && (
+      {lowStockItems.length > 0 && (
         <div className="bg-rose-50 border border-rose-100 p-6 rounded-[2.5rem] flex flex-col md:flex-row items-center gap-6 animate-in slide-in-from-top-4">
           <div className="w-16 h-16 bg-rose-600 text-white rounded-3xl flex items-center justify-center shrink-0 shadow-lg">
             <AlertTriangle size={32} />
           </div>
           <div className="flex-1 text-center md:text-left">
             <h3 className="text-lg font-black text-slate-900 tracking-tight">Critical Stock Alert</h3>
-            <p className="text-sm text-slate-500 font-medium">There are <b>{lowStockItems.length} products</b> hitting reorder levels in the master catalog.</p>
+            <p className="text-sm text-slate-500 font-medium">There are <b>{lowStockItems.length} items</b> hitting reorder levels in your inventory.</p>
           </div>
           <button onClick={() => setView && setView('inventory')} className="px-6 py-3 bg-slate-900 text-white rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center gap-2 hover:bg-black transition-all">
             View Items <ChevronRight size={14} />
@@ -146,52 +124,48 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <StatCard title="Daily Revenue" value={formatCurrency(totalSalesToday)} trend="+4.2%" trendType="up" icon={<TrendingUp className="text-emerald-600" />} color="emerald" />
-        <StatCard title="Pending Sync" value={sales?.filter(s => s.sync_status === 'pending').length.toString() || '0'} icon={<Layers className="text-indigo-600" />} color="blue" />
+        <StatCard title="Today's Revenue" value={formatCurrency(totalSalesToday)} trend="+4.2%" trendType="up" icon={<TrendingUp className="text-emerald-600" />} color="emerald" />
+        <StatCard title="Inventory Count" value={products?.length.toString() || '0'} icon={<Package className="text-indigo-600" />} color="blue" />
         <StatCard title="Outstanding Debt" value={formatCurrency(debts?.filter(d => d.status === 'pending').reduce((a,c) => a+c.amount, 0) || 0)} icon={<Wallet className="text-rose-600" />} color="rose" />
       </div>
 
-      {isSales && (
-        <div className="bg-emerald-900 p-8 rounded-[2.5rem] text-white relative overflow-hidden shadow-2xl">
-          <div className="absolute right-[-40px] bottom-[-40px] opacity-10"><MessageSquare size={180} /></div>
-          <div className="relative z-10">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="p-3 bg-white/20 rounded-2xl"><MessageCircle size={24} /></div>
-              <div>
-                <h3 className="text-xl font-black">Sync Bridge</h3>
-                <p className="text-xs font-bold text-emerald-300 uppercase tracking-widest">Linked to Admin Terminal</p>
-              </div>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <button 
-                onClick={handleWhatsAppSync} 
-                disabled={isSyncing} 
-                className="group p-6 bg-white/10 border border-white/20 rounded-3xl hover:bg-white/20 transition-all flex items-center gap-4 text-left"
-              >
-                <div className="p-4 bg-emerald-600 rounded-2xl shadow-sm text-white">{isSyncing ? <Loader2 className="animate-spin" /> : <Share2 />}</div>
-                <div>
-                  <p className="font-black leading-tight">Sync Sales Report</p>
-                  <p className="text-[10px] text-emerald-300 font-bold uppercase tracking-widest mt-1">Export JSON to Admin</p>
-                </div>
-              </button>
-              
-              <button 
-                onClick={handleRequestStockUpdate} 
-                className="group p-6 bg-white/10 border border-white/20 rounded-3xl hover:bg-white/20 transition-all flex items-center gap-4 text-left"
-              >
-                <div className="p-4 bg-amber-600 rounded-2xl shadow-sm text-white"><RefreshCw /></div>
-                <div>
-                  <p className="font-black leading-tight">Request Stock JSON</p>
-                  <p className="text-[10px] text-emerald-300 font-bold uppercase tracking-widest mt-1">Get master store levels</p>
-                </div>
-              </button>
-            </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden min-h-0 block">
+          <h3 className="font-black text-slate-800 text-xl tracking-tight mb-8">Sales Velocity (7 Days)</h3>
+          <div ref={chartParentRef} className="relative block w-full h-[300px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={processedChartData}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12, fontWeight: 700 }} dy={10} />
+                <YAxis hide />
+                <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '20px', border: 'none', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }} />
+                <Bar dataKey="amount" radius={[10, 10, 0, 0]} barSize={40}>
+                  {processedChartData.map((_, index) => (
+                    <Cell key={`cell-${index}`} fill={index === 6 ? '#059669' : '#10b981'} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         </div>
-      )}
 
-      {showSensitiveData && (
+        <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-200">
+           <h3 className="font-black text-slate-800 text-xl tracking-tight mb-6">Recent Log</h3>
+           <div className="space-y-5">
+              {(sales || []).slice(-5).reverse().map(sale => (
+                <div key={sale.id} className="flex justify-between items-center pb-4 border-b border-slate-50 last:border-0 last:pb-0">
+                  <div>
+                    <p className="font-bold text-slate-800">₦{sale.total_amount.toLocaleString()}</p>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase">{new Date(sale.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                  </div>
+                  <span className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 bg-slate-100 rounded text-slate-500">{sale.payment_method}</span>
+                </div>
+              ))}
+           </div>
+        </div>
+      </div>
+
+      {showSensitiveData && canSeeFinancials && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in slide-in-from-top-4 duration-300">
           <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white relative overflow-hidden shadow-2xl">
              <div className="absolute right-[-20px] bottom-[-20px] opacity-10"><Layers size={180} /></div>
@@ -208,7 +182,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView }) => {
              <div className="absolute right-[-20px] bottom-[-20px] opacity-10"><Coins size={180} /></div>
              <div className="relative z-10 flex items-center justify-between">
                 <div>
-                   <p className="text-emerald-300/50 text-xs font-black uppercase tracking-[0.2em] mb-2">Unrealized Potential Profit</p>
+                   <p className="text-emerald-300/50 text-xs font-black uppercase tracking-[0.2em] mb-2">Potential Margin</p>
                    <h4 className="text-4xl font-black tracking-tighter">{formatCurrency(expectedProfitOnStock)}</h4>
                 </div>
                 <div className="p-4 bg-white/10 rounded-3xl backdrop-blur-md border border-white/10"><ArrowUpRight size={32} className="text-emerald-400" /></div>

@@ -2,7 +2,6 @@
 import { Dexie } from 'dexie';
 import type { Table } from 'dexie';
 import { Product, Sale, Debt, Settings, ParkedOrder, InventoryLog, Staff } from '../types';
-import { generateSyncKey } from '../services/syncService';
 
 export class NaijaShopDB extends Dexie {
   products!: Table<Product>;
@@ -16,9 +15,9 @@ export class NaijaShopDB extends Dexie {
   constructor() {
     super('NaijaShopDB');
     
-    (this as any).version(10).stores({
+    (this as any).version(12).stores({
       products: '++id, name, category, barcode',
-      sales: '++id, sale_id, timestamp, sync_status, payment_method, staff_name',
+      sales: '++id, sale_id, timestamp, payment_method, staff_name',
       debts: '++id, customer_name, status',
       staff: '++id, name, role, status',
       settings: 'id',
@@ -35,17 +34,14 @@ export const initSettings = async () => {
   if (!settings) {
     await db.settings.add({
       id: 'app_settings',
-      license_key: '',
       shop_name: '',
       admin_name: '',
       admin_pin: '',
-      sync_key: generateSyncKey(),
       is_setup_complete: false,
       bank_name: 'Access Bank',
       account_number: '0123456789',
       account_name: 'NAIJA RETAIL STORE',
-      last_used_timestamp: Date.now(),
-      last_synced_timestamp: 0
+      last_used_timestamp: Date.now()
     });
   }
 };

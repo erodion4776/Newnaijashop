@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useState } from 'react';
 import { Camera, X, Loader2, ShieldAlert, RefreshCw, AlertCircle } from 'lucide-react';
 
@@ -19,12 +18,10 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, onClose }) => {
     setError(null);
     
     try {
-      // 1. Check if we are in a secure context (HTTPS)
       if (!window.isSecureContext) {
         throw new Error('Camera access requires a secure connection (HTTPS).');
       }
 
-      // 2. Try exact environment (back) camera first
       let stream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({
@@ -35,8 +32,6 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, onClose }) => {
           }
         });
       } catch (e) {
-        // 3. Fallback to general environment preference (some older devices or browsers)
-        console.warn("Exact environment camera failed, trying general environment mode", e);
         stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: 'environment' }
         });
@@ -46,7 +41,6 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, onClose }) => {
         videoRef.current.srcObject = stream;
         streamRef.current = stream;
         
-        // Ensure video is ready before setting started state
         videoRef.current.onloadedmetadata = () => {
           setHasStarted(true);
           setIsInitializing(false);
@@ -70,29 +64,34 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, onClose }) => {
   };
 
   useEffect(() => {
-    // Detect barcodes using native API if available
     let interval: any;
-    if (hasStarted && 'BarcodeDetector' in window) {
-      const barcodeDetector = new (window as any).BarcodeDetector({
-        formats: ['ean_13', 'ean_8', 'code_128', 'code_39', 'qr_code', 'upc_a']
-      });
+    // Fix: "Illegal constructor" error happens if BarcodeDetector is present but not a constructor.
+    const isBarcodeDetectorAvailable = 'BarcodeDetector' in window && typeof (window as any).BarcodeDetector === 'function';
 
-      interval = setInterval(async () => {
-        if (!videoRef.current || videoRef.current.readyState !== 4) return;
-        try {
-          const barcodes = await barcodeDetector.detect(videoRef.current);
-          if (barcodes.length > 0) {
-            const code = barcodes[0].rawValue;
-            // Provide haptic feedback if available
-            if (navigator.vibrate) navigator.vibrate(100);
-            onScan(code);
-            stopCamera();
-            onClose();
+    if (hasStarted && isBarcodeDetectorAvailable) {
+      try {
+        const barcodeDetector = new (window as any).BarcodeDetector({
+          formats: ['ean_13', 'ean_8', 'code_128', 'code_39', 'qr_code', 'upc_a']
+        });
+
+        interval = setInterval(async () => {
+          if (!videoRef.current || videoRef.current.readyState !== 4) return;
+          try {
+            const barcodes = await barcodeDetector.detect(videoRef.current);
+            if (barcodes.length > 0) {
+              const code = barcodes[0].rawValue;
+              if (navigator.vibrate) navigator.vibrate(100);
+              onScan(code);
+              stopCamera();
+              onClose();
+            }
+          } catch (e) {
+            // Processing frame error, usually safe to ignore during transitions
           }
-        } catch (e) {
-          // Frame capture might fail during transitions, ignore
-        }
-      }, 300);
+        }, 300);
+      } catch (e) {
+        console.error("Failed to initialize BarcodeDetector:", e);
+      }
     }
 
     return () => {

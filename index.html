@@ -18,32 +18,10 @@
         }
         .animate-pulse-soft { animation: pulse-soft 2s infinite ease-in-out; }
         
-        /* PWA Video Fixes */
-        video { 
-          object-fit: cover; 
-          width: 100%; 
-          height: 100%; 
-          border-radius: inherit;
-        }
-        /* Ensure video doesn't go full-screen on iOS */
-        video[playsinline] {
-          -webkit-playsinline: playsinline;
-        }
+        video { object-fit: cover; width: 100%; height: 100%; border-radius: inherit; }
+        video[playsinline] { -webkit-playsinline: playsinline; }
         
-        @keyframes scan-line {
-          0% { top: 10%; }
-          100% { top: 90%; }
-        }
-        .animate-scan {
-          position: absolute;
-          left: 10%;
-          right: 10%;
-          height: 2px;
-          background: #10b981;
-          box-shadow: 0 0 15px #10b981;
-          z-index: 10;
-          animation: scan-line 2s infinite ease-in-out;
-        }
+        @keyframes scan-line { 0% { top: 10%; } 100% { top: 90%; } }
         .animate-scan-line {
           position: absolute;
           left: 0;
@@ -54,10 +32,7 @@
           z-index: 10;
           animation: scan-line 2s infinite ease-in-out;
         }
-
-        /* Recharts Fixes */
         .recharts-wrapper { cursor: default !important; }
-        .recharts-responsive-container { min-width: 0; min-height: 0; }
     </style>
 <script type="importmap">
 {
@@ -75,11 +50,9 @@
     "qrcode": "https://esm.sh/qrcode@^1.5.4",
     "tesseract.js": "https://esm.sh/tesseract.js@^7.0.0",
     "pako": "https://esm.sh/pako@^2.1.0",
-    "simple-peer": "https://esm.sh/simple-peer@^9.11.1",
-    "buffer": "https://esm.sh/buffer@^6.0.3",
-    "simple-peer/": "https://esm.sh/simple-peer@^9.11.1/",
-    "vite-plugin-node-polyfills": "https://esm.sh/vite-plugin-node-polyfills@^0.24.0",
-    "lz-string": "https://esm.sh/lz-string@^1.5.0"
+    "lz-string": "https://esm.sh/lz-string@^1.5.0",
+    "vite-plugin-node-polyfills": "https://esm.sh/vite-plugin-node-polyfills@^0.25.0",
+    "simple-peer": "https://esm.sh/simple-peer@^9.11.1"
   }
 }
 </script>
@@ -87,5 +60,14 @@
 <body class="bg-slate-50 text-slate-900">
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then(reg => console.log('NaijaShop SW Registered'))
+            .catch(err => console.log('SW Registration Failed', err));
+        });
+      }
+    </script>
 </body>
 </html>

@@ -1,63 +1,74 @@
 
-import pako from 'pako';
+import LZString from 'lz-string';
 import { db } from '../db/db';
 
-export const exportFullDatabase = async (): Promise<string> => {
-  const data = {
-    products: await db.products.toArray(),
-    sales: await db.sales.toArray(),
-    debts: await db.debts.toArray(),
-    settings: await db.settings.get('app_settings'),
-    export_timestamp: Date.now(),
-    version: '2.0.0'
+export const generateBackupData = async () => {
+  const products = await db.products.toArray();
+  const sales = await db.sales.toArray();
+  const debts = await db.debts.toArray();
+  const staff = await db.staff.toArray();
+  const logs = await db.inventory_logs.toArray();
+  const settings = await db.settings.get('app_settings');
+
+  const bundle = {
+    products,
+    sales,
+    debts,
+    staff,
+    logs,
+    settings,
+    timestamp: Date.now(),
+    version: '3.0'
   };
 
-  const jsonString = JSON.stringify(data);
-  const compressed = pako.gzip(jsonString);
-  
-  // Convert to Base64 for easy transport as string
-  const binaryString = String.fromCharCode.apply(null, Array.from(compressed));
-  return btoa(binaryString);
+  const jsonString = JSON.stringify(bundle);
+  return LZString.compressToEncodedURIComponent(jsonString);
 };
 
-export const importDatabaseFromString = async (base64String: string) => {
+export const restoreFromBackup = async (compressedData: string) => {
   try {
-    const binaryString = atob(base64String);
-    const uint8Array = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      uint8Array[i] = binaryString.charCodeAt(i);
-    }
+    const jsonString = LZString.decompressFromEncodedURIComponent(compressedData);
+    if (!jsonString) throw new Error("Invalid or corrupt backup data.");
     
-    const decompressed = pako.ungzip(uint8Array, { to: 'string' });
-    const data = JSON.parse(decompressed);
+    const data = JSON.parse(jsonString);
 
-    // Clear and restore
-    // Fix: Use type assertion to satisfy TypeScript as transaction is an inherited instance method from Dexie.
-    await (db as any).transaction('rw', [db.products, db.sales, db.debts, db.settings], async () => {
+    await (db as any).transaction('rw', [db.products, db.sales, db.debts, db.staff, db.inventory_logs, db.settings], async () => {
       await db.products.clear();
       await db.sales.clear();
       await db.debts.clear();
-      
+      await db.staff.clear();
+      await db.inventory_logs.clear();
+      await db.settings.clear();
+
       if (data.products) await db.products.bulkAdd(data.products);
       if (data.sales) await db.sales.bulkAdd(data.sales);
       if (data.debts) await db.debts.bulkAdd(data.debts);
+      if (data.staff) await db.staff.bulkAdd(data.staff);
+      if (data.logs) await db.inventory_logs.bulkAdd(data.logs);
       if (data.settings) await db.settings.put(data.settings);
     });
-
     return true;
   } catch (err) {
-    console.error("Import failed", err);
-    throw err;
+    console.error("Restore error:", err);
+    return false;
   }
 };
 
-export const shareToWhatsApp = async (base64Backup: string) => {
-  const shopSettings = await db.settings.get('app_settings');
-  const shopName = shopSettings?.shop_name || 'NaijaShop';
-  const date = new Date().toLocaleDateString();
-  
-  const text = `📦 NAIJASHOP BACKUP - ${shopName}\nDate: ${date}\n\nThis is a compressed terminal backup. Copy the text below to restore:\n\n${base64Backup}`;
-  
-  const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(text)}`;
-  window.open(whatsappUrl, '_blank');
+export const performAutoSnapshot = async () => {
+  const data = await generateBackupData();
+  localStorage.setItem('naijashop_snapshot', data);
+  localStorage.setItem('naijashop_snapshot_ts', Date.now().toString());
+};
+
+export const downloadBackupFile = async (shopName: string) => {
+  const data = await generateBackupData();
+  const blob = new Blob([data], { type: 'application/nshop' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `NaijaShop_Backup_${shopName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.nshop`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 };

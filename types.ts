@@ -8,7 +8,7 @@ export interface Product {
   category: string;
   expiry_date?: string;
   barcode?: string;
-  low_stock_threshold: number; // New field for alerts
+  low_stock_threshold: number;
 }
 
 export interface InventoryLog {
@@ -18,7 +18,7 @@ export interface InventoryLog {
   quantity_changed: number;
   old_stock: number;
   new_stock: number;
-  type: 'Restock' | 'Adjustment' | 'Sale' | 'Return' | 'Initial Stock';
+  type: 'Restock' | 'Adjustment' | 'Sale' | 'Return' | 'Initial Stock' | 'Sync' | 'Manual';
   timestamp: number;
   performed_by: string;
 }
@@ -32,18 +32,18 @@ export interface SaleItem {
 
 export interface Sale {
   id?: number;
-  sale_id: string; // Unique UUID for deduplication
+  sale_id: string;
   items: SaleItem[];
   total_amount: number;
   payment_method: 'cash' | 'transfer' | 'pos' | 'split' | 'Bank Transfer';
   cash_amount?: number;
   debt_amount?: number;
   staff_id: string;
-  staff_name: string; // Name of staff for the activity log
+  staff_name: string;
   timestamp: number;
-  sync_status: 'pending' | 'synced' | 'verified';
   confirmed_by?: string;
   verification_timestamp?: number;
+  sync_status?: 'pending' | 'synced' | 'verified';
 }
 
 export interface ParkedOrder {
@@ -75,25 +75,19 @@ export interface Staff {
 
 export interface Settings {
   id: string; // 'app_settings'
-  license_key: string;
   shop_name: string;
   admin_name: string;
   admin_pin: string;
-  sync_key: string; // Used for encrypting WhatsApp data bridge strings
   is_setup_complete: boolean;
   bank_name: string;
   account_number: string;
   account_name: string;
   last_used_timestamp: number;
-  last_synced_timestamp: number;
+  sync_key?: string;
+  last_synced_timestamp?: number;
 }
 
-export type View = 'dashboard' | 'pos' | 'inventory' | 'inventory-ledger' | 'debts' | 'settings' | 'ai-insights' | 'transfer-station' | 'sync' | 'staff-management' | 'activity-log';
+export type View = 'dashboard' | 'pos' | 'inventory' | 'inventory-ledger' | 'debts' | 'settings' | 'ai-insights' | 'staff-management' | 'activity-log' | 'security-backups' | 'transfer-station';
 
+// Define SyncStatus to fix the missing member error in SyncProvider.tsx
 export type SyncStatus = 'offline' | 'connecting' | 'live' | 'reconnecting' | 'failed';
-
-export interface SyncSession {
-  id: string;
-  initiator: boolean;
-  timestamp: number;
-}

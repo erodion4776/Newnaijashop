@@ -1,10 +1,11 @@
 
 {
-  "name": "NaijaShop POS",
+  "name": "NaijaShop POS Terminal",
   "short_name": "NaijaShop",
-  "description": "Offline-first PWA for Nigerian Retailers",
+  "description": "Offline-first PWA for Nigerian Retailers featuring inventory management and AI insights.",
   "start_url": "/",
   "display": "standalone",
+  "orientation": "portrait-primary",
   "background_color": "#064e3b",
   "theme_color": "#064e3b",
   "icons": [
