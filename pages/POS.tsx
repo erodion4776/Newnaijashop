@@ -55,6 +55,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
   const [showMobileCart, setShowMobileCart] = useState(false);
   const [animatingId, setAnimatingId] = useState<number | null>(null);
 
+  // FIX: useLiveQuery ensures that changes made in Inventory reflect here immediately
   const products = useLiveQuery(() => db.products.toArray());
   const parkedOrders = useLiveQuery(() => db.parked_orders.toArray()) || [];
   const settings = useLiveQuery(() => db.settings.get('app_settings')) as Settings | undefined;
@@ -101,6 +102,24 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
   };
 
   const total = cart.reduce((acc, curr) => acc + (curr.price * curr.quantity), 0);
+
+  // FIX: Logic to handle checkout opening with stock validation
+  const handleOpenCheckout = () => {
+    if (cart.length === 0) return;
+
+    // Stock Validation: Check if items in cart exceed available stock
+    const overstockItem = cart.find(item => {
+      const p = products?.find(prod => prod.id === item.productId);
+      return p ? item.quantity > p.stock_qty : false;
+    });
+
+    if (overstockItem) {
+      alert(`Error: '${overstockItem.name}' quantity exceeds available stock. Please adjust.`);
+      return;
+    }
+
+    setShowCheckoutModal(true);
+  };
 
   const handleCompleteSale = async () => {
     if (cart.length === 0 || isProcessing || !paymentType) return;
@@ -193,7 +212,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
     <div className="h-full flex flex-col lg:flex-row gap-4 relative">
        <div className={`fixed inset-0 z-[450] bg-black/60 backdrop-blur-sm lg:hidden transition-opacity ${showMobileCart ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setShowMobileCart(false)} />
        
-       <div className="flex-1 overflow-y-auto space-y-4">
+       <div className="flex-1 overflow-y-auto space-y-4 pb-20 lg:pb-0">
           <div className="sticky top-0 z-30 bg-slate-50 py-2 flex gap-4">
              <div className="relative flex-1">
                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
@@ -244,13 +263,39 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
                 <span className="font-black text-[10px] text-slate-400 uppercase">Total Payable</span>
                 <span className="text-3xl font-black text-emerald-600">₦{total.toLocaleString()}</span>
              </div>
-             <button disabled={cart.length === 0} onClick={() => setShowCheckoutModal(true)} className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase text-xs shadow-lg active:scale-95 disabled:opacity-50">Checkout <ChevronRight size={18} className="inline ml-1"/></button>
+             {/* FIX: Checkout button layout and click handler */}
+             <button 
+                disabled={cart.length === 0} 
+                onClick={handleOpenCheckout} 
+                className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase text-xs shadow-lg active:scale-95 disabled:opacity-50"
+             >
+                Checkout <ChevronRight size={18} className="inline ml-1"/>
+             </button>
           </div>
        </div>
 
+       {/* Mobile Sticky Bottom Bar */}
+       <div className="lg:hidden fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-slate-200 z-[400] flex gap-3 shadow-[0_-10px_20px_rgba(0,0,0,0.05)]">
+          <button 
+            onClick={() => setShowMobileCart(true)} 
+            className="flex-1 bg-slate-900 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2"
+          >
+            <ShoppingCart size={18} />
+            Cart ({cart.reduce((a,b) => a + b.quantity, 0)})
+          </button>
+          <button 
+            disabled={cart.length === 0} 
+            onClick={handleOpenCheckout} 
+            className="flex-[1.5] bg-emerald-600 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg disabled:opacity-50"
+          >
+            Checkout ₦{total.toLocaleString()}
+          </button>
+       </div>
+
+       {/* FIX: Checkout Modal with high z-index and conditional rendering */}
        {showCheckoutModal && (
-         <div className="fixed inset-0 z-[600] flex items-center justify-center lg:p-4 bg-slate-950/80 backdrop-blur-md">
-            <div className="bg-white lg:rounded-[3rem] w-full h-full lg:h-auto lg:max-w-md animate-in slide-in-from-bottom-full lg:zoom-in duration-300 flex flex-col">
+         <div className="fixed inset-0 z-[1000] flex items-center justify-center lg:p-4 bg-slate-950/80 backdrop-blur-md">
+            <div className="bg-white lg:rounded-[3rem] w-full h-full lg:h-auto lg:max-w-md animate-in slide-in-from-bottom-full lg:zoom-in duration-300 flex flex-col relative z-[1001]">
                <div className="p-8 border-b flex items-center justify-between">
                  <div><p className="text-[10px] font-black text-slate-400 uppercase mb-1">Payable</p><h3 className="text-4xl font-black text-slate-900">₦{total.toLocaleString()}</h3></div>
                  <button onClick={() => setShowCheckoutModal(false)} className="p-3 bg-slate-50 rounded-full text-slate-400"><X size={24} /></button>
@@ -274,7 +319,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
        )}
 
        {showSuccessModal && (
-         <div className="fixed inset-0 z-[700] flex items-center justify-center bg-emerald-950/90 backdrop-blur-md">
+         <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-emerald-950/90 backdrop-blur-md">
             <div className="bg-white rounded-[4rem] p-10 text-center space-y-8 animate-in zoom-in duration-500 shadow-2xl max-w-sm w-full mx-4">
                <div className="w-24 h-24 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mx-auto shadow-inner relative">
                  <CheckCircle size={64} className="animate-bounce" />
