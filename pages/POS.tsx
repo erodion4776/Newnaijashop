@@ -55,7 +55,12 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
   const [showMobileCart, setShowMobileCart] = useState(false);
   const [animatingId, setAnimatingId] = useState<number | null>(null);
 
-  // FIX: useLiveQuery ensures that changes made in Inventory reflect here immediately
+  // Parked Orders States
+  const [showParkModal, setShowParkModal] = useState(false);
+  const [tempName, setTempName] = useState('');
+  const [showParkedListModal, setShowParkedListModal] = useState(false);
+
+  // useLiveQuery ensures that changes made in Inventory reflect here immediately
   const products = useLiveQuery(() => db.products.toArray());
   const parkedOrders = useLiveQuery(() => db.parked_orders.toArray()) || [];
   const settings = useLiveQuery(() => db.settings.get('app_settings')) as Settings | undefined;
@@ -71,6 +76,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
 
   const addToCart = (product: Product) => {
     const inCart = cart.find(item => item.productId === product.id)?.quantity || 0;
+    // Stock Guard
     if (inCart + 1 > product.stock_qty) {
       alert(`Oga, only ${product.stock_qty} left in stock!`);
       return;
@@ -103,22 +109,123 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
 
   const total = cart.reduce((acc, curr) => acc + (curr.price * curr.quantity), 0);
 
-  // FIX: Logic to handle checkout opening with stock validation
   const handleOpenCheckout = () => {
     if (cart.length === 0) return;
-
-    // Stock Validation: Check if items in cart exceed available stock
     const overstockItem = cart.find(item => {
       const p = products?.find(prod => prod.id === item.productId);
       return p ? item.quantity > p.stock_qty : false;
     });
-
     if (overstockItem) {
       alert(`Error: '${overstockItem.name}' quantity exceeds available stock. Please adjust.`);
       return;
     }
-
     setShowCheckoutModal(true);
+  };
+
+  const handleParkSale = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (cart.length === 0) {
+      alert("Nothing to park!");
+      return;
+    }
+    
+    const customerName = tempName.trim() || 'Quick Order';
+
+    try {
+      await (db as any).transaction('rw', [db.products, db.parked_orders, db.inventory_logs], async () => {
+        for (const item of cart) {
+          const product = await db.products.get(item.productId);
+          if (product) {
+            const oldStock = product.stock_qty || 0;
+            const newStock = Math.max(0, oldStock - item.quantity);
+            
+            await db.products.update(item.productId, { stock_qty: newStock });
+            
+            await db.inventory_logs.add({
+              product_id: item.productId,
+              product_name: product.name,
+              quantity_changed: -item.quantity,
+              old_stock: oldStock,
+              new_stock: newStock,
+              type: 'Adjustment',
+              timestamp: Date.now(),
+              performed_by: `Reserved for ${customerName}`
+            });
+          }
+        }
+
+        await db.parked_orders.add({
+          customerName: customerName,
+          items: cart.map(item => ({ ...item, isStockAlreadyDeducted: true })),
+          total: total,
+          staffId: currentUser?.id?.toString() || '0',
+          timestamp: Date.now()
+        });
+      });
+
+      setCart([]);
+      setTempName('');
+      setShowParkModal(false);
+      setShowMobileCart(false);
+    } catch (err) {
+      alert("Failed to park order: " + err);
+    }
+  };
+
+  const handleResumeOrder = async (orderId: number) => {
+    try {
+      const order = await db.parked_orders.get(orderId);
+      if (!order) {
+        alert("Order not found!");
+        return;
+      }
+
+      if (cart.length > 0) {
+        if (!confirm("Your current cart is not empty. Resuming this order will overwrite your current cart. Continue?")) return;
+      }
+
+      setCart(order.items.map(item => ({ ...item, isStockAlreadyDeducted: true })));
+      await db.parked_orders.delete(orderId);
+      setShowParkedListModal(false);
+      setShowMobileCart(true);
+    } catch (error: any) {
+      alert('Resume Failed: ' + error.message);
+    }
+  };
+
+  const handleCancelParkedOrder = async (orderId: number) => {
+    if(!confirm("Delete this parked order? This will return the items to stock.")) return;
+
+    try {
+      await (db as any).transaction('rw', [db.products, db.parked_orders, db.inventory_logs], async () => {
+        const order = await db.parked_orders.get(orderId);
+        if (order) {
+          for (const item of order.items) {
+            const product = await db.products.get(item.productId);
+            if (product) {
+              const oldStock = product.stock_qty || 0;
+              const newStock = oldStock + item.quantity;
+              
+              await db.products.update(item.productId, { stock_qty: newStock });
+              
+              await db.inventory_logs.add({
+                product_id: item.productId,
+                product_name: product.name,
+                quantity_changed: item.quantity,
+                old_stock: oldStock,
+                new_stock: newStock,
+                type: 'Adjustment',
+                timestamp: Date.now(),
+                performed_by: `Return (Cancelled ${order.customerName})`
+              });
+            }
+          }
+          await db.parked_orders.delete(orderId);
+        }
+      });
+    } catch (error: any) {
+      alert('Cancel Failed: ' + error.message);
+    }
   };
 
   const handleCompleteSale = async () => {
@@ -218,7 +325,16 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
                <input type="text" placeholder="Search product..." className="w-full h-14 pl-12 pr-4 bg-white border border-slate-200 rounded-2xl outline-none" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
              </div>
-             <button onClick={() => setShowScanner(true)} className="h-14 w-14 bg-emerald-600 text-white rounded-2xl flex items-center justify-center shadow-lg"><Camera /></button>
+             <div className="flex gap-2">
+                <button 
+                  onClick={() => setShowParkedListModal(true)} 
+                  className={`h-14 px-4 rounded-2xl flex items-center justify-center gap-2 font-black text-[10px] uppercase tracking-widest transition-all ${parkedOrders.length > 0 ? 'bg-amber-100 text-amber-700 border-2 border-amber-200' : 'bg-white border border-slate-200 text-slate-400'}`}
+                >
+                  <History size={18} /> <span className="hidden sm:inline">Parked ({parkedOrders.length})</span>
+                  <span className="sm:hidden">{parkedOrders.length}</span>
+                </button>
+                <button onClick={() => setShowScanner(true)} className="h-14 w-14 bg-emerald-600 text-white rounded-2xl flex items-center justify-center shadow-lg"><Camera /></button>
+             </div>
           </div>
           
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
@@ -248,7 +364,12 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
                <div key={idx} className="flex justify-between items-center bg-slate-50 p-3 rounded-2xl border border-slate-100">
                   <div className="flex-1 min-w-0 pr-2">
                     <p className="font-bold text-sm truncate text-slate-800">{item.name}</p>
-                    <p className="text-[10px] font-black text-emerald-600">₦{item.price.toLocaleString()}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-[10px] font-black text-emerald-600">₦{item.price.toLocaleString()}</p>
+                      {item.isStockAlreadyDeducted && (
+                        <span className="text-[8px] font-black text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100 uppercase tracking-widest">Resumed</span>
+                      )}
+                    </div>
                   </div>
                   <div className="flex items-center gap-3">
                     <button onClick={() => updateQuantity(item.productId, -1)} className="p-1.5 bg-white rounded-lg text-rose-500 shadow-sm"><Minus size={12} /></button>
@@ -263,14 +384,22 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
                 <span className="font-black text-[10px] text-slate-400 uppercase">Total Payable</span>
                 <span className="text-3xl font-black text-emerald-600">₦{total.toLocaleString()}</span>
              </div>
-             {/* FIX: Checkout button layout and click handler */}
-             <button 
+             <div className="grid grid-cols-2 gap-2">
+               <button 
+                disabled={cart.length === 0} 
+                onClick={() => setShowParkModal(true)} 
+                className="py-4 bg-slate-100 text-slate-600 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-sm active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+               >
+                 <Pause size={18} /> Park
+               </button>
+               <button 
                 disabled={cart.length === 0} 
                 onClick={handleOpenCheckout} 
-                className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase text-xs shadow-lg active:scale-95 disabled:opacity-50"
-             >
-                Checkout <ChevronRight size={18} className="inline ml-1"/>
-             </button>
+                className="py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase text-[10px] shadow-lg active:scale-95 disabled:opacity-50"
+               >
+                 Checkout <ChevronRight size={18} className="inline ml-1"/>
+               </button>
+             </div>
           </div>
        </div>
 
@@ -283,19 +412,112 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
             <ShoppingCart size={18} />
             Cart ({cart.reduce((a,b) => a + b.quantity, 0)})
           </button>
-          <button 
-            disabled={cart.length === 0} 
-            onClick={handleOpenCheckout} 
-            className="flex-[1.5] bg-emerald-600 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg disabled:opacity-50"
-          >
-            Checkout ₦{total.toLocaleString()}
-          </button>
+          <div className="flex-[1.5] flex gap-2">
+            <button 
+                disabled={cart.length === 0} 
+                onClick={() => setShowParkModal(true)} 
+                className="flex-1 bg-amber-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg disabled:opacity-50 flex items-center justify-center"
+              >
+                <Pause size={18} />
+            </button>
+            <button 
+                disabled={cart.length === 0} 
+                onClick={handleOpenCheckout} 
+                className="flex-[2] bg-emerald-600 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg disabled:opacity-50"
+              >
+                Pay ₦{total.toLocaleString()}
+            </button>
+          </div>
        </div>
 
-       {/* FIX: Checkout Modal with high z-index and conditional rendering */}
+       {/* Park Name Modal */}
+       {showParkModal && (
+         <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4">
+            <div className="bg-white rounded-[3rem] p-8 w-full max-w-sm space-y-8 animate-in zoom-in duration-300">
+               <div className="text-center space-y-2">
+                  <div className="w-16 h-16 bg-amber-50 text-amber-600 rounded-3xl flex items-center justify-center mx-auto mb-2"><FolderOpen size={32} /></div>
+                  <h3 className="text-2xl font-black text-slate-900">Name this Order</h3>
+                  <p className="text-slate-400 text-sm font-medium">Items will be deducted from stock now and held for this customer.</p>
+               </div>
+               <form onSubmit={handleParkSale} className="space-y-6">
+                  <div className="relative">
+                    <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+                    <input 
+                      autoFocus
+                      required
+                      type="text" 
+                      placeholder="e.g. Musa or Red Cap Man" 
+                      className="w-full pl-12 pr-4 py-5 bg-slate-50 border border-slate-200 rounded-2xl font-bold outline-none focus:ring-2 focus:ring-amber-500" 
+                      value={tempName}
+                      onChange={e => setTempName(e.target.value)}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                     <button type="button" onClick={() => setShowParkModal(false)} className="py-4 bg-slate-100 text-slate-400 rounded-2xl font-black text-xs uppercase tracking-widest">Cancel</button>
+                     <button type="submit" className="py-4 bg-amber-500 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl">Park Order</button>
+                  </div>
+               </form>
+            </div>
+         </div>
+       )}
+
+       {/* Parked Orders List Modal */}
+       {showParkedListModal && (
+         <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4">
+            <div className="bg-white rounded-[3rem] w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in duration-300 flex flex-col max-h-[80vh]">
+               <div className="p-8 border-b border-slate-100 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-2xl font-black text-slate-900 tracking-tight">Parked Orders</h3>
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Reserved Stock List</p>
+                  </div>
+                  <button onClick={() => setShowParkedListModal(false)} className="p-2 hover:bg-slate-100 rounded-full"><X size={24} /></button>
+               </div>
+               <div className="flex-1 overflow-y-auto p-8 space-y-4 scrollbar-hide">
+                  {parkedOrders.length === 0 ? (
+                    <div className="text-center py-20 space-y-4">
+                       <History size={48} className="mx-auto text-slate-100" />
+                       <p className="text-slate-400 font-black text-sm uppercase tracking-widest">No parked orders found</p>
+                    </div>
+                  ) : (
+                    parkedOrders.map(order => (
+                      <div key={order.id} className="bg-slate-50 p-6 rounded-[2rem] border border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                         <div>
+                            <div className="flex items-center gap-2 mb-1">
+                               <User size={14} className="text-amber-500" />
+                               <h4 className="font-black text-slate-800">{order.customerName}</h4>
+                            </div>
+                            <div className="flex gap-4">
+                               <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">₦{order.total.toLocaleString()} Total</p>
+                               <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{order.items.length} Items</p>
+                            </div>
+                         </div>
+                         <div className="flex items-center gap-2">
+                            <button 
+                              onClick={() => handleCancelParkedOrder(order.id!)}
+                              className="p-3 text-rose-400 hover:text-rose-600 transition-colors"
+                              title="Delete & Return to Stock"
+                            >
+                              <Trash2 size={20} />
+                            </button>
+                            <button 
+                              onClick={() => handleResumeOrder(order.id!)}
+                              className="px-6 py-3 bg-slate-900 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg flex items-center gap-2"
+                            >
+                               <PlayCircle size={16} /> Resume
+                            </button>
+                         </div>
+                      </div>
+                    ))
+                  )}
+               </div>
+            </div>
+         </div>
+       )}
+
+       {/* Checkout Modal with high z-index and conditional rendering */}
        {showCheckoutModal && (
-         <div className="fixed inset-0 z-[1000] flex items-center justify-center lg:p-4 bg-slate-950/80 backdrop-blur-md">
-            <div className="bg-white lg:rounded-[3rem] w-full h-full lg:h-auto lg:max-w-md animate-in slide-in-from-bottom-full lg:zoom-in duration-300 flex flex-col relative z-[1001]">
+         <div className="fixed inset-0 z-[1200] flex items-center justify-center lg:p-4 bg-slate-950/80 backdrop-blur-md">
+            <div className="bg-white lg:rounded-[3rem] w-full h-full lg:h-auto lg:max-w-md animate-in slide-in-from-bottom-full lg:zoom-in duration-300 flex flex-col relative">
                <div className="p-8 border-b flex items-center justify-between">
                  <div><p className="text-[10px] font-black text-slate-400 uppercase mb-1">Payable</p><h3 className="text-4xl font-black text-slate-900">₦{total.toLocaleString()}</h3></div>
                  <button onClick={() => setShowCheckoutModal(false)} className="p-3 bg-slate-50 rounded-full text-slate-400"><X size={24} /></button>
@@ -319,7 +541,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
        )}
 
        {showSuccessModal && (
-         <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-emerald-950/90 backdrop-blur-md">
+         <div className="fixed inset-0 z-[1300] flex items-center justify-center bg-emerald-950/90 backdrop-blur-md">
             <div className="bg-white rounded-[4rem] p-10 text-center space-y-8 animate-in zoom-in duration-500 shadow-2xl max-w-sm w-full mx-4">
                <div className="w-24 h-24 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mx-auto shadow-inner relative">
                  <CheckCircle size={64} className="animate-bounce" />
@@ -379,6 +601,17 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
          const p = products?.find(prod => prod.barcode === code);
          if (p) addToCart(p); else alert("Not found: " + code);
        }} onClose={() => setShowScanner(false)} />}
+       
+       <style>{`
+         @keyframes bounce-up {
+           0% { transform: translateY(0); opacity: 0; }
+           50% { transform: translateY(-20px); opacity: 1; }
+           100% { transform: translateY(-40px); opacity: 0; }
+         }
+         .animate-bounce-up {
+           animation: bounce-up 0.5s ease-out forwards;
+         }
+       `}</style>
     </div>
   );
 };
