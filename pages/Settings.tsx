@@ -23,7 +23,9 @@ import {
   Search,
   ChevronDown,
   ChevronUp,
-  MessageCircle
+  MessageCircle,
+  MapPin,
+  FileText
 } from 'lucide-react';
 import { Staff } from '../types';
 
@@ -60,6 +62,8 @@ const Settings: React.FC<{ currentUser: Staff | null }> = ({ currentUser }) => {
   const [bankName, setBankName] = useState('');
   const [accountNumber, setAccountNumber] = useState('');
   const [accountName, setAccountName] = useState('');
+  const [shopAddress, setShopAddress] = useState('');
+  const [receiptFooter, setReceiptFooter] = useState('');
 
   // FAQ states
   const [faqSearch, setFaqSearch] = useState('');
@@ -76,10 +80,12 @@ const Settings: React.FC<{ currentUser: Staff | null }> = ({ currentUser }) => {
       setBankName(settings.bank_name || '');
       setAccountNumber(settings.account_number || '');
       setAccountName(settings.account_name || '');
+      setShopAddress(settings.shop_address || '');
+      setReceiptFooter(settings.receipt_footer || '');
     }
   }, [settings]);
 
-  const handleSaveBankDetails = async (e: React.FormEvent) => {
+  const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     if (currentUser?.role !== 'Admin') return;
     
@@ -89,7 +95,9 @@ const Settings: React.FC<{ currentUser: Staff | null }> = ({ currentUser }) => {
         shop_name: shopName,
         bank_name: bankName,
         account_number: accountNumber,
-        account_name: accountName
+        account_name: accountName,
+        shop_address: shopAddress,
+        receipt_footer: receiptFooter
       });
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 3000);
@@ -144,7 +152,7 @@ const Settings: React.FC<{ currentUser: Staff | null }> = ({ currentUser }) => {
             </button>
           </div>
 
-          <form onSubmit={handleSaveBankDetails} className="space-y-8">
+          <form onSubmit={handleSaveSettings} className="space-y-8">
             {/* General Shop Info */}
             <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
               <div className="flex items-center gap-3">
@@ -160,6 +168,42 @@ const Settings: React.FC<{ currentUser: Staff | null }> = ({ currentUser }) => {
                     className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 font-bold" 
                     value={shopName}
                     onChange={e => setShopName(e.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Receipt Customization */}
+            <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl"><FileText size={24} /></div>
+                <h3 className="text-xl font-black text-slate-800 tracking-tight">Receipt Customization</h3>
+              </div>
+              <p className="text-sm text-slate-500 font-medium">These details appear on your thermal and digital receipts.</p>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">
+                    <MapPin size={12} /> Shop Address
+                  </label>
+                  <textarea 
+                    className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 font-bold resize-none" 
+                    rows={2}
+                    value={shopAddress}
+                    onChange={e => setShopAddress(e.target.value)}
+                    placeholder="e.g. Suite 4, Alaba International Market, Lagos"
+                  />
+                </div>
+                <div>
+                  <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">
+                    <MessageCircle size={12} /> Footer Message (e.g. Return Policy)
+                  </label>
+                  <textarea 
+                    className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 font-bold resize-none" 
+                    rows={2}
+                    value={receiptFooter}
+                    onChange={e => setReceiptFooter(e.target.value)}
+                    placeholder="e.g. Thanks for your patronage! No refund after payment."
                   />
                 </div>
               </div>
@@ -253,21 +297,6 @@ const Settings: React.FC<{ currentUser: Staff | null }> = ({ currentUser }) => {
                   )}
                 </div>
               ))}
-              {filteredFaq.length === 0 && (
-                <div className="py-10 text-center text-slate-400 font-bold uppercase tracking-widest text-[10px]">
-                  No answers found for "{faqSearch}"
-                </div>
-              )}
-            </div>
-
-            <div className="pt-4 border-t border-slate-100">
-              <button 
-                onClick={() => window.open(`https://wa.me/2348123456789?text=${encodeURIComponent("Hello NaijaShop Support, I need help with my terminal.")}`, '_blank')}
-                className="w-full py-4 bg-emerald-50 text-emerald-700 rounded-2xl font-black text-sm uppercase tracking-widest flex items-center justify-center gap-3 hover:bg-emerald-100 transition-all border border-emerald-100 shadow-sm shadow-emerald-100/50"
-              >
-                <MessageCircle size={20} />
-                Contact Support on WhatsApp
-              </button>
             </div>
           </div>
         </div>
@@ -277,7 +306,7 @@ const Settings: React.FC<{ currentUser: Staff | null }> = ({ currentUser }) => {
             <h4 className="font-black text-lg tracking-tight">Actions</h4>
             <div className="space-y-3">
               <button 
-                onClick={handleSaveBankDetails}
+                onClick={handleSaveSettings}
                 disabled={isSaving}
                 className="w-full py-5 bg-emerald-600 hover:bg-emerald-500 rounded-2xl font-black flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-900/40 disabled:opacity-50"
               >
@@ -297,15 +326,11 @@ const Settings: React.FC<{ currentUser: Staff | null }> = ({ currentUser }) => {
                 <ShieldCheck size={18} />
                 <span className="text-[10px] font-black uppercase tracking-widest">Admin Authorization Active</span>
               </div>
-              <p className="text-[10px] text-white/30 leading-relaxed uppercase font-bold">
-                Updates to bank details take effect immediately across all terminal screens including the customer transfer station.
-              </p>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Tutorial Modal */}
       {showTutorial && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-xl animate-in fade-in duration-300">
           <div className="bg-slate-50 rounded-[4rem] w-full max-w-4xl max-h-[90vh] shadow-2xl overflow-hidden flex flex-col animate-in zoom-in duration-300">
@@ -323,61 +348,45 @@ const Settings: React.FC<{ currentUser: Staff | null }> = ({ currentUser }) => {
             </div>
             
             <div className="flex-1 overflow-y-auto p-8 md:p-12 space-y-12 scrollbar-hide">
-              {/* Step 1: Selling */}
               <TutorialStep 
                 num="1"
                 title="Selling & POS"
                 icon={<ShoppingCart className="text-emerald-600" />}
                 color="bg-emerald-50"
-                description="Tap products to add to cart. If a customer needs to 'quickly buy something else', use the Park Sale button to save their items and attend to the next person."
+                description="Tap products to add to cart. If a customer needs to 'quickly buy something else', use the Park Sale button to save their items."
               />
 
-              {/* Step 2: Inventory */}
               <TutorialStep 
                 num="2"
                 title="Manage Stock"
                 icon={<Package className="text-blue-600" />}
                 color="bg-blue-50"
-                description="Add products manually or use the AI Guru to scan your handwritten notebooks. Set Low Stock Thresholds to get red alerts when items are finishing."
+                description="Add products manually or use the AI Guru to scan your handwritten notebooks. Set Low Stock Thresholds to get red alerts."
               />
 
-              {/* Step 3: AI Guru */}
               <TutorialStep 
                 num="3"
                 title="Consult the Guru"
                 icon={<Sparkles className="text-amber-600" />}
                 color="bg-amber-50"
-                description="NaijaShop Guru analyzes your sales to tell you which products move fastest. Use the Notebook Scanner in Inventory to migrate your shop to digital instantly."
+                description="NaijaShop Guru analyzes your sales to tell you which products move fastest."
               />
 
-              {/* Step 4: Security */}
               <TutorialStep 
                 num="4"
                 title="Oga Mode (Security)"
                 icon={<Lock className="text-rose-600" />}
                 color="bg-rose-50"
-                description="Use 'Switch to Staff' when leaving attendants in the shop. This hides your profits and settings. Only your Admin PIN can unlock the terminal."
+                description="Use 'Switch to Staff' when leaving attendants in the shop. This hides your profits and settings."
               />
 
-              {/* Step 5: Backup */}
               <TutorialStep 
                 num="5"
                 title="Data Protection"
                 icon={<Database className="text-indigo-600" />}
                 color="bg-indigo-50"
-                description="NaijaShop works 100% offline. Go to 'Security & Backups' to send a copy of your records to WhatsApp. This protects you if your phone gets lost."
+                description="NaijaShop works 100% offline. Go to 'Security & Backups' to send a copy of your records to WhatsApp."
               />
-
-              {/* Offline Notice */}
-              <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white flex flex-col md:flex-row items-center gap-6">
-                <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center shrink-0">
-                  <WifiOff size={32} className="text-emerald-400" />
-                </div>
-                <div>
-                  <h4 className="font-black text-xl">Zero Data Needed</h4>
-                  <p className="text-slate-400 text-sm font-medium">This app is a PWA. Once installed, you can use it deep in markets where there is no network. It saves everything locally on your device.</p>
-                </div>
-              </div>
             </div>
 
             <div className="p-8 bg-white border-t border-slate-200 shrink-0">

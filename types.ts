@@ -86,11 +86,12 @@ export interface Settings {
   account_number: string;
   account_name: string;
   last_used_timestamp: number;
+  shop_address?: string;
+  receipt_footer?: string;
   sync_key?: string;
   last_synced_timestamp?: number;
 }
 
 export type View = 'dashboard' | 'pos' | 'inventory' | 'inventory-ledger' | 'debts' | 'settings' | 'ai-insights' | 'staff-management' | 'activity-log' | 'security-backups' | 'transfer-station';
 
-// Define SyncStatus to fix the missing member error in SyncProvider.tsx
 export type SyncStatus = 'offline' | 'connecting' | 'live' | 'reconnecting' | 'failed';

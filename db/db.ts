@@ -15,7 +15,6 @@ export class NaijaShopDB extends Dexie {
   constructor() {
     super('NaijaShopDB');
     
-    // Bumped to v14 to reflect table index cleanup
     (this as any).version(14).stores({
       products: '++id, name, category, barcode',
       sales: '++id, sale_id, timestamp, payment_method, staff_name',
@@ -42,7 +41,9 @@ export const initSettings = async () => {
       bank_name: 'Access Bank',
       account_number: '0123456789',
       account_name: 'NAIJA RETAIL STORE',
-      last_used_timestamp: Date.now()
+      last_used_timestamp: Date.now(),
+      shop_address: '123 Business Way, Lagos',
+      receipt_footer: 'Thanks for your patronage! No refund after payment.'
     });
   }
 };
