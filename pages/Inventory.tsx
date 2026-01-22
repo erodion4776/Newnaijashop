@@ -31,7 +31,10 @@ import {
   TrendingUp,
   Banknote,
   Wallet,
-  Coins
+  Coins,
+  ArrowUp,
+  ArrowDown,
+  Settings2
 } from 'lucide-react';
 import { Product, View, Staff } from '../types';
 import { processHandwrittenLedger, RateLimitError } from '../services/geminiService';
@@ -86,11 +89,20 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
   const [isMigrationModalOpen, setIsMigrationModalOpen] = useState(false);
   const [isRestockModalOpen, setIsRestockModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
+  
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [restockProduct, setRestockProduct] = useState<Product | null>(null);
   const [deleteProduct, setDeleteProduct] = useState<Product | null>(null);
   const [restockQty, setRestockQty] = useState<number>(0);
   const [restockType, setRestockType] = useState<'add' | 'remove' | 'set'>('add');
+  
+  // Bulk Updater State
+  const [bulkTarget, setBulkTarget] = useState<'all' | 'category'>('all');
+  const [bulkCategory, setBulkCategory] = useState('General');
+  const [bulkType, setBulkType] = useState<'percent' | 'fixed'>('percent');
+  const [bulkValue, setBulkValue] = useState<number>(0);
+  const [bulkDirection, setBulkDirection] = useState<'increase' | 'decrease'>('increase');
   
   const [isProcessingAI, setIsProcessingAI] = useState(false);
   const [migrationData, setMigrationData] = useState<Product[]>([]);
@@ -209,6 +221,66 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
     }
   };
 
+  const handleBulkUpdate = async () => {
+    if (bulkValue <= 0) {
+      alert("Please enter a valid amount.");
+      return;
+    }
+    
+    const targetProducts = bulkTarget === 'all' 
+      ? allProducts 
+      : allProducts.filter(p => p.category === bulkCategory);
+
+    if (targetProducts.length === 0) {
+      alert("No products found to update.");
+      return;
+    }
+
+    const confirmed = confirm(`You are about to update prices for ${targetProducts.length} products. This cannot be undone. Proceed?`);
+    if (!confirmed) return;
+
+    setIsProcessingAI(true);
+    try {
+      const updatedProducts = targetProducts.map(p => {
+        let adjustment = 0;
+        if (bulkType === 'percent') {
+          adjustment = p.price * (bulkValue / 100);
+        } else {
+          adjustment = bulkValue;
+        }
+
+        let newPrice = bulkDirection === 'increase' ? p.price + adjustment : p.price - adjustment;
+        
+        // Naija Rounding Rule: nearest ₦50
+        newPrice = Math.round(newPrice / 50) * 50;
+        
+        return { ...p, price: Math.max(0, newPrice) };
+      });
+
+      await db.products.bulkPut(updatedProducts);
+      
+      // Log the bulk update
+      await db.inventory_logs.add({
+        product_id: 0,
+        product_name: `Bulk Price Update: ${bulkTarget === 'all' ? 'All' : bulkCategory}`,
+        quantity_changed: 0,
+        old_stock: 0,
+        new_stock: 0,
+        type: 'Adjustment',
+        timestamp: Date.now(),
+        performed_by: currentUser?.name || 'Admin'
+      });
+
+      setIsBulkModalOpen(false);
+      setBulkValue(0);
+      alert("Prices updated successfully across terminal!");
+    } catch (err) {
+      alert("Update failed: " + err);
+    } finally {
+      setIsProcessingAI(false);
+    }
+  };
+
   const handleRestockSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!restockProduct || !restockProduct.id || !canEdit) return;
@@ -317,7 +389,7 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
           <p className="text-sm text-slate-500 font-medium">Manage and monitor your shop products</p>
         </div>
         
-        <div className="flex gap-2 w-full md:w-auto">
+        <div className="flex flex-wrap gap-2 w-full md:w-auto">
           {!isStaff && (
             <button 
               onClick={() => setShowValuation(!showValuation)} 
@@ -325,6 +397,14 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
             >
               {showValuation ? <EyeOff size={18} /> : <Eye size={18} />}
               {showValuation ? 'Hide Valuation' : 'Show Valuation'}
+            </button>
+          )}
+          {canEdit && (
+            <button 
+              onClick={() => setIsBulkModalOpen(true)}
+              className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all shadow-sm font-black text-xs uppercase tracking-widest"
+            >
+              <TrendingUp size={18} /> Update Prices
             </button>
           )}
           {canEdit ? (
@@ -498,6 +578,80 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
               </div>
               <button type="submit" className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-lg shadow-xl hover:bg-emerald-700 transition-all mt-4">Save Product Information</button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Price Adjuster Modal */}
+      {isBulkModalOpen && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="bg-white rounded-[3rem] p-8 w-full max-w-md space-y-8 animate-in zoom-in duration-300">
+            <div className="flex items-center justify-between">
+               <h3 className="text-2xl font-black text-slate-900 tracking-tight">Bulk Price Adjuster</h3>
+               <button onClick={() => setIsBulkModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X size={24} /></button>
+            </div>
+
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 gap-3">
+                <button 
+                  onClick={() => setBulkTarget('all')}
+                  className={`flex items-center justify-center gap-2 py-3 rounded-2xl border-2 font-black text-[10px] uppercase tracking-widest transition-all ${bulkTarget === 'all' ? 'bg-slate-900 border-slate-900 text-white' : 'bg-slate-50 border-slate-100 text-slate-400'}`}
+                >
+                  All Products
+                </button>
+                <button 
+                  onClick={() => setBulkTarget('category')}
+                  className={`flex items-center justify-center gap-2 py-3 rounded-2xl border-2 font-black text-[10px] uppercase tracking-widest transition-all ${bulkTarget === 'category' ? 'bg-slate-900 border-slate-900 text-white' : 'bg-slate-50 border-slate-100 text-slate-400'}`}
+                >
+                  By Category
+                </button>
+              </div>
+
+              {bulkTarget === 'category' && (
+                <div className="animate-in slide-in-from-top-2">
+                  <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Target Category</label>
+                  <select className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-slate-400 font-bold" value={bulkCategory} onChange={e => setBulkCategory(e.target.value)}>
+                    {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3 p-1.5 bg-slate-100 rounded-2xl">
+                 <button onClick={() => setBulkDirection('increase')} className={`flex-1 py-3 rounded-xl flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest transition-all ${bulkDirection === 'increase' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400'}`}><ArrowUp size={14}/> Increase</button>
+                 <button onClick={() => setBulkDirection('decrease')} className={`flex-1 py-3 rounded-xl flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest transition-all ${bulkDirection === 'decrease' ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-400'}`}><ArrowDown size={14}/> Decrease</button>
+              </div>
+
+              <div>
+                <div className="flex justify-between items-center mb-2 px-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Adjustment Value</label>
+                  <div className="flex gap-2">
+                    <button onClick={() => setBulkType('percent')} className={`px-2 py-1 rounded text-[10px] font-black uppercase tracking-widest ${bulkType === 'percent' ? 'bg-slate-200 text-slate-800' : 'text-slate-400'}`}>%</button>
+                    <button onClick={() => setBulkType('fixed')} className={`px-2 py-1 rounded text-[10px] font-black uppercase tracking-widest ${bulkType === 'fixed' ? 'bg-slate-200 text-slate-800' : 'text-slate-400'}`}>₦</button>
+                  </div>
+                </div>
+                <div className="relative">
+                  <input 
+                    type="number" 
+                    className="w-full h-16 text-3xl font-black text-center bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-slate-400 transition-all tabular-nums"
+                    value={bulkValue || ''}
+                    onChange={e => setBulkValue(Number(e.target.value))}
+                  />
+                  <div className="absolute right-6 top-1/2 -translate-y-1/2 text-slate-300 font-black">
+                    {bulkType === 'percent' ? '%' : '₦'}
+                  </div>
+                </div>
+                <p className="text-[9px] text-slate-400 font-bold uppercase text-center mt-3 tracking-widest">Prices will be rounded to nearest ₦50</p>
+              </div>
+            </div>
+
+            <button 
+              onClick={handleBulkUpdate}
+              disabled={isProcessingAI}
+              className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-lg shadow-xl hover:bg-emerald-700 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3"
+            >
+              {isProcessingAI ? <Loader2 className="animate-spin" size={24} /> : <CheckCircle2 size={24} />}
+              Apply Bulk Changes
+            </button>
           </div>
         </div>
       )}
