@@ -254,7 +254,7 @@ const AppContent: React.FC = () => {
         {showInstallModal && <InstallModal onInstall={handleInstallClick} onClose={() => setShowInstallModal(false)} />}
         {currentView === 'dashboard' && <Dashboard currentUser={currentUser} setView={setCurrentView} isStaffLock={isStaffLock} />}
         {currentView === 'pos' && <POS setView={setCurrentView} currentUser={currentUser} />}
-        {currentView === 'activity-log' && <ActivityLog />}
+        {currentView === 'activity-log' && <ActivityLog currentUser={currentUser} />}
         {currentView === 'transfer-station' && <TransferStation setView={setCurrentView} />}
         {currentView === 'inventory' && <Inventory setView={setCurrentView} currentUser={currentUser} isStaffLock={isStaffLock} />}
         {currentView === 'inventory-ledger' && <InventoryLedger />}
