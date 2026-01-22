@@ -16,6 +16,8 @@ import {
   CheckCircle2, 
   ClipboardList,
   AlertCircle,
+  // Fix: Added missing AlertTriangle import from lucide-react
+  AlertTriangle,
   PackageCheck,
   RefreshCw,
   Info,
@@ -34,7 +36,10 @@ import {
   Coins,
   ArrowUp,
   ArrowDown,
-  Settings2
+  Settings2,
+  Filter,
+  Layers,
+  ShoppingBag
 } from 'lucide-react';
 import { Product, View, Staff } from '../types';
 import { processHandwrittenLedger, RateLimitError } from '../services/geminiService';
@@ -85,6 +90,8 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
   
   const [searchTerm, setSearchTerm] = useState('');
   const [showValuation, setShowValuation] = useState(false);
+  const [stockFilter, setStockFilter] = useState<'all' | 'low'>('all');
+  
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isMigrationModalOpen, setIsMigrationModalOpen] = useState(false);
   const [isRestockModalOpen, setIsRestockModalOpen] = useState(false);
@@ -111,15 +118,22 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
   const allProductsData = useLiveQuery(() => db.products.toArray());
   const allProducts = allProductsData || [];
 
+  // Logic: Identify items where stock is at or below threshold
+  const lowStockItems = useMemo(() => {
+    return allProducts.filter(p => p.stock_qty <= (p.low_stock_threshold || 5));
+  }, [allProducts]);
+
   const products = useMemo(() => {
-    if (!searchTerm.trim()) return allProducts;
+    let baseProducts = stockFilter === 'low' ? lowStockItems : allProducts;
+    
+    if (!searchTerm.trim()) return baseProducts;
     const term = searchTerm.toLowerCase();
-    return allProducts.filter(p => 
+    return baseProducts.filter(p => 
       p.name.toLowerCase().includes(term) ||
       p.category?.toLowerCase().includes(term) ||
       p.barcode?.includes(term)
     );
-  }, [allProducts, searchTerm]);
+  }, [allProducts, lowStockItems, searchTerm, stockFilter]);
 
   // Inventory Valuation Logic
   const valuation = useMemo(() => {
@@ -486,61 +500,106 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
         </div>
       )}
 
-      <div className="relative">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-        <input 
-          type="text" 
-          placeholder="Search by name, category or barcode..." 
-          className="w-full pl-12 pr-4 h-14 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 font-medium transition-all shadow-sm"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-        />
+      <div className="flex flex-col md:flex-row gap-4">
+        {/* Inventory Filter Bar */}
+        <div className="bg-white p-1.5 rounded-2xl border border-slate-200 flex shrink-0 shadow-sm">
+           <button 
+             onClick={() => setStockFilter('all')}
+             className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${stockFilter === 'all' ? 'bg-slate-900 text-white' : 'text-slate-400 hover:bg-slate-50'}`}
+           >
+             <Layers size={14} /> All Products
+           </button>
+           <button 
+             onClick={() => setStockFilter('low')}
+             className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all relative ${stockFilter === 'low' ? 'bg-rose-600 text-white' : 'text-slate-400 hover:bg-slate-50'}`}
+           >
+             <AlertTriangle size={14} /> Low Stock
+             {lowStockItems.length > 0 && (
+               <span className="absolute -top-1 -right-1 bg-rose-600 text-white text-[8px] min-w-[18px] h-[18px] flex items-center justify-center rounded-full border-2 border-white">
+                 {lowStockItems.length}
+               </span>
+             )}
+           </button>
+        </div>
+
+        <div className="relative flex-1">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+          <input 
+            type="text" 
+            placeholder="Search by name, category or barcode..." 
+            className="w-full pl-12 pr-4 h-14 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 font-medium transition-all shadow-sm"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {products.map((product) => (
-          <div key={product.id} className={`bg-white p-6 rounded-[2.5rem] border ${product.stock_qty <= (product.low_stock_threshold || 5) ? 'border-rose-200 bg-rose-50/30' : 'border-slate-100'} shadow-sm flex flex-col justify-between group hover:border-emerald-200 transition-all`}>
-            <div>
-              <div className="flex justify-between items-start mb-4">
-                <span className="text-[9px] font-black px-2.5 py-1 bg-slate-100 rounded-full text-slate-500 uppercase tracking-widest border border-slate-200">{product.category}</span>
-                {product.stock_qty <= (product.low_stock_threshold || 5) && (
-                  <span className="flex items-center gap-1 text-[9px] font-black px-2.5 py-1 bg-rose-100 text-rose-600 rounded-full uppercase tracking-widest animate-pulse"><AlertCircle size={10} /> Low Stock</span>
+        {products.length === 0 ? (
+          <div className="col-span-full py-20 text-center bg-white rounded-[3rem] border border-dashed border-slate-200 space-y-4">
+             <ShoppingBag size={48} className="mx-auto text-slate-100" />
+             <p className="text-slate-400 font-black uppercase tracking-widest text-xs">No products found in this view</p>
+             {searchTerm && <button onClick={() => setSearchTerm('')} className="text-emerald-600 font-black text-[10px] uppercase">Clear Search</button>}
+          </div>
+        ) : (
+          products.map((product) => {
+            const isLowStock = product.stock_qty <= (product.low_stock_threshold || 5);
+            const isSoldOut = product.stock_qty === 0;
+
+            return (
+              <div key={product.id} className={`bg-white p-6 rounded-[2.5rem] border ${isLowStock ? 'border-rose-200 bg-rose-50/30' : 'border-slate-100'} shadow-sm flex flex-col justify-between group hover:border-emerald-200 transition-all`}>
+                <div>
+                  <div className="flex justify-between items-start mb-4">
+                    <span className="text-[9px] font-black px-2.5 py-1 bg-slate-100 rounded-full text-slate-500 uppercase tracking-widest border border-slate-200">{product.category}</span>
+                    {isSoldOut ? (
+                      <span className="flex items-center gap-1 text-[9px] font-black px-2.5 py-1 bg-slate-900 text-white rounded-full uppercase tracking-widest">
+                        Sold Out
+                      </span>
+                    ) : isLowStock && (
+                      <span className="flex items-center gap-1 text-[9px] font-black px-2.5 py-1 bg-rose-600 text-white rounded-full uppercase tracking-widest animate-pulse">
+                        <AlertTriangle size={10} /> Low
+                      </span>
+                    )}
+                  </div>
+                  <h4 className="font-black text-slate-800 line-clamp-2 leading-tight min-h-[2.5rem]">{product.name}</h4>
+                  <div className="mt-4 space-y-1">
+                    <p className="text-2xl font-black text-slate-900 tracking-tighter">₦{product.price.toLocaleString()}</p>
+                    <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                      <span>Stock Available</span>
+                      <span className={`flex items-center gap-1 font-black ${isLowStock ? 'text-rose-600' : 'text-emerald-600'}`}>
+                        {isLowStock && !isSoldOut && <AlertTriangle size={10} />}
+                        {product.stock_qty} Units
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {canEdit && (
+                  <div className="mt-6 pt-6 border-t border-slate-100 flex gap-2">
+                    <button 
+                      onClick={() => { setRestockProduct(product); setIsRestockModalOpen(true); }}
+                      className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-600 hover:text-white transition-all font-black text-[10px] uppercase tracking-widest"
+                    >
+                      <PackagePlus size={14} /> Update
+                    </button>
+                    <button 
+                      onClick={() => { setEditingProduct(product); setFormData(product); setIsModalOpen(true); }}
+                      className="p-2.5 text-slate-400 hover:text-blue-600 transition-colors"
+                    >
+                      <Edit size={18} />
+                    </button>
+                    <button 
+                      onClick={() => { setDeleteProduct(product); setIsDeleteModalOpen(true); }}
+                      className="p-2.5 text-slate-400 hover:text-rose-600 transition-colors"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  </div>
                 )}
               </div>
-              <h4 className="font-black text-slate-800 line-clamp-2 leading-tight min-h-[2.5rem]">{product.name}</h4>
-              <div className="mt-4 space-y-1">
-                <p className="text-2xl font-black text-slate-900 tracking-tighter">₦{product.price.toLocaleString()}</p>
-                <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                  <span>Stock Available</span>
-                  <span className={product.stock_qty <= (product.low_stock_threshold || 5) ? 'text-rose-600 font-black' : 'text-emerald-600 font-black'}>{product.stock_qty} Units</span>
-                </div>
-              </div>
-            </div>
-
-            {canEdit && (
-              <div className="mt-6 pt-6 border-t border-slate-100 flex gap-2">
-                <button 
-                  onClick={() => { setRestockProduct(product); setIsRestockModalOpen(true); }}
-                  className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-600 hover:text-white transition-all font-black text-[10px] uppercase tracking-widest"
-                >
-                  <PackagePlus size={14} /> Update
-                </button>
-                <button 
-                  onClick={() => { setEditingProduct(product); setFormData(product); setIsModalOpen(true); }}
-                  className="p-2.5 text-slate-400 hover:text-blue-600 transition-colors"
-                >
-                  <Edit size={18} />
-                </button>
-                <button 
-                  onClick={() => { setDeleteProduct(product); setIsDeleteModalOpen(true); }}
-                  className="p-2.5 text-slate-400 hover:text-rose-600 transition-colors"
-                >
-                  <Trash2 size={18} />
-                </button>
-              </div>
-            )}
-          </div>
-        ))}
+            );
+          })
+        )}
       </div>
 
       {/* Standard Product Modal */}
@@ -574,6 +633,10 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
                   <select className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 font-bold" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})}>
                     {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Low Stock Threshold</label>
+                  <input required type="number" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 font-bold" value={formData.low_stock_threshold || ''} onChange={e => setFormData({...formData, low_stock_threshold: Number(e.target.value)})} />
                 </div>
               </div>
               <button type="submit" className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-lg shadow-xl hover:bg-emerald-700 transition-all mt-4">Save Product Information</button>
