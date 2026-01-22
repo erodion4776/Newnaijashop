@@ -1,3 +1,4 @@
+
 import { db } from '../db/db';
 import { Sale, Product } from '../types';
 
@@ -32,13 +33,14 @@ class NotificationService {
   public async sendNotification(title: string, body: string) {
     if (Notification.permission === 'granted') {
       const registration = await navigator.serviceWorker.ready;
-      // Fixed: Cast options object to any to bypass potential strict 'NotificationOptions' type definition gaps for 'vibrate' property
+      
+      // Explicitly set icon and badge for brand consistency across OS platforms
       registration.showNotification(title, {
-        body,
+        body: body,
         icon: LOGO_URL,
         badge: LOGO_URL,
         vibrate: [200, 100, 200],
-        tag: 'naijashop-alert',
+        tag: 'naijashop-notification',
         renotify: true
       } as any);
     }
@@ -58,7 +60,7 @@ class NotificationService {
     // Monitor product updates for low stock (0 units)
     db.products.hook('updating', (mods: Partial<Product>, primKey, obj) => {
       if ('stock_qty' in mods && mods.stock_qty === 0 && obj.stock_qty > 0) {
-        // We use a small delay to ensure the transaction completes
+        // We use a small delay to ensure the transaction completes before notifying
         setTimeout(() => {
           this.sendNotification(
             '⚠️ Out of Stock',
