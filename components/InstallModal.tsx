@@ -24,7 +24,7 @@ const InstallModal: React.FC<InstallModalProps> = ({ onInstall, onClose }) => {
 
           <div className="space-y-3">
             <h2 className="text-3xl font-black text-slate-900 tracking-tighter leading-tight">Install NaijaShop<br/>on your Device</h2>
-            <p className="text-slate-500 font-medium">Get the full terminal experience on your home screen.</p>
+            <p className="text-slate-500 font-medium">Install NaijaShop on your Home Screen for 100% Offline Access. No Data Required!</p>
           </div>
 
           <div className="grid grid-cols-1 gap-4 text-left">
