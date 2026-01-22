@@ -8,11 +8,18 @@ import {
   Save, 
   CheckCircle2, 
   ShieldCheck, 
-  User, 
-  Key, 
   Store,
-  CreditCard,
-  AlertCircle
+  HelpCircle,
+  PlayCircle,
+  X,
+  ChevronRight,
+  ShoppingCart,
+  Package,
+  Sparkles,
+  Lock,
+  Database,
+  Smartphone,
+  WifiOff
 } from 'lucide-react';
 import { Staff } from '../types';
 
@@ -20,6 +27,7 @@ const Settings: React.FC<{ currentUser: Staff | null }> = ({ currentUser }) => {
   const settings = useLiveQuery(() => db.settings.get('app_settings'));
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(false);
   
   const [shopName, setShopName] = useState('');
   const [bankName, setBankName] = useState('');
@@ -78,74 +86,96 @@ const Settings: React.FC<{ currentUser: Staff | null }> = ({ currentUser }) => {
         </div>
       </div>
 
-      <form onSubmit={handleSaveBankDetails} className="grid grid-cols-1 md:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
         <div className="md:col-span-2 space-y-8">
-          {/* General Shop Info */}
-          <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
-            <div className="flex items-center gap-3">
-              <div className="p-3 bg-slate-50 text-slate-600 rounded-2xl"><Store size={24} /></div>
-              <h3 className="text-xl font-black text-slate-800 tracking-tight">Store Identity</h3>
+          {/* Support & Tutorial Section */}
+          <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6 relative overflow-hidden">
+            <div className="absolute right-0 top-0 p-8 opacity-5">
+              <HelpCircle size={80} />
             </div>
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl"><HelpCircle size={24} /></div>
+              <h3 className="text-xl font-black text-slate-800 tracking-tight">Support & Learning</h3>
+            </div>
+            <p className="text-sm text-slate-500 font-medium">New to NaijaShop? Learn how to manage your business like a pro with our interactive guide.</p>
             
-            <div className="space-y-4">
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Display Shop Name</label>
-                <input 
-                  type="text" 
-                  className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 font-bold" 
-                  value={shopName}
-                  onChange={e => setShopName(e.target.value)}
-                />
-              </div>
-            </div>
+            <button 
+              onClick={() => setShowTutorial(true)}
+              className="w-full md:w-auto px-8 py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-black text-sm uppercase tracking-widest flex items-center justify-center gap-3 transition-all shadow-lg shadow-indigo-200 active:scale-[0.98]"
+            >
+              <PlayCircle size={20} />
+              Open Quick Start Guide
+            </button>
           </div>
 
-          {/* Bank Details Section */}
-          <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
-            <div className="flex items-center gap-3">
-              <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl"><Landmark size={24} /></div>
-              <h3 className="text-xl font-black text-slate-800 tracking-tight">Bank Transfer Details</h3>
+          <form onSubmit={handleSaveBankDetails} className="space-y-8">
+            {/* General Shop Info */}
+            <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-slate-50 text-slate-600 rounded-2xl"><Store size={24} /></div>
+                <h3 className="text-xl font-black text-slate-800 tracking-tight">Store Identity</h3>
+              </div>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Display Shop Name</label>
+                  <input 
+                    type="text" 
+                    className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 font-bold" 
+                    value={shopName}
+                    onChange={e => setShopName(e.target.value)}
+                  />
+                </div>
+              </div>
             </div>
-            <p className="text-sm text-slate-500 font-medium">Configure the account shown to customers during bank transfers. Ensure these details are correct to avoid lost payments.</p>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="md:col-span-1">
-                <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Bank Name</label>
-                <input 
-                  required
-                  placeholder="e.g. OPay, Zenith, Kuda"
-                  type="text" 
-                  className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 font-bold" 
-                  value={bankName}
-                  onChange={e => setBankName(e.target.value)}
-                />
+            {/* Bank Details Section */}
+            <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl"><Landmark size={24} /></div>
+                <h3 className="text-xl font-black text-slate-800 tracking-tight">Bank Transfer Details</h3>
               </div>
-              <div className="md:col-span-1">
-                <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Account Number (10 Digits)</label>
-                <input 
-                  required
-                  maxLength={10}
-                  placeholder="0000000000"
-                  type="text" 
-                  inputMode="numeric"
-                  className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 font-black tracking-widest" 
-                  value={accountNumber}
-                  onChange={e => setAccountNumber(e.target.value.replace(/\D/g, ''))}
-                />
-              </div>
-              <div className="md:col-span-2">
-                <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Account Name / Business Name</label>
-                <input 
-                  required
-                  placeholder="e.g. NAIJA RETAIL STORE"
-                  type="text" 
-                  className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 font-bold uppercase" 
-                  value={accountName}
-                  onChange={e => setAccountName(e.target.value.toUpperCase())}
-                />
+              <p className="text-sm text-slate-500 font-medium">Configure the account shown to customers during bank transfers. Ensure these details are correct to avoid lost payments.</p>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="md:col-span-1">
+                  <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Bank Name</label>
+                  <input 
+                    required
+                    placeholder="e.g. OPay, Zenith, Kuda"
+                    type="text" 
+                    className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 font-bold" 
+                    value={bankName}
+                    onChange={e => setBankName(e.target.value)}
+                  />
+                </div>
+                <div className="md:col-span-1">
+                  <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Account Number (10 Digits)</label>
+                  <input 
+                    required
+                    maxLength={10}
+                    placeholder="0000000000"
+                    type="text" 
+                    inputMode="numeric"
+                    className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 font-black tracking-widest" 
+                    value={accountNumber}
+                    onChange={e => setAccountNumber(e.target.value.replace(/\D/g, ''))}
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Account Name / Business Name</label>
+                  <input 
+                    required
+                    placeholder="e.g. NAIJA RETAIL STORE"
+                    type="text" 
+                    className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 font-bold uppercase" 
+                    value={accountName}
+                    onChange={e => setAccountName(e.target.value.toUpperCase())}
+                  />
+                </div>
               </div>
             </div>
-          </div>
+          </form>
         </div>
 
         <div className="space-y-6">
@@ -153,7 +183,7 @@ const Settings: React.FC<{ currentUser: Staff | null }> = ({ currentUser }) => {
             <h4 className="font-black text-lg tracking-tight">Actions</h4>
             <div className="space-y-3">
               <button 
-                type="submit"
+                onClick={handleSaveBankDetails}
                 disabled={isSaving}
                 className="w-full py-5 bg-emerald-600 hover:bg-emerald-500 rounded-2xl font-black flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-900/40 disabled:opacity-50"
               >
@@ -179,9 +209,116 @@ const Settings: React.FC<{ currentUser: Staff | null }> = ({ currentUser }) => {
             </div>
           </div>
         </div>
-      </form>
+      </div>
+
+      {/* Tutorial Modal */}
+      {showTutorial && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-xl animate-in fade-in duration-300">
+          <div className="bg-slate-50 rounded-[4rem] w-full max-w-4xl max-h-[90vh] shadow-2xl overflow-hidden flex flex-col animate-in zoom-in duration-300">
+            <div className="p-8 md:p-12 border-b border-slate-200 flex items-center justify-between bg-white shrink-0">
+              <div>
+                <h3 className="text-3xl font-black text-slate-900 tracking-tighter">NaijaShop User Guide</h3>
+                <p className="text-slate-400 font-bold uppercase tracking-[0.2em] text-[10px] mt-1">Master Your Terminal in 5 Steps</p>
+              </div>
+              <button 
+                onClick={() => setShowTutorial(false)}
+                className="p-4 hover:bg-slate-100 rounded-full transition-colors text-slate-400"
+              >
+                <X size={32} />
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-8 md:p-12 space-y-12 scrollbar-hide">
+              {/* Step 1: Selling */}
+              <TutorialStep 
+                num="1"
+                title="Selling & POS"
+                icon={<ShoppingCart className="text-emerald-600" />}
+                color="bg-emerald-50"
+                description="Tap products to add to cart. If a customer needs to 'quickly buy something else', use the Park Sale button to save their items and attend to the next person."
+              />
+
+              {/* Step 2: Inventory */}
+              <TutorialStep 
+                num="2"
+                title="Manage Stock"
+                icon={<Package className="text-blue-600" />}
+                color="bg-blue-50"
+                description="Add products manually or use the AI Guru to scan your handwritten notebooks. Set Low Stock Thresholds to get red alerts when items are finishing."
+              />
+
+              {/* Step 3: AI Guru */}
+              <TutorialStep 
+                num="3"
+                title="Consult the Guru"
+                icon={<Sparkles className="text-amber-600" />}
+                color="bg-amber-50"
+                description="NaijaShop Guru analyzes your sales to tell you which products move fastest. Use the Notebook Scanner in Inventory to migrate your shop to digital instantly."
+              />
+
+              {/* Step 4: Security */}
+              <TutorialStep 
+                num="4"
+                title="Oga Mode (Security)"
+                icon={<Lock className="text-rose-600" />}
+                color="bg-rose-50"
+                description="Use 'Switch to Staff' when leaving attendants in the shop. This hides your profits and settings. Only your Admin PIN can unlock the terminal."
+              />
+
+              {/* Step 5: Backup */}
+              <TutorialStep 
+                num="5"
+                title="Data Protection"
+                icon={<Database className="text-indigo-600" />}
+                color="bg-indigo-50"
+                description="NaijaShop works 100% offline. Go to 'Security & Backups' to send a copy of your records to WhatsApp. This protects you if your phone gets lost."
+              />
+
+              {/* Offline Notice */}
+              <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white flex flex-col md:flex-row items-center gap-6">
+                <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center shrink-0">
+                  <WifiOff size={32} className="text-emerald-400" />
+                </div>
+                <div>
+                  <h4 className="font-black text-xl">Zero Data Needed</h4>
+                  <p className="text-slate-400 text-sm font-medium">This app is a PWA. Once installed, you can use it deep in markets where there is no network. It saves everything locally on your device.</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-8 bg-white border-t border-slate-200 shrink-0">
+              <button 
+                onClick={() => setShowTutorial(false)}
+                className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-lg shadow-xl hover:bg-emerald-700 transition-all active:scale-[0.98]"
+              >
+                I'm Ready to Start Selling!
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+
+const TutorialStep: React.FC<{num: string, title: string, icon: any, color: string, description: string}> = ({ num, title, icon, color, description }) => (
+  <div className="flex gap-6 md:gap-10">
+    <div className="flex flex-col items-center shrink-0">
+      <div className={`w-12 h-12 ${color} rounded-2xl flex items-center justify-center font-black text-xl text-slate-800 shadow-inner`}>
+        {num}
+      </div>
+      <div className="flex-1 w-px bg-slate-200 my-4" />
+    </div>
+    <div className="space-y-3 pb-4">
+      <div className="flex items-center gap-3">
+        {React.cloneElement(icon as React.ReactElement, { size: 24 })}
+        <h4 className="text-2xl font-black text-slate-900 tracking-tight">{title}</h4>
+      </div>
+      <p className="text-slate-500 leading-relaxed font-medium text-lg">
+        {description}
+      </p>
+    </div>
+  </div>
+);
 
 export default Settings;
