@@ -51,7 +51,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
 
   // Parked Orders States
   const [showParkModal, setShowParkModal] = useState(false);
-  const [parkName, setParkName] = useState('');
+  const [tempName, setTempName] = useState('');
   const [showParkedListModal, setShowParkedListModal] = useState(false);
 
   const products = useLiveQuery(() => db.products.toArray());
@@ -96,15 +96,14 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
       alert("Nothing to park!");
       return;
     }
-    if (!parkName.trim()) {
-      alert("Please enter a name for this order.");
-      return;
-    }
+    
+    // Logic: Default to 'Quick Order' if name is empty
+    const customerName = tempName.trim() || 'Quick Order';
 
     try {
-      // Ensure data integrity by saving customer name and items correctly
+      // Logic: Ensure the customerName state is explicitly included in the object being saved
       await db.parked_orders.add({
-        customerName: parkName,
+        customerName: customerName,
         items: [...cart],
         total: total,
         staffId: currentUser?.id?.toString() || '0',
@@ -112,7 +111,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
       });
 
       setCart([]);
-      setParkName('');
+      setTempName('');
       setShowParkModal(false);
       console.log('Order parked successfully');
     } catch (err) {
@@ -151,7 +150,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
 
       setCart([...itemsToLoad]);
 
-      // 3. Delete from parked_orders table after successfully loading items
+      // 3. Wait for the state to update (sequential execution), then delete from parked_orders
       await db.parked_orders.delete(orderId);
       
       // 4. UI Cleanup
@@ -364,8 +363,8 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
                       type="text" 
                       placeholder="e.g. Musa or Red Cap Man" 
                       className="w-full pl-12 pr-4 py-5 bg-slate-50 border border-slate-200 rounded-2xl font-bold outline-none focus:ring-2 focus:ring-amber-500" 
-                      value={parkName}
-                      onChange={e => setParkName(e.target.value)}
+                      value={tempName}
+                      onChange={e => setTempName(e.target.value)}
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
@@ -503,8 +502,8 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
 
        {showLowStockAlert && (
          <div className="fixed inset-0 z-[600] flex items-center justify-center bg-slate-950/90 backdrop-blur-md">
-            <div className="bg-white rounded-[3rem] p-10 text-center space-y-8 max-sm animate-in zoom-in duration-500">
-               <div className="w-20 h-20 bg-rose-50 text-rose-600 rounded-full flex items-center justify-center mx-auto">
+            <div className="bg-white rounded-[3rem] p-10 text-center space-y-8 max-w-sm animate-in zoom-in duration-500">
+               <div className="w-20 h-20 bg-rose-50 text-rose-500 rounded-full flex items-center justify-center mx-auto">
                  <AlertTriangle size={48} className="animate-pulse" />
                </div>
                <div className="space-y-2">

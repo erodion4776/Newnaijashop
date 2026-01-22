@@ -15,14 +15,14 @@ export class NaijaShopDB extends Dexie {
   constructor() {
     super('NaijaShopDB');
     
-    // Bumped to v13 to ensure robust schema application for logs and parked orders
-    (this as any).version(13).stores({
+    // Bumped to v14 to reflect table index cleanup
+    (this as any).version(14).stores({
       products: '++id, name, category, barcode',
       sales: '++id, sale_id, timestamp, payment_method, staff_name',
       debts: '++id, customer_name, status',
       staff: '++id, name, role, status',
       settings: 'id',
-      parked_orders: '++id, customerName, staffId, timestamp',
+      parked_orders: '++id, customerName, timestamp',
       inventory_logs: '++id, product_id, product_name, type, timestamp'
     });
   }
