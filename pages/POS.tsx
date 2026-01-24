@@ -29,7 +29,8 @@ import {
   Printer,
   Share2,
   MessageSquare,
-  Bluetooth
+  Bluetooth,
+  Edit3
 } from 'lucide-react';
 import { Product, SaleItem, ParkedOrder, View, Staff, Sale, Settings } from '../types';
 import BarcodeScanner from '../components/BarcodeScanner';
@@ -57,6 +58,10 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
   const [showMobileCart, setShowMobileCart] = useState(false);
   const [animatingId, setAnimatingId] = useState<number | null>(null);
   const [isBTPrinting, setIsBTPrinting] = useState(false);
+
+  // Editable Price State
+  const [editingPriceId, setEditingPriceId] = useState<number | null>(null);
+  const [tempPrice, setTempPrice] = useState<string>('');
 
   // Parked Orders States
   const [showParkModal, setShowParkModal] = useState(false);
@@ -108,6 +113,20 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
       }
       return item;
     }).filter(item => item.quantity > 0));
+  };
+
+  // Price Editing Logic
+  const handlePriceClick = (item: SaleItem) => {
+    setEditingPriceId(item.productId);
+    setTempPrice(item.price.toString());
+  };
+
+  const handlePriceSave = (productId: number) => {
+    const newPrice = Math.round(Number(tempPrice) / 50) * 50; // Naija Rounding
+    setCart(prev => prev.map(item => 
+      item.productId === productId ? { ...item, price: newPrice } : item
+    ));
+    setEditingPriceId(null);
   };
 
   const total = cart.reduce((acc, curr) => acc + (curr.price * curr.quantity), 0);
@@ -388,24 +407,52 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
             <button onClick={() => setCart([])} className="text-xs font-black text-rose-400 uppercase tracking-widest hover:text-rose-600">Clear</button>
           </div>
           <div className="flex-1 overflow-y-auto space-y-4 scrollbar-hide">
-             {cart.length === 0 ? <div className="h-full flex flex-col items-center justify-center opacity-20 py-20"><ShoppingCart size={64} /><p className="mt-4 font-black text-xs uppercase">Empty</p></div> : cart.map((item, idx) => (
-               <div key={idx} className="flex justify-between items-center bg-slate-50 p-3 rounded-2xl border border-slate-100">
-                  <div className="flex-1 min-w-0 pr-2">
-                    <p className="font-bold text-sm truncate text-slate-800">{item.name}</p>
-                    <div className="flex items-center gap-2">
-                      <p className="text-[10px] font-black text-emerald-600">₦{item.price.toLocaleString()}</p>
-                      {item.isStockAlreadyDeducted && (
-                        <span className="text-[8px] font-black text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100 uppercase tracking-widest">Resumed</span>
-                      )}
+             {cart.length === 0 ? <div className="h-full flex flex-col items-center justify-center opacity-20 py-20"><ShoppingCart size={64} /><p className="mt-4 font-black text-xs uppercase">Empty</p></div> : cart.map((item, idx) => {
+               const product = products?.find(p => p.id === item.productId);
+               const isBelowCost = product ? item.price < product.cost_price : false;
+               const isEditing = editingPriceId === item.productId;
+
+               return (
+                 <div key={idx} className={`flex justify-between items-center bg-slate-50 p-3 rounded-2xl border transition-colors ${isBelowCost ? 'border-rose-200 bg-rose-50/50' : 'border-slate-100'}`}>
+                    <div className="flex-1 min-w-0 pr-2">
+                      <p className="font-bold text-sm truncate text-slate-800">{item.name}</p>
+                      <div className="flex items-center gap-2">
+                        {isEditing ? (
+                          <div className="flex items-center gap-1 mt-1">
+                             <input 
+                                autoFocus
+                                type="number"
+                                className={`w-24 px-2 py-1 text-[10px] font-black border rounded outline-none ${isBelowCost ? 'border-rose-400 bg-rose-50' : 'border-emerald-300'}`}
+                                value={tempPrice}
+                                onChange={e => setTempPrice(e.target.value)}
+                                onBlur={() => handlePriceSave(item.productId)}
+                                onKeyDown={e => e.key === 'Enter' && handlePriceSave(item.productId)}
+                             />
+                             <button onClick={() => handlePriceSave(item.productId)} className="p-1 bg-emerald-600 text-white rounded"><CheckCircle size={12} /></button>
+                          </div>
+                        ) : (
+                          <button 
+                            onClick={() => handlePriceClick(item)}
+                            className={`flex items-center gap-1.5 px-1.5 py-0.5 rounded hover:bg-white/50 transition-all ${isBelowCost ? 'text-rose-600 bg-rose-100/50' : 'text-emerald-600'}`}
+                          >
+                            <p className="text-[10px] font-black">₦{item.price.toLocaleString()}</p>
+                            <Edit3 size={10} className="opacity-40" />
+                          </button>
+                        )}
+                        {item.isStockAlreadyDeducted && (
+                          <span className="text-[8px] font-black text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100 uppercase tracking-widest">Resumed</span>
+                        )}
+                      </div>
+                      {isBelowCost && <p className="text-[8px] font-black text-rose-500 uppercase mt-0.5 flex items-center gap-1"><AlertTriangle size={8} /> Selling below cost!</p>}
                     </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <button onClick={() => updateQuantity(item.productId, -1)} className="p-1.5 bg-white rounded-lg text-rose-500 shadow-sm"><Minus size={12} /></button>
-                    <span className="font-black text-sm">{item.quantity}</span>
-                    <button onClick={() => updateQuantity(item.productId, 1)} className="p-1.5 bg-white rounded-lg text-emerald-500 shadow-sm"><Plus size={12} /></button>
-                  </div>
-               </div>
-             ))}
+                    <div className="flex items-center gap-3">
+                      <button onClick={() => updateQuantity(item.productId, -1)} className="p-1.5 bg-white rounded-lg text-rose-500 shadow-sm"><Minus size={12} /></button>
+                      <span className="font-black text-sm">{item.quantity}</span>
+                      <button onClick={() => updateQuantity(item.productId, 1)} className="p-1.5 bg-white rounded-lg text-emerald-500 shadow-sm"><Plus size={12} /></button>
+                    </div>
+                 </div>
+               );
+             })}
           </div>
           <div className="mt-6 pt-6 border-t space-y-4">
              <div className="flex justify-between items-center px-2">
