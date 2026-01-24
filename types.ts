@@ -23,6 +23,14 @@ export interface InventoryLog {
   performed_by: string;
 }
 
+export interface AuditEntry {
+  id?: number;
+  action: string;
+  details: string;
+  staff_name: string;
+  timestamp: number;
+}
+
 export interface SaleItem {
   productId: number;
   name: string;
@@ -100,6 +108,6 @@ export interface Settings {
   last_synced_timestamp?: number;
 }
 
-export type View = 'dashboard' | 'pos' | 'inventory' | 'inventory-ledger' | 'debts' | 'settings' | 'ai-insights' | 'staff-management' | 'activity-log' | 'security-backups' | 'transfer-station' | 'expense-tracker';
+export type View = 'dashboard' | 'pos' | 'inventory' | 'inventory-ledger' | 'debts' | 'settings' | 'ai-insights' | 'staff-management' | 'activity-log' | 'security-backups' | 'transfer-station' | 'expense-tracker' | 'audit-trail';
 
 export type SyncStatus = 'offline' | 'connecting' | 'live' | 'reconnecting' | 'failed';

@@ -129,11 +129,27 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
     setTempPrice(item.price.toString());
   };
 
-  const handlePriceSave = (productId: number) => {
+  const handlePriceSave = async (productId: number) => {
+    const item = cart.find(i => i.productId === productId);
+    if (!item) return;
+
+    const oldPrice = item.price;
     const newPrice = Math.round(Number(tempPrice) / 50) * 50; // Naija Rounding
-    setCart(prev => prev.map(item => 
-      item.productId === productId ? { ...item, price: newPrice } : item
-    ));
+
+    if (oldPrice !== newPrice) {
+      // Logic: Log Price Change to Audit Trail
+      await db.audit_trail.add({
+        action: 'Cart Price Changed',
+        details: `Adjusted '${item.name}' from ₦${oldPrice.toLocaleString()} to ₦${newPrice.toLocaleString()}`,
+        staff_name: currentUser?.name || 'Staff',
+        timestamp: Date.now()
+      });
+
+      setCart(prev => prev.map(i => 
+        i.productId === productId ? { ...i, price: newPrice } : i
+      ));
+    }
+    
     setEditingPriceId(null);
   };
 

@@ -201,6 +201,14 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
         });
 
         if (oldStock !== newStock) {
+          // Logic: Log Manual Stock Adjustment to Audit Trail
+          await db.audit_trail.add({
+            action: 'Stock Manually Adjusted',
+            details: `Updated '${formData.name}' stock level from ${oldStock} to ${newStock} via product edit.`,
+            staff_name: currentUser?.name || 'User',
+            timestamp: Date.now()
+          });
+
           await db.inventory_logs.add({
             product_id: editingProduct.id,
             product_name: formData.name,
@@ -277,6 +285,14 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
         return { ...p, price: Math.max(0, newPrice) };
       });
 
+      // Logic: Log Bulk Price Update to Audit Trail
+      await db.audit_trail.add({
+        action: 'Bulk Price Update',
+        details: `Bulk adjusted prices for ${targetProducts.length} items in ${bulkTarget === 'all' ? 'All categories' : bulkCategory}. Direction: ${bulkDirection}.`,
+        staff_name: currentUser?.name || 'Admin',
+        timestamp: Date.now()
+      });
+
       await db.products.bulkPut(updatedProducts);
       
       await db.inventory_logs.add({
@@ -326,6 +342,14 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
           newStock = oldStock;
           change = 0;
       }
+
+      // Logic: Log Quick Stock Adjustment to Audit Trail
+      await db.audit_trail.add({
+        action: 'Stock Manually Adjusted',
+        details: `Quick adjusted '${restockProduct.name}' stock level (${restockType}: ${change}). New total: ${newStock}.`,
+        staff_name: currentUser?.name || 'User',
+        timestamp: Date.now()
+      });
 
       await (db as any).transaction('rw', [db.products, db.inventory_logs], async () => {
         await db.products.update(restockProduct.id!, { stock_qty: newStock });
@@ -595,13 +619,13 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
                     </button>
                     <button 
                       onClick={() => { setEditingProduct(product); setFormData(product); setIsModalOpen(true); }}
-                      className="p-2.5 text-slate-400 hover:text-blue-600 transition-colors"
+                      className="p-2.5 text-slate-400 hover:text-blue-600 transition-all"
                     >
                       <Edit size={18} />
                     </button>
                     <button 
                       onClick={() => { setDeleteProduct(product); setIsDeleteModalOpen(true); }}
-                      className="p-2.5 text-slate-400 hover:text-rose-600 transition-colors"
+                      className="p-2.5 text-slate-400 hover:text-rose-600 transition-all"
                     >
                       <Trash2 size={18} />
                     </button>

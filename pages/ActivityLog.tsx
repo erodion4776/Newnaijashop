@@ -138,6 +138,14 @@ const ActivityLog: React.FC<ActivityLogProps> = ({ currentUser }) => {
     if (!confirm(`Are you sure? This will delete the sale and return items to stock.`)) return;
     setIsProcessingAction(true);
     try {
+      // Logic: Log Sale Deletion to Audit Trail
+      await db.audit_trail.add({
+        action: 'Sale Record Deleted',
+        details: `Deleted Sale #${sale.sale_id.substring(0,8)} | Total: ₦${sale.total_amount.toLocaleString()} | Items: ${sale.items.length}`,
+        staff_name: currentUser?.name || 'Admin',
+        timestamp: Date.now()
+      });
+
       await (db as any).transaction('rw', [db.sales, db.products, db.inventory_logs], async () => {
         for (const item of sale.items) {
           const product = await db.products.get(item.productId);

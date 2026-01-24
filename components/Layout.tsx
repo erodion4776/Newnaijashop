@@ -21,7 +21,8 @@ import {
   Lock,
   Download,
   ReceiptNigerian,
-  TrendingDown
+  TrendingDown,
+  ShieldAlert as ShieldIcon
 } from 'lucide-react';
 import { View, Staff } from '../types';
 
@@ -52,6 +53,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, setView, shopName
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, restrict: true },
     { id: 'pos', label: 'Point of Sale', icon: ShoppingCart, restrict: false },
     { id: 'activity-log', label: 'Activity Log', icon: History, restrict: true },
+    { id: 'audit-trail', label: 'Security Logs', icon: ShieldIcon, restrict: true },
     { id: 'expense-tracker', label: 'Expense Tracker', icon: TrendingDown, restrict: true },
     { id: 'transfer-station', label: 'Transfer Station', icon: Landmark, restrict: false },
     { id: 'inventory', label: 'Inventory', icon: Package, restrict: false },
