@@ -17,7 +17,6 @@ import SecurityBackups from './pages/SecurityBackups';
 import Settings from './pages/Settings';
 import ExpenseTracker from './pages/ExpenseTracker';
 import AuditTrail from './pages/AuditTrail';
-import CustomerWalletView from './pages/CustomerWallet';
 import InstallModal from './components/InstallModal';
 import SupportChat from './components/SupportChat';
 import { performAutoSnapshot } from './utils/backup';
@@ -260,7 +259,6 @@ const AppContent: React.FC = () => {
         {currentView === 'activity-log' && <ActivityLog currentUser={currentUser} />}
         {currentView === 'audit-trail' && <AuditTrail />}
         {currentView === 'expense-tracker' && <ExpenseTracker />}
-        {currentView === 'customer-wallets' && <CustomerWalletView />}
         {currentView === 'transfer-station' && <TransferStation setView={setCurrentView} />}
         {currentView === 'inventory' && <Inventory setView={setCurrentView} currentUser={currentUser} isStaffLock={isStaffLock} />}
         {currentView === 'inventory-ledger' && <InventoryLedger />}

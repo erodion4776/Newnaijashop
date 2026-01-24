@@ -1,7 +1,7 @@
 
-// Fix: Use default import for Dexie to ensure inherited methods like version() are correctly typed on the class instance.
-import Dexie, { type Table } from 'dexie';
-import { Product, Sale, Debt, Settings, ParkedOrder, InventoryLog, Staff, Expense, AuditEntry, CustomerWallet, WalletTransaction } from '../types';
+// Fix: Use named import for Dexie to ensure inherited methods like version() are correctly typed on the class instance.
+import { Dexie, type Table } from 'dexie';
+import { Product, Sale, Debt, Settings, ParkedOrder, InventoryLog, Staff, Expense, AuditEntry } from '../types';
 
 export class NaijaShopDB extends Dexie {
   products!: Table<Product>;
@@ -13,16 +13,12 @@ export class NaijaShopDB extends Dexie {
   inventory_logs!: Table<InventoryLog>;
   expenses!: Table<Expense>;
   audit_trail!: Table<AuditEntry>;
-  customer_wallets!: Table<CustomerWallet>; // Legacy table
-  wallets!: Table<any>; // New wallets table: ++id, &phone, name, balance, lastUpdated
-  wallet_transactions!: Table<WalletTransaction>;
 
   constructor() {
     super('NaijaShopDB');
     
-    // Version 24 ensures all current and requested tables are active in a single block
-    // Fix: Using the default import for Dexie helps TypeScript correctly resolve the prototype chain for inherited methods like version().
-    this.version(24).stores({
+    // Version 25: Removed wallet-related tables to clean up system as requested.
+    this.version(25).stores({
       products: '++id, name, category, barcode',
       sales: '++id, sale_id, timestamp, payment_method, staff_name',
       debts: '++id, customer_name, status',
@@ -31,10 +27,7 @@ export class NaijaShopDB extends Dexie {
       parked_orders: '++id, customerName, timestamp',
       inventory_logs: '++id, product_id, product_name, type, timestamp',
       expenses: '++id, category, timestamp',
-      audit_trail: '++id, action, staff_name, timestamp',
-      customer_wallets: '++id, phone, balance',
-      wallets: '++id, &phone, name, balance, lastUpdated',
-      wallet_transactions: '++id, phone, timestamp'
+      audit_trail: '++id, action, staff_name, timestamp'
     });
   }
 }
