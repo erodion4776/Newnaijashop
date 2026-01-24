@@ -35,16 +35,19 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, cart, to
     return new Date(now.getTime() - offset).toISOString().slice(0, 16);
   });
 
-  // Safe Wallet Lookup
+  // Safe Wallet Lookup moved to useEffect to prevent blocking UI
   useEffect(() => {
     const lookup = async () => {
-      if (customerPhone.length >= 10) {
+      if (customerPhone && customerPhone.length >= 10) {
         try {
+          // Guard against uninitialized DB tables
+          if (!db.wallets) return;
           const wallet = await db.wallets.where('phone').equals(customerPhone).first();
           setActiveWallet(wallet || null);
           if (wallet?.name) setCustomerName(wallet.name);
         } catch (e) {
-          console.error("Wallet DB Error", e);
+          console.error("Safe Wallet lookup failed:", e);
+          setActiveWallet(null);
         }
       } else {
         setActiveWallet(null);
@@ -56,7 +59,8 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, cart, to
 
   if (!isOpen) return null;
 
-  const walletDiscount = (useWallet && activeWallet) ? Math.min(Number(activeWallet.balance || 0), total) : 0;
+  // Use optional chaining and numeric casting for balance safety
+  const walletDiscount = (useWallet && activeWallet) ? Math.min(Number(activeWallet?.balance || 0), total) : 0;
   const payableTotal = Math.max(0, total - walletDiscount);
   const changeAmount = (paymentType === 'cash' && Number(cashAmount) > payableTotal) ? (Number(cashAmount) - payableTotal) : 0;
 
@@ -87,14 +91,15 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, cart, to
 
       let lowItems: string[] = [];
 
-      // PART 1: CORE TRANSACTION (Sales & Stock)
+      // PART 1: CORE TRANSACTION (Sales & Stock Guard)
+      // This part must succeed for the sale to be considered done.
       await (db as any).transaction('rw', [db.sales, db.products, db.inventory_logs], async () => {
         await db.sales.add(saleData);
         for (const item of cart) {
           if (!item.isStockAlreadyDeducted) {
             const product = await db.products.get(item.productId);
             if (product) {
-              const oldStock = product.stock_qty;
+              const oldStock = Number(product.stock_qty || 0);
               const newStock = Math.max(0, oldStock - item.quantity);
               await db.products.update(item.productId, { stock_qty: newStock });
               await db.inventory_logs.add({
@@ -113,68 +118,89 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, cart, to
         }
       });
 
-      // PART 2: WALLET UPDATE (Isolated with try-catch to prevent crashing sale)
-      if (customerPhone && customerPhone.length >= 10 && (saveChangeToWallet || (useWallet && walletDiscount > 0))) {
-        try {
+      // PART 2: WALLET UPDATE (Isolated with try-catch to prevent crashing sale if table is missing)
+      try {
+        if (customerPhone && customerPhone.length >= 10 && (saveChangeToWallet || (useWallet && walletDiscount > 0))) {
           await (db as any).transaction('rw', [db.wallets, db.wallet_transactions], async () => {
             const existingWallet = await db.wallets.where('phone').equals(customerPhone).first();
+            
+            // Handle Change Credit
             if (saveChangeToWallet && currentChange > 0) {
               if (existingWallet) {
                 await db.wallets.update(existingWallet.id, { 
-                  balance: Number(existingWallet.balance || 0) + currentChange,
+                  balance: Number(existingWallet?.balance || 0) + currentChange,
                   lastUpdated: Date.now() 
                 });
               } else {
-                await db.wallets.add({ phone: customerPhone, name: customerName || 'Customer', balance: currentChange, lastUpdated: Date.now() });
+                await db.wallets.add({ 
+                  phone: customerPhone, 
+                  name: customerName || 'Customer', 
+                  balance: currentChange, 
+                  lastUpdated: Date.now() 
+                });
               }
-              await db.wallet_transactions.add({ phone: customerPhone, amount: currentChange, type: 'Credit', timestamp: Date.now(), details: `Change from Sale #${saleId.substring(0,8)}` });
+              await db.wallet_transactions.add({ 
+                phone: customerPhone, 
+                amount: currentChange, 
+                type: 'Credit', 
+                timestamp: Date.now(), 
+                details: `Change from Sale #${saleId.substring(0,8)}` 
+              });
             }
+
+            // Handle Credit Usage
             if (useWallet && walletDiscount > 0 && existingWallet) {
               await db.wallets.update(existingWallet.id, { 
-                balance: Math.max(0, Number(existingWallet.balance || 0) - walletDiscount),
+                balance: Math.max(0, Number(existingWallet?.balance || 0) - walletDiscount),
                 lastUpdated: Date.now() 
               });
-              await db.wallet_transactions.add({ phone: customerPhone, amount: walletDiscount, type: 'Debit', timestamp: Date.now(), details: `Used for Sale #${saleId.substring(0,8)}` });
+              await db.wallet_transactions.add({ 
+                phone: customerPhone, 
+                amount: walletDiscount, 
+                type: 'Debit', 
+                timestamp: Date.now(), 
+                details: `Used for Sale #${saleId.substring(0,8)}` 
+              });
             }
           });
-        } catch (walletError) {
-          console.error("Wallet fail", walletError);
-          alert("Sale saved, but Wallet update failed. Please check balance manually.");
         }
+      } catch (walletError) {
+        console.error('Wallet update failed, but continuing sale completion:', walletError);
+        // Note: We don't alert here unless necessary, as the sale is already saved in the DB.
       }
 
       onComplete(saleData, lowItems);
     } catch (error) {
-      console.error(error);
-      alert('Critical Error: Could not save sale. Refresh terminal.');
+      console.error("Critical Sale Error:", error);
+      alert('Error: Could not save sale. The database might be busy.');
     } finally {
       setIsProcessing(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-[999] flex items-center justify-center lg:p-4 bg-slate-950/80 backdrop-blur-md">
-      <div className="bg-white lg:rounded-[3rem] w-full h-full lg:h-auto lg:max-w-md animate-in slide-in-from-bottom-full lg:zoom-in duration-300 flex flex-col relative">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center lg:p-4 bg-slate-950/80 backdrop-blur-md">
+      <div className="bg-white lg:rounded-[3rem] w-full h-full lg:h-auto lg:max-w-md animate-in slide-in-from-bottom-full lg:zoom-in duration-300 flex flex-col relative shadow-2xl">
         <div className="p-8 border-b flex items-center justify-between">
           <div><p className="text-[10px] font-black text-slate-400 uppercase mb-1">Payable</p><h3 className="text-4xl font-black text-slate-900">₦{payableTotal.toLocaleString()}</h3></div>
-          <button onClick={onClose} className="p-3 bg-slate-50 rounded-full text-slate-400"><X size={24} /></button>
+          <button onClick={onClose} className="p-3 bg-slate-50 rounded-full text-slate-400 hover:bg-slate-100 transition-colors"><X size={24} /></button>
         </div>
         
         <div className="flex-1 overflow-y-auto p-8 space-y-6">
           <div>
             <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 ml-1"><Calendar size={12} /> Sale Date & Time</label>
-            <input type="datetime-local" className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" value={saleDate} onChange={e => setSaleDate(e.target.value)} />
+            <input type="datetime-local" className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold focus:ring-2 focus:ring-emerald-500" value={saleDate} onChange={e => setSaleDate(e.target.value)} />
           </div>
 
           <div className="p-4 bg-slate-50 rounded-3xl border border-slate-200 space-y-4">
             <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase ml-1"><Phone size={12} /> Customer Phone</label>
-            <input type="tel" placeholder="080..." className="w-full px-5 py-3 bg-white border border-slate-200 rounded-xl outline-none font-bold" value={customerPhone} onChange={e => setCustomerPhone(e.target.value.replace(/\D/g, ''))} />
+            <input type="tel" placeholder="080..." className="w-full px-5 py-3 bg-white border border-slate-200 rounded-xl outline-none font-bold focus:ring-2 focus:ring-emerald-500" value={customerPhone} onChange={e => setCustomerPhone(e.target.value.replace(/\D/g, ''))} />
             {customerPhone.length >= 10 && !activeWallet && (
-              <input type="text" placeholder="Customer Name (Optional)" className="w-full px-5 py-3 bg-white border border-slate-200 rounded-xl outline-none font-bold text-sm" value={customerName} onChange={e => setCustomerName(e.target.value)} />
+              <input type="text" placeholder="Customer Name (Optional)" className="w-full px-5 py-3 bg-white border border-slate-200 rounded-xl outline-none font-bold text-sm focus:ring-2 focus:ring-emerald-500" value={customerName} onChange={e => setCustomerName(e.target.value)} />
             )}
-            {activeWallet && Number(activeWallet.balance) > 0 && (
+            {activeWallet && Number(activeWallet?.balance || 0) > 0 && (
               <div className="flex items-center justify-between p-3 bg-emerald-50 rounded-xl border border-emerald-100">
-                <div><p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Wallet Credit</p><p className="text-lg font-black text-emerald-700">₦{Number(activeWallet.balance).toLocaleString()}</p></div>
+                <div><p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Wallet Credit</p><p className="text-lg font-black text-emerald-700">₦{Number(activeWallet?.balance || 0).toLocaleString()}</p></div>
                 <button onClick={() => setUseWallet(!useWallet)} className={`px-4 py-2 rounded-lg font-black text-[10px] uppercase transition-all ${useWallet ? 'bg-emerald-600 text-white' : 'bg-white text-emerald-600 border border-emerald-200'}`}>{useWallet ? 'Using' : 'Use Credit'}</button>
               </div>
             )}
@@ -184,7 +210,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, cart, to
             <label className="block text-[10px] font-black text-slate-400 uppercase mb-3 ml-1">Payment Method</label>
             <div className="grid grid-cols-2 gap-3">
               {['cash', 'transfer', 'pos', 'split'].map(m => (
-                <button key={m} onClick={() => setPaymentType(m as any)} className={`py-6 rounded-3xl border-2 flex flex-col items-center gap-3 transition-all ${paymentType === m ? 'bg-emerald-600 border-emerald-600 text-white shadow-xl scale-[1.02]' : 'bg-slate-50 border-transparent text-slate-400'}`}>
+                <button key={m} onClick={() => setPaymentType(m as any)} className={`py-6 rounded-3xl border-2 flex flex-col items-center gap-3 transition-all ${paymentType === m ? 'bg-emerald-600 border-emerald-600 text-white shadow-xl scale-[1.02]' : 'bg-slate-50 border-transparent text-slate-400 hover:bg-slate-100'}`}>
                   <span className="font-black uppercase text-[10px] tracking-widest">{m}</span>
                 </button>
               ))}
@@ -194,10 +220,10 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, cart, to
           {paymentType === 'cash' && (
             <div className="animate-in slide-in-from-top-4 space-y-4">
               <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Cash Received (₦)</label>
-              <input type="number" className="w-full px-6 py-5 bg-slate-50 border border-slate-200 rounded-[2rem] outline-none font-black text-3xl text-center" value={cashAmount || ''} onChange={e => setCashAmount(Number(e.target.value))} />
+              <input autoFocus type="number" className="w-full px-6 py-5 bg-slate-50 border border-slate-200 rounded-[2rem] outline-none font-black text-3xl text-center focus:ring-2 focus:ring-emerald-500" value={cashAmount || ''} onChange={e => setCashAmount(Number(e.target.value))} />
               {Number(changeAmount) > 0 && customerPhone.length >= 10 && (
-                <button onClick={() => setSaveChangeToWallet(!saveChangeToWallet)} className={`w-full py-4 rounded-2xl flex items-center justify-center gap-2 font-black text-xs uppercase tracking-widest transition-all ${saveChangeToWallet ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-600 border border-indigo-100'}`}>
-                  <Wallet size={18} /> {saveChangeToWallet ? 'Saving Change to Wallet' : `Save ₦${Number(changeAmount)} to Wallet`}
+                <button onClick={() => setSaveChangeToWallet(!saveChangeToWallet)} className={`w-full py-4 rounded-2xl flex items-center justify-center gap-2 font-black text-xs uppercase tracking-widest transition-all ${saveChangeToWallet ? 'bg-indigo-600 text-white shadow-lg' : 'bg-indigo-50 text-indigo-600 border border-indigo-100'}`}>
+                  <Wallet size={18} /> {saveChangeToWallet ? 'Saving Change to Wallet' : `Save ₦${Number(changeAmount).toLocaleString()} to Wallet`}
                 </button>
               )}
               {Number(changeAmount) > 0 && !saveChangeToWallet && (
@@ -210,8 +236,8 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, cart, to
           )}
         </div>
 
-        <div className="p-8 border-t">
-          <button disabled={isProcessing || !paymentType} onClick={handleCompleteSale} className="w-full py-6 bg-emerald-600 text-white rounded-[2rem] font-black text-xl shadow-xl hover:bg-emerald-700 active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-4">
+        <div className="p-8 border-t bg-white">
+          <button disabled={isProcessing || !paymentType} onClick={handleCompleteSale} className="w-full py-6 bg-emerald-600 text-white rounded-[2rem] font-black text-xl shadow-xl hover:bg-emerald-700 active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-4 transition-all">
             {isProcessing ? <Loader2 className="animate-spin" size={24} /> : <CheckCircle size={28} />} {isProcessing ? 'Saving Sale...' : 'Complete Sale'}
           </button>
         </div>

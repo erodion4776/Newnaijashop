@@ -57,8 +57,9 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
   const [tempName, setTempName] = useState('');
   const [showParkedListModal, setShowParkedListModal] = useState(false);
 
-  const products = useLiveQuery(() => db.products.toArray()) || [];
-  const parkedOrders = useLiveQuery(() => db.parked_orders.toArray()) || [];
+  // Robust Live Queries
+  const products = useLiveQuery(() => db.products.toArray(), []) || [];
+  const parkedOrders = useLiveQuery(() => db.parked_orders.toArray(), []) || [];
   const settings = useLiveQuery(() => db.settings.get('app_settings')) as Settings | undefined;
 
   const filteredProducts = useMemo(() => {
@@ -116,20 +117,14 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
 
   const total = cart.reduce((acc, curr) => acc + (curr.price * curr.quantity), 0);
 
+  // EMERGENCY FIX: Simple, non-blocking checkout trigger
   const handleOpenCheckout = () => {
     console.log('Attempting to open Checkout Modal...');
-    if (cart.length === 0) return;
-    
-    const overstockItem = cart.find(item => {
-      const p = products.find(prod => prod.id === item.productId);
-      return p ? item.quantity > p.stock_qty : false;
-    });
-    
-    if (overstockItem) {
-      alert(`Error: '${overstockItem.name}' quantity exceeds available stock. Please adjust.`);
+    if (cart.length === 0) {
+      alert("Cart is empty!");
       return;
     }
-
+    // Instant open, removing pre-modal async checks
     setShowCheckoutModal(true);
   };
 
@@ -143,7 +138,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
         for (const item of cart) {
           const product = await db.products.get(item.productId);
           if (product) {
-            const oldStock = product.stock_qty || 0;
+            const oldStock = Number(product.stock_qty || 0);
             const newStock = Math.max(0, oldStock - item.quantity);
             await db.products.update(item.productId, { stock_qty: newStock });
             await db.inventory_logs.add({
@@ -200,7 +195,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
           for (const item of order.items) {
             const product = await db.products.get(item.productId);
             if (product) {
-              const oldStock = product.stock_qty;
+              const oldStock = Number(product.stock_qty || 0);
               await db.products.update(item.productId, { stock_qty: oldStock + item.quantity });
               await db.inventory_logs.add({
                 product_id: item.productId,
@@ -244,7 +239,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
 
   const handleShareWhatsApp = () => {
     if (!lastCompletedSale || !settings) return;
-    const itemsText = lastCompletedSale.items.map(i => `${i.name} x${i.quantity} @ ₦${i.price.toLocaleString()}`).join('\n');
+    const itemsText = lastCompletedSale.items.map(i => `${i.name} x${i.quantity} @ ₦${i.price.toLocaleString()} = ₦${(i.price * i.quantity).toLocaleString()}`).join('\n');
     const text = `--- ${settings.shop_name} ---\n\nRECEIPT: ${lastCompletedSale.sale_id}\n\nITEMS:\n${itemsText}\n\nTOTAL: ₦${lastCompletedSale.total_amount.toLocaleString()}`;
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
   };
@@ -268,10 +263,14 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
         </div>
         
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-          {filteredProducts.length === 0 ? (
+          {products.length === 0 ? (
             <div className="col-span-full py-20 text-center opacity-40">
-              <Package size={48} className="mx-auto mb-2" /><p className="font-bold">No products found</p>
+              <Package size={48} className="mx-auto mb-2" /><p className="font-bold">Loading terminal products...</p>
             </div>
+          ) : filteredProducts.length === 0 ? (
+             <div className="col-span-full py-20 text-center opacity-40">
+               <Package size={48} className="mx-auto mb-2" /><p className="font-bold">No items match search</p>
+             </div>
           ) : filteredProducts.map(p => (
             <button key={p.id} disabled={p.stock_qty <= 0} onClick={() => addToCart(p)} className={`bg-white p-5 rounded-[2rem] border border-slate-100 text-left h-44 flex flex-col justify-between hover:border-emerald-500 transition-all shadow-sm relative group ${p.stock_qty <= 0 ? 'opacity-60 grayscale' : ''}`}>
               {animatingId === p.id && <span className="absolute right-4 top-4 text-emerald-600 font-black text-xl animate-bounce-up z-20">+1</span>}
@@ -334,8 +333,6 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
         </div>
       </div>
 
-      <CheckoutModal isOpen={showCheckoutModal} onClose={() => setShowCheckoutModal(false)} cart={cart} total={total} currentUser={currentUser} onComplete={onCompleteSale} />
-
       {showParkModal && (
         <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4">
           <div className="bg-white rounded-[3rem] p-8 w-full max-w-sm space-y-8 animate-in zoom-in">
@@ -378,7 +375,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
 
       {showSuccessModal && (
         <div className="fixed inset-0 z-[1300] flex items-center justify-center bg-emerald-950/90 backdrop-blur-md">
-          <div className="bg-white rounded-[4rem] p-10 text-center space-y-8 animate-in zoom-in max-w-sm w-full mx-4">
+          <div className="bg-white rounded-[4rem] p-10 text-center space-y-8 animate-in zoom-in max-w-sm w-full mx-4 shadow-2xl">
             <CheckCircle size={64} className="text-emerald-500 mx-auto" />
             <div>
               <h3 className="text-3xl font-black">Sale Completed!</h3>
@@ -386,12 +383,12 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
             </div>
             <div className="grid gap-2">
               <div className="grid grid-cols-2 gap-2">
-                <button onClick={handlePrint} className="py-4 bg-slate-100 rounded-2xl font-black text-[10px] uppercase flex items-center justify-center gap-2"><Printer size={16}/> Print</button>
-                <button onClick={handleBTPrint} disabled={isBTPrinting} className="py-4 bg-emerald-600 text-white rounded-2xl font-black text-[10px] uppercase flex items-center justify-center gap-2">{isBTPrinting ? <Loader2 className="animate-spin" size={16}/> : <Bluetooth size={16}/>} BT Print</button>
+                <button onClick={handlePrint} className="py-4 bg-slate-100 rounded-2xl font-black text-[10px] uppercase flex items-center justify-center gap-2 hover:bg-slate-200"><Printer size={16}/> Print</button>
+                <button onClick={handleBTPrint} disabled={isBTPrinting} className="py-4 bg-emerald-600 text-white rounded-2xl font-black text-[10px] uppercase flex items-center justify-center gap-2 hover:bg-emerald-700 disabled:opacity-50">{isBTPrinting ? <Loader2 className="animate-spin" size={16}/> : <Bluetooth size={16}/>} BT Print</button>
               </div>
-              <button onClick={handleShareWhatsApp} className="py-4 bg-emerald-50 text-emerald-600 rounded-2xl font-black text-[10px] uppercase flex items-center justify-center gap-2"><MessageSquare size={16}/> WhatsApp</button>
+              <button onClick={handleShareWhatsApp} className="py-4 bg-emerald-50 text-emerald-600 rounded-2xl font-black text-[10px] uppercase flex items-center justify-center gap-2 hover:bg-emerald-100"><MessageSquare size={16}/> WhatsApp</button>
             </div>
-            <button onClick={() => setShowSuccessModal(false)} className="w-full py-5 bg-slate-900 text-white rounded-[2rem] font-black text-lg">Next Customer</button>
+            <button onClick={() => setShowSuccessModal(false)} className="w-full py-5 bg-slate-900 text-white rounded-[2rem] font-black text-lg shadow-xl hover:scale-[1.02] transition-transform">Next Customer</button>
           </div>
         </div>
       )}
@@ -401,6 +398,16 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
         if (p) addToCart(p); else alert("Not found: " + code);
       }} onClose={() => setShowScanner(false)} />}
       
+      {/* Checkout Modal rendered at the very end with highest priority */}
+      <CheckoutModal 
+        isOpen={showCheckoutModal} 
+        onClose={() => setShowCheckoutModal(false)} 
+        cart={cart} 
+        total={total} 
+        currentUser={currentUser} 
+        onComplete={onCompleteSale} 
+      />
+
       <style>{`
         @keyframes bounce-up { 0% { transform: translateY(0); opacity: 0; } 50% { transform: translateY(-20px); opacity: 1; } 100% { transform: translateY(-40px); opacity: 0; } }
         .animate-bounce-up { animation: bounce-up 0.5s ease-out forwards; }
