@@ -85,20 +85,25 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
   const [tempName, setTempName] = useState('');
   const [showParkedListModal, setShowParkedListModal] = useState(false);
 
-  const products = useLiveQuery(() => db.products.toArray());
-  const parkedOrders = useLiveQuery(() => db.parked_orders.toArray()) || [];
+  // useLiveQuery - robust check for db readiness
+  const products = useLiveQuery(() => db.products.toArray(), []) || [];
+  const parkedOrders = useLiveQuery(() => db.parked_orders.toArray(), []) || [];
   const settings = useLiveQuery(() => db.settings.get('app_settings')) as Settings | undefined;
 
   // Lookup wallet when phone changes
   useEffect(() => {
     const lookup = async () => {
-      if (customerPhone.length >= 10) {
-        const wallet = await db.wallets.where('phone').equals(customerPhone).first();
-        setActiveWallet(wallet || null);
-        if (wallet?.name) setCustomerName(wallet.name);
-      } else {
-        setActiveWallet(null);
-        setUseWallet(false);
+      try {
+        if (customerPhone.length >= 10 && db.wallets) {
+          const wallet = await db.wallets.where('phone').equals(customerPhone).first();
+          setActiveWallet(wallet || null);
+          if (wallet?.name) setCustomerName(wallet.name);
+        } else {
+          setActiveWallet(null);
+          setUseWallet(false);
+        }
+      } catch (e) {
+        console.error("Wallet lookup failed", e);
       }
     };
     lookup();
@@ -174,7 +179,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
   };
 
   const total = cart.reduce((acc, curr) => acc + (curr.price * curr.quantity), 0);
-  const walletDiscount = useWallet && activeWallet ? Math.min(activeWallet.balance, total) : 0;
+  const walletDiscount = (useWallet && activeWallet) ? Math.min(Number(activeWallet.balance), total) : 0;
   const payableTotal = Math.max(0, total - walletDiscount);
   const changeAmount = (paymentType === 'cash' && Number(cashAmount) > payableTotal) ? (Number(cashAmount) - payableTotal) : 0;
 
@@ -207,7 +212,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
     e.preventDefault();
     if (cart.length === 0 || isProcessing) return;
     setIsProcessing(true);
-    const customerName = tempName.trim() || 'Quick Order';
+    const customerNameVal = tempName.trim() || 'Quick Order';
     try {
       await (db as any).transaction('rw', [db.products, db.parked_orders, db.inventory_logs], async () => {
         for (const item of cart) {
@@ -224,12 +229,12 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
               new_stock: newStock,
               type: 'Adjustment',
               timestamp: Date.now(),
-              performed_by: `Reserved for ${customerName}`
+              performed_by: `Reserved for ${customerNameVal}`
             });
           }
         }
         await db.parked_orders.add({
-          customerName: customerName,
+          customerName: customerNameVal,
           items: cart.map(item => ({ ...item, isStockAlreadyDeducted: true })),
           total: total,
           staffId: currentUser?.id?.toString() || '0',
@@ -326,57 +331,10 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
 
       let lowItems: string[] = [];
 
-      await (db as any).transaction('rw', [db.sales, db.products, db.inventory_logs, db.wallets, db.wallet_transactions], async () => {
+      // PART 1: CORE SALE & STOCK TRANSACTION
+      await (db as any).transaction('rw', [db.sales, db.products, db.inventory_logs], async () => {
         await db.sales.add(saleData);
 
-        // Process Wallet logic specifically requested
-        if (customerPhone && customerPhone.length >= 10) {
-          const existingWallet = await db.wallets.where('phone').equals(customerPhone).first();
-          
-          // 1. Logic for Saving Change to Wallet
-          if (saveChangeToWallet && currentChange > 0) {
-            if (existingWallet) {
-              await db.wallets.update(existingWallet.id, { 
-                balance: Number(existingWallet.balance) + currentChange,
-                lastUpdated: Date.now() 
-              });
-            } else {
-              await db.wallets.add({ 
-                phone: customerPhone, 
-                name: customerName || 'Customer', 
-                balance: currentChange, 
-                lastUpdated: Date.now() 
-              });
-            }
-            // Log Credit Transaction
-            await db.wallet_transactions.add({
-              phone: customerPhone,
-              amount: currentChange,
-              type: 'Credit',
-              timestamp: Date.now(),
-              details: `Change from Sale #${saleId.substring(0,8)}`
-            });
-          }
-
-          // 2. Logic for using existing wallet credit
-          if (useWallet && walletDiscount > 0 && existingWallet) {
-             const newBalance = Number(existingWallet.balance) - walletDiscount;
-             await db.wallets.update(existingWallet.id, { 
-                balance: Math.max(0, newBalance),
-                lastUpdated: Date.now() 
-              });
-              // Log Debit Transaction
-              await db.wallet_transactions.add({
-                phone: customerPhone,
-                amount: walletDiscount,
-                type: 'Debit',
-                timestamp: Date.now(),
-                details: `Used for Sale #${saleId.substring(0,8)}`
-              });
-          }
-        }
-
-        // 3. Stock Deduction
         for (const item of cart) {
           if (!item.isStockAlreadyDeducted) {
             const product = await db.products.get(item.productId);
@@ -400,6 +358,58 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
         }
       });
 
+      // PART 2: INDEPENDENT WALLET UPDATE (If it fails, sale is already saved)
+      if (customerPhone && customerPhone.length >= 10 && (saveChangeToWallet || (useWallet && walletDiscount > 0))) {
+        try {
+          await (db as any).transaction('rw', [db.wallets, db.wallet_transactions], async () => {
+            const existingWallet = await db.wallets.where('phone').equals(customerPhone).first();
+            
+            // Handle Credit (Change)
+            if (saveChangeToWallet && currentChange > 0) {
+              if (existingWallet) {
+                await db.wallets.update(existingWallet.id, { 
+                  balance: Number(existingWallet.balance) + currentChange,
+                  lastUpdated: Date.now() 
+                });
+              } else {
+                await db.wallets.add({ 
+                  phone: customerPhone, 
+                  name: customerName || 'Customer', 
+                  balance: currentChange, 
+                  lastUpdated: Date.now() 
+                });
+              }
+              await db.wallet_transactions.add({
+                phone: customerPhone,
+                amount: currentChange,
+                type: 'Credit',
+                timestamp: Date.now(),
+                details: `Change from Sale #${saleId.substring(0,8)}`
+              });
+            }
+
+            // Handle Debit (Usage)
+            if (useWallet && walletDiscount > 0 && existingWallet) {
+               const newBalance = Number(existingWallet.balance) - walletDiscount;
+               await db.wallets.update(existingWallet.id, { 
+                  balance: Math.max(0, newBalance),
+                  lastUpdated: Date.now() 
+                });
+                await db.wallet_transactions.add({
+                  phone: customerPhone,
+                  amount: walletDiscount,
+                  type: 'Debit',
+                  timestamp: Date.now(),
+                  details: `Used for Sale #${saleId.substring(0,8)}`
+                });
+            }
+          });
+        } catch (walletError) {
+          console.error("Wallet update failed", walletError);
+          alert("Sale saved, but Wallet update failed. Please check balance manually.");
+        }
+      }
+
       setLastCompletedSale(saleData);
       setCart([]);
       setCashAmount(0);
@@ -419,7 +429,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
       }
     } catch (error: any) {
       console.error(error);
-      alert('Database Busy. Please try again.');
+      alert('Critical Error: Could not save sale. Please refresh terminal.');
     } finally {
       setIsProcessing(false);
     }
@@ -477,7 +487,12 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
           </div>
           
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-             {filteredProducts.map(p => (
+             {filteredProducts.length === 0 ? (
+               <div className="col-span-full py-20 text-center opacity-40">
+                  <Package size={48} className="mx-auto mb-2" />
+                  <p className="font-bold">No products found</p>
+               </div>
+             ) : filteredProducts.map(p => (
                <button key={p.id} disabled={p.stock_qty <= 0} onClick={() => addToCart(p)} className={`bg-white p-5 rounded-[2rem] border border-slate-100 text-left h-44 flex flex-col justify-between hover:border-emerald-500 transition-all shadow-sm relative group ${p.stock_qty <= 0 ? 'opacity-60 grayscale' : ''}`}>
                   {animatingId === p.id && <span className="absolute right-4 top-4 text-emerald-600 font-black text-xl animate-bounce-up z-20">+1</span>}
                   <div>
@@ -693,11 +708,11 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
                          onChange={e => setCustomerName(e.target.value)}
                        />
                     )}
-                    {activeWallet && activeWallet.balance > 0 && (
+                    {activeWallet && Number(activeWallet.balance) > 0 && (
                       <div className="flex items-center justify-between p-3 bg-emerald-50 rounded-xl border border-emerald-100">
                         <div>
                           <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Wallet Credit</p>
-                          <p className="text-lg font-black text-emerald-700">₦{activeWallet.balance.toLocaleString()}</p>
+                          <p className="text-lg font-black text-emerald-700">₦{Number(activeWallet.balance).toLocaleString()}</p>
                         </div>
                         <button 
                           onClick={() => setUseWallet(!useWallet)}

@@ -13,14 +13,15 @@ export class NaijaShopDB extends Dexie {
   inventory_logs!: Table<InventoryLog>;
   expenses!: Table<Expense>;
   audit_trail!: Table<AuditEntry>;
-  customer_wallets!: Table<CustomerWallet>; // Legacy table
+  customer_wallets!: Table<CustomerWallet>; // Legacy
   wallets!: Table<any>; // Requested 'wallets' table: ++id, &phone, name, balance, lastUpdated
   wallet_transactions!: Table<WalletTransaction>;
 
   constructor() {
     super('NaijaShopDB');
     
-    (this as any).version(21).stores({
+    // Version 22 ensures all current and requested tables are active
+    (this as any).version(22).stores({
       products: '++id, name, category, barcode',
       sales: '++id, sale_id, timestamp, payment_method, staff_name',
       debts: '++id, customer_name, status',
