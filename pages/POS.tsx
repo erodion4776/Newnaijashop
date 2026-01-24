@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
 import { 
@@ -31,9 +31,11 @@ import {
   MessageSquare,
   Bluetooth,
   Edit3,
-  Calendar
+  Calendar,
+  Wallet,
+  Phone
 } from 'lucide-react';
-import { Product, SaleItem, ParkedOrder, View, Staff, Sale, Settings } from '../types';
+import { Product, SaleItem, ParkedOrder, View, Staff, Sale, Settings, CustomerWallet } from '../types';
 import BarcodeScanner from '../components/BarcodeScanner';
 import NotificationService from '../services/NotificationService';
 import BluetoothPrintService from '../services/BluetoothPrintService';
@@ -60,6 +62,12 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
   const [animatingId, setAnimatingId] = useState<number | null>(null);
   const [isBTPrinting, setIsBTPrinting] = useState(false);
 
+  // Customer Wallet State
+  const [customerPhone, setCustomerPhone] = useState<string>('');
+  const [activeWallet, setActiveWallet] = useState<CustomerWallet | null>(null);
+  const [useWallet, setUseWallet] = useState(false);
+  const [saveChangeToWallet, setSaveChangeToWallet] = useState(false);
+
   // Backdating State
   const [saleDate, setSaleDate] = useState<string>(() => {
     const now = new Date();
@@ -80,6 +88,20 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
   const products = useLiveQuery(() => db.products.toArray());
   const parkedOrders = useLiveQuery(() => db.parked_orders.toArray()) || [];
   const settings = useLiveQuery(() => db.settings.get('app_settings')) as Settings | undefined;
+
+  // Lookup wallet when phone changes
+  useEffect(() => {
+    const lookup = async () => {
+      if (customerPhone.length >= 10) {
+        const wallet = await db.customer_wallets.where('phone').equals(customerPhone).first();
+        setActiveWallet(wallet || null);
+      } else {
+        setActiveWallet(null);
+        setUseWallet(false);
+      }
+    };
+    lookup();
+  }, [customerPhone]);
 
   const filteredProducts = useMemo(() => {
     if (!products) return [];
@@ -137,7 +159,6 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
     const newPrice = Math.round(Number(tempPrice) / 50) * 50; // Naija Rounding
 
     if (oldPrice !== newPrice) {
-      // Logic: Log Price Change to Audit Trail
       await db.audit_trail.add({
         action: 'Cart Price Changed',
         details: `Adjusted '${item.name}' from ₦${oldPrice.toLocaleString()} to ₦${newPrice.toLocaleString()}`,
@@ -154,6 +175,9 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
   };
 
   const total = cart.reduce((acc, curr) => acc + (curr.price * curr.quantity), 0);
+  const walletDiscount = useWallet && activeWallet ? Math.min(activeWallet.balance, total) : 0;
+  const payableTotal = Math.max(0, total - walletDiscount);
+  const changeAmount = (paymentType === 'cash' && cashAmount > payableTotal) ? (cashAmount - payableTotal) : 0;
 
   const handleOpenCheckout = () => {
     if (cart.length === 0) return;
@@ -165,33 +189,34 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
       alert(`Error: '${overstockItem.name}' quantity exceeds available stock. Please adjust.`);
       return;
     }
-    // Reset date to current whenever checkout is opened
     const now = new Date();
     const offset = now.getTimezoneOffset() * 60000;
     setSaleDate(new Date(now.getTime() - offset).toISOString().slice(0, 16));
+    
+    // Reset Checkout State
+    setCustomerPhone('');
+    setActiveWallet(null);
+    setUseWallet(false);
+    setSaveChangeToWallet(false);
+    setCashAmount(0);
+    setPaymentType(null);
+
     setShowCheckoutModal(true);
   };
 
   const handleParkSale = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (cart.length === 0 || isProcessing) {
-      return;
-    }
-    
+    if (cart.length === 0 || isProcessing) return;
     setIsProcessing(true);
     const customerName = tempName.trim() || 'Quick Order';
-
     try {
-      // Fix: Cast db to any to access transaction method (fixes reported error on line 135)
       await (db as any).transaction('rw', [db.products, db.parked_orders, db.inventory_logs], async () => {
         for (const item of cart) {
           const product = await db.products.get(item.productId);
           if (product) {
             const oldStock = product.stock_qty || 0;
             const newStock = Math.max(0, oldStock - item.quantity);
-            
             await db.products.update(item.productId, { stock_qty: newStock });
-            
             await db.inventory_logs.add({
               product_id: item.productId,
               product_name: product.name,
@@ -204,7 +229,6 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
             });
           }
         }
-
         await db.parked_orders.add({
           customerName: customerName,
           items: cart.map(item => ({ ...item, isStockAlreadyDeducted: true })),
@@ -213,8 +237,6 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
           timestamp: Date.now()
         });
       });
-
-      // Atomic UI Cleanup
       setCart([]);
       setTempName('');
       setShowParkModal(false);
@@ -234,11 +256,9 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
         alert("Order not found!");
         return;
       }
-
       if (cart.length > 0) {
         if (!confirm("Your current cart is not empty. Resuming this order will overwrite your current cart. Continue?")) return;
       }
-
       setCart(order.items.map(item => ({ ...item, isStockAlreadyDeducted: true })));
       await db.parked_orders.delete(orderId);
       setShowParkedListModal(false);
@@ -250,9 +270,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
 
   const handleCancelParkedOrder = async (orderId: number) => {
     if(!confirm("Delete this parked order? This will return the items to stock.")) return;
-
     try {
-      // Fix: Cast db to any to access transaction method (fixes reported error on line 204)
       await (db as any).transaction('rw', [db.products, db.parked_orders, db.inventory_logs], async () => {
         const order = await db.parked_orders.get(orderId);
         if (order) {
@@ -261,9 +279,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
             if (product) {
               const oldStock = product.stock_qty || 0;
               const newStock = oldStock + item.quantity;
-              
               await db.products.update(item.productId, { stock_qty: newStock });
-              
               await db.inventory_logs.add({
                 product_id: item.productId,
                 product_name: product.name,
@@ -290,7 +306,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
     
     try {
       const saleId = crypto.randomUUID ? crypto.randomUUID() : `SAL-${Date.now()}`;
-      const saleTimestamp = new Date(saleDate).getTime(); // Use selected date
+      const saleTimestamp = new Date(saleDate).getTime();
       
       const saleData: Sale = {
         sale_id: saleId,
@@ -298,7 +314,10 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
         total_amount: total,
         subtotal: total,
         payment_method: paymentType === 'split' ? 'split' : paymentType,
-        cash_amount: paymentType === 'split' ? cashAmount : (paymentType === 'cash' ? total : 0),
+        cash_amount: paymentType === 'split' ? cashAmount : (paymentType === 'cash' ? (saveChangeToWallet ? payableTotal : cashAmount) : 0),
+        wallet_amount_used: walletDiscount,
+        wallet_amount_credited: saveChangeToWallet ? changeAmount : 0,
+        customer_phone: customerPhone || undefined,
         staff_id: currentUser?.id?.toString() || '0',
         staff_name: currentUser?.name || 'Staff',
         timestamp: saleTimestamp,
@@ -307,22 +326,32 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
 
       let lowItems: string[] = [];
 
-      // Fix: Cast db to any to access transaction method (fixes reported error on line 256)
-      await (db as any).transaction('rw', [db.sales, db.products, db.inventory_logs], async () => {
-        // 1. Add the Sale Record
+      await (db as any).transaction('rw', [db.sales, db.products, db.inventory_logs, db.customer_wallets], async () => {
         await db.sales.add(saleData);
 
-        // 2. Process Items and Deduct Stock if needed
+        // Process Wallet
+        if (customerPhone) {
+          const wallet = await db.customer_wallets.where('phone').equals(customerPhone).first();
+          let currentBalance = wallet?.balance || 0;
+          
+          if (useWallet) currentBalance -= walletDiscount;
+          if (saveChangeToWallet) currentBalance += changeAmount;
+
+          if (wallet) {
+            await db.customer_wallets.update(wallet.id!, { balance: currentBalance, last_updated: Date.now() });
+          } else {
+            await db.customer_wallets.add({ phone: customerPhone, balance: currentBalance, last_updated: Date.now() });
+          }
+        }
+
+        // Stock Deduction
         for (const item of cart) {
-          // If item was resumed from park, stock is already deducted
           if (!item.isStockAlreadyDeducted) {
             const product = await db.products.get(item.productId);
             if (product) {
               const oldStock = product.stock_qty;
               const newStock = Math.max(0, oldStock - item.quantity);
-              
               await db.products.update(item.productId, { stock_qty: newStock });
-              
               await db.inventory_logs.add({
                 product_id: item.productId,
                 product_name: product.name,
@@ -330,23 +359,23 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
                 old_stock: oldStock,
                 new_stock: newStock,
                 type: 'Sale',
-                timestamp: Date.now(), // Logs always use actual execution time
+                timestamp: Date.now(),
                 performed_by: currentUser?.name || 'Staff'
               });
-              
-              if (newStock <= (product.low_stock_threshold || 5)) {
-                lowItems.push(product.name);
-              }
+              if (newStock <= (product.low_stock_threshold || 5)) lowItems.push(product.name);
             }
           }
         }
       });
 
-      // Atomic UI Success Transitions
       setLastCompletedSale(saleData);
-      setCart([]); // Clear state immediately after transaction
+      setCart([]);
       setCashAmount(0);
       setPaymentType(null);
+      setCustomerPhone('');
+      setActiveWallet(null);
+      setUseWallet(false);
+      setSaveChangeToWallet(false);
       setShowCheckoutModal(false);
       
       if (lowItems.length > 0) {
@@ -626,7 +655,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
          <div className="fixed inset-0 z-[1200] flex items-center justify-center lg:p-4 bg-slate-950/80 backdrop-blur-md">
             <div className="bg-white lg:rounded-[3rem] w-full h-full lg:h-auto lg:max-w-md animate-in slide-in-from-bottom-full lg:zoom-in duration-300 flex flex-col relative">
                <div className="p-8 border-b flex items-center justify-between">
-                 <div><p className="text-[10px] font-black text-slate-400 uppercase mb-1">Payable</p><h3 className="text-4xl font-black text-slate-900">₦{total.toLocaleString()}</h3></div>
+                 <div><p className="text-[10px] font-black text-slate-400 uppercase mb-1">Payable</p><h3 className="text-4xl font-black text-slate-900">₦{payableTotal.toLocaleString()}</h3></div>
                  <button onClick={() => setShowCheckoutModal(false)} className="p-3 bg-slate-50 rounded-full text-slate-400"><X size={24} /></button>
                </div>
                <div className="flex-1 overflow-y-auto p-8 space-y-6">
@@ -642,9 +671,37 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
                       onChange={e => setSaleDate(e.target.value)}
                     />
                     {new Date(saleDate).getTime() < Date.now() - 60000 && (
-                      <p className="text-[10px] font-black text-amber-600 uppercase mt-2 flex items-center gap-1 leading-tight animate-in fade-in slide-in-from-top-1">
+                      <p className="text-[10px] font-black text-amber-600 uppercase mt-2 flex items-center gap-1 leading-tight">
                         <AlertTriangle size={10} /> Note: You are recording a historical sale.
                       </p>
+                    )}
+                 </div>
+
+                 {/* Customer Wallet Section */}
+                 <div className="p-4 bg-slate-50 rounded-3xl border border-slate-200 space-y-4">
+                    <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase ml-1">
+                      <Phone size={12} /> Customer Phone
+                    </label>
+                    <input 
+                      type="tel" 
+                      placeholder="080..."
+                      className="w-full px-5 py-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500 font-bold" 
+                      value={customerPhone}
+                      onChange={e => setCustomerPhone(e.target.value.replace(/\D/g, ''))}
+                    />
+                    {activeWallet && activeWallet.balance > 0 && (
+                      <div className="flex items-center justify-between p-3 bg-emerald-50 rounded-xl border border-emerald-100">
+                        <div>
+                          <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Wallet Credit</p>
+                          <p className="text-lg font-black text-emerald-700">₦{activeWallet.balance.toLocaleString()}</p>
+                        </div>
+                        <button 
+                          onClick={() => setUseWallet(!useWallet)}
+                          className={`px-4 py-2 rounded-lg font-black text-[10px] uppercase transition-all ${useWallet ? 'bg-emerald-600 text-white' : 'bg-white text-emerald-600 border border-emerald-200'}`}
+                        >
+                          {useWallet ? 'Using' : 'Use Credit'}
+                        </button>
+                      </div>
                     )}
                  </div>
 
@@ -658,6 +715,32 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
                       ))}
                     </div>
                  </div>
+
+                 {paymentType === 'cash' && (
+                   <div className="animate-in slide-in-from-top-4 space-y-4">
+                      <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Cash Received (₦)</label>
+                      <input 
+                        type="number" 
+                        className="w-full px-6 py-5 bg-slate-50 border border-slate-200 rounded-[2rem] outline-none focus:ring-2 focus:ring-emerald-500 font-black text-3xl text-center" 
+                        value={cashAmount || ''}
+                        onChange={e => setCashAmount(Number(e.target.value))}
+                      />
+                      {changeAmount > 0 && customerPhone.length >= 10 && (
+                        <button 
+                          onClick={() => setSaveChangeToWallet(!saveChangeToWallet)}
+                          className={`w-full py-4 rounded-2xl flex items-center justify-center gap-2 font-black text-xs uppercase tracking-widest transition-all ${saveChangeToWallet ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-600 border border-indigo-100'}`}
+                        >
+                          <Wallet size={18} /> {saveChangeToWallet ? 'Saving Change to Wallet' : `Save ₦${changeAmount} to Wallet`}
+                        </button>
+                      )}
+                      {changeAmount > 0 && !saveChangeToWallet && (
+                        <div className="text-center p-3 bg-amber-50 rounded-xl border border-amber-100">
+                          <p className="text-[10px] font-black text-amber-600 uppercase">Change Due</p>
+                          <p className="text-2xl font-black text-amber-700">₦{changeAmount.toLocaleString()}</p>
+                        </div>
+                      )}
+                   </div>
+                 )}
                </div>
                <div className="p-8 border-t">
                  <button disabled={isProcessing || !paymentType} onClick={handleCompleteSale} className="w-full py-6 bg-emerald-600 text-white rounded-[2rem] font-black text-xl shadow-xl hover:bg-emerald-700 active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-4">
@@ -677,6 +760,9 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
                <div className="space-y-3">
                  <h3 className="text-3xl font-black text-slate-900">Done & Dusted!</h3>
                  <p className="text-slate-500 font-medium">₦{lastCompletedSale?.total_amount.toLocaleString()} logged.</p>
+                 {lastCompletedSale?.wallet_amount_credited && lastCompletedSale.wallet_amount_credited > 0 && (
+                   <p className="text-indigo-600 font-black text-xs uppercase tracking-widest">₦{lastCompletedSale.wallet_amount_credited} saved to customer wallet</p>
+                 )}
                </div>
                
                <div className="grid grid-cols-1 gap-2">
@@ -726,7 +812,11 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
              ))}
           </div>
           <div className="space-y-1 text-sm font-black mb-6">
-             <div className="flex justify-between"><span>TOTAL</span><span>₦{lastCompletedSale?.total_amount.toLocaleString()}</span></div>
+             <div className="flex justify-between"><span>SUBTOTAL</span><span>₦{lastCompletedSale?.total_amount.toLocaleString()}</span></div>
+             {lastCompletedSale?.wallet_amount_used && lastCompletedSale.wallet_amount_used > 0 && (
+               <div className="flex justify-between text-[10px]"><span>WALLET CREDIT USED</span><span>-₦{lastCompletedSale.wallet_amount_used.toLocaleString()}</span></div>
+             )}
+             <div className="flex justify-between"><span>TOTAL PAID</span><span>₦{(lastCompletedSale?.total_amount || 0) - (lastCompletedSale?.wallet_amount_used || 0)}.toLocaleString()</span></div>
              <div className="flex justify-between text-[10px] font-bold"><span>PAYMENT</span><span className="uppercase">{lastCompletedSale?.payment_method}</span></div>
           </div>
           <div className="text-center border-t border-dashed border-slate-300 pt-4 space-y-2">

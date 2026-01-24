@@ -1,7 +1,7 @@
 
 import { Dexie } from 'dexie';
 import type { Table } from 'dexie';
-import { Product, Sale, Debt, Settings, ParkedOrder, InventoryLog, Staff, Expense, AuditEntry } from '../types';
+import { Product, Sale, Debt, Settings, ParkedOrder, InventoryLog, Staff, Expense, AuditEntry, CustomerWallet } from '../types';
 
 export class NaijaShopDB extends Dexie {
   products!: Table<Product>;
@@ -13,11 +13,12 @@ export class NaijaShopDB extends Dexie {
   inventory_logs!: Table<InventoryLog>;
   expenses!: Table<Expense>;
   audit_trail!: Table<AuditEntry>;
+  customer_wallets!: Table<CustomerWallet>;
 
   constructor() {
     super('NaijaShopDB');
     
-    (this as any).version(16).stores({
+    (this as any).version(17).stores({
       products: '++id, name, category, barcode',
       sales: '++id, sale_id, timestamp, payment_method, staff_name',
       debts: '++id, customer_name, status',
@@ -26,7 +27,8 @@ export class NaijaShopDB extends Dexie {
       parked_orders: '++id, customerName, timestamp',
       inventory_logs: '++id, product_id, product_name, type, timestamp',
       expenses: '++id, category, timestamp',
-      audit_trail: '++id, action, staff_name, timestamp'
+      audit_trail: '++id, action, staff_name, timestamp',
+      customer_wallets: '++id, phone, balance'
     });
   }
 }

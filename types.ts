@@ -49,12 +49,22 @@ export interface Sale {
   payment_method: 'cash' | 'transfer' | 'pos' | 'split' | 'Bank Transfer';
   cash_amount?: number;
   debt_amount?: number;
+  wallet_amount_used?: number;
+  wallet_amount_credited?: number;
+  customer_phone?: string;
   staff_id: string;
   staff_name: string;
   timestamp: number;
   confirmed_by?: string;
   verification_timestamp?: number;
   sync_status?: 'pending' | 'synced' | 'verified';
+}
+
+export interface CustomerWallet {
+  id?: number;
+  phone: string;
+  balance: number;
+  last_updated: number;
 }
 
 export interface Expense {
@@ -108,6 +118,6 @@ export interface Settings {
   last_synced_timestamp?: number;
 }
 
-export type View = 'dashboard' | 'pos' | 'inventory' | 'inventory-ledger' | 'debts' | 'settings' | 'ai-insights' | 'staff-management' | 'activity-log' | 'security-backups' | 'transfer-station' | 'expense-tracker' | 'audit-trail';
+export type View = 'dashboard' | 'pos' | 'inventory' | 'inventory-ledger' | 'debts' | 'settings' | 'ai-insights' | 'staff-management' | 'activity-log' | 'security-backups' | 'transfer-station' | 'expense-tracker' | 'audit-trail' | 'customer-wallets';
 
 export type SyncStatus = 'offline' | 'connecting' | 'live' | 'reconnecting' | 'failed';
