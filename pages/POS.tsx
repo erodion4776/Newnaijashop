@@ -64,7 +64,8 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
 
   // Customer Wallet State
   const [customerPhone, setCustomerPhone] = useState<string>('');
-  const [activeWallet, setActiveWallet] = useState<CustomerWallet | null>(null);
+  const [customerName, setCustomerName] = useState<string>('');
+  const [activeWallet, setActiveWallet] = useState<any | null>(null);
   const [useWallet, setUseWallet] = useState(false);
   const [saveChangeToWallet, setSaveChangeToWallet] = useState(false);
 
@@ -84,7 +85,6 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
   const [tempName, setTempName] = useState('');
   const [showParkedListModal, setShowParkedListModal] = useState(false);
 
-  // useLiveQuery ensures that changes made in Inventory reflect here immediately
   const products = useLiveQuery(() => db.products.toArray());
   const parkedOrders = useLiveQuery(() => db.parked_orders.toArray()) || [];
   const settings = useLiveQuery(() => db.settings.get('app_settings')) as Settings | undefined;
@@ -93,8 +93,9 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
   useEffect(() => {
     const lookup = async () => {
       if (customerPhone.length >= 10) {
-        const wallet = await db.customer_wallets.where('phone').equals(customerPhone).first();
+        const wallet = await db.wallets.where('phone').equals(customerPhone).first();
         setActiveWallet(wallet || null);
+        if (wallet?.name) setCustomerName(wallet.name);
       } else {
         setActiveWallet(null);
         setUseWallet(false);
@@ -114,7 +115,6 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
 
   const addToCart = (product: Product) => {
     const inCart = cart.find(item => item.productId === product.id)?.quantity || 0;
-    // Stock Guard
     if (inCart + 1 > product.stock_qty) {
       alert(`Oga, only ${product.stock_qty} left in stock!`);
       return;
@@ -145,7 +145,6 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
     }).filter(item => item.quantity > 0));
   };
 
-  // Price Editing Logic
   const handlePriceClick = (item: SaleItem) => {
     setEditingPriceId(item.productId);
     setTempPrice(item.price.toString());
@@ -156,7 +155,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
     if (!item) return;
 
     const oldPrice = item.price;
-    const newPrice = Math.round(Number(tempPrice) / 50) * 50; // Naija Rounding
+    const newPrice = Math.round(Number(tempPrice) / 50) * 50;
 
     if (oldPrice !== newPrice) {
       await db.audit_trail.add({
@@ -194,6 +193,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
     setSaleDate(new Date(now.getTime() - offset).toISOString().slice(0, 16));
     
     setCustomerPhone('');
+    setCustomerName('');
     setActiveWallet(null);
     setUseWallet(false);
     setSaveChangeToWallet(false);
@@ -326,29 +326,29 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
 
       let lowItems: string[] = [];
 
-      await (db as any).transaction('rw', [db.sales, db.products, db.inventory_logs, db.customer_wallets, db.wallet_transactions], async () => {
+      await (db as any).transaction('rw', [db.sales, db.products, db.inventory_logs, db.wallets, db.wallet_transactions], async () => {
         await db.sales.add(saleData);
 
-        // Process Wallet Update and Transactions
+        // Process Wallet logic specifically requested
         if (customerPhone && customerPhone.length >= 10) {
-          const wallet = await db.customer_wallets.where('phone').equals(customerPhone).first();
-          let currentBalance = wallet?.balance || 0;
+          const existingWallet = await db.wallets.where('phone').equals(customerPhone).first();
           
-          // Apply Debit for Wallet usage
-          if (useWallet && walletDiscount > 0) {
-            currentBalance -= walletDiscount;
-            await db.wallet_transactions.add({
-              phone: customerPhone,
-              amount: walletDiscount,
-              type: 'Debit',
-              timestamp: Date.now(),
-              details: `Used for Sale #${saleId.substring(0,8)}`
-            });
-          }
-
-          // Apply Credit for Change saving
+          // 1. Logic for Saving Change to Wallet
           if (saveChangeToWallet && currentChange > 0) {
-            currentBalance += currentChange;
+            if (existingWallet) {
+              await db.wallets.update(existingWallet.id, { 
+                balance: Number(existingWallet.balance) + currentChange,
+                lastUpdated: Date.now() 
+              });
+            } else {
+              await db.wallets.add({ 
+                phone: customerPhone, 
+                name: customerName || 'Customer', 
+                balance: currentChange, 
+                lastUpdated: Date.now() 
+              });
+            }
+            // Log Credit Transaction
             await db.wallet_transactions.add({
               phone: customerPhone,
               amount: currentChange,
@@ -358,22 +358,25 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
             });
           }
 
-          // Persist Wallet Balance
-          if (wallet) {
-            await db.customer_wallets.update(wallet.id!, { 
-              balance: Math.max(0, currentBalance), 
-              last_updated: Date.now() 
-            });
-          } else if (saveChangeToWallet || useWallet) {
-            await db.customer_wallets.add({ 
-              phone: customerPhone, 
-              balance: Math.max(0, currentBalance), 
-              last_updated: Date.now() 
-            });
+          // 2. Logic for using existing wallet credit
+          if (useWallet && walletDiscount > 0 && existingWallet) {
+             const newBalance = Number(existingWallet.balance) - walletDiscount;
+             await db.wallets.update(existingWallet.id, { 
+                balance: Math.max(0, newBalance),
+                lastUpdated: Date.now() 
+              });
+              // Log Debit Transaction
+              await db.wallet_transactions.add({
+                phone: customerPhone,
+                amount: walletDiscount,
+                type: 'Debit',
+                timestamp: Date.now(),
+                details: `Used for Sale #${saleId.substring(0,8)}`
+              });
           }
         }
 
-        // Stock Deduction
+        // 3. Stock Deduction
         for (const item of cart) {
           if (!item.isStockAlreadyDeducted) {
             const product = await db.products.get(item.productId);
@@ -402,6 +405,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
       setCashAmount(0);
       setPaymentType(null);
       setCustomerPhone('');
+      setCustomerName('');
       setActiveWallet(null);
       setUseWallet(false);
       setSaveChangeToWallet(false);
@@ -531,7 +535,6 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
                           <span className="text-[8px] font-black text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100 uppercase tracking-widest">Resumed</span>
                         )}
                       </div>
-                      {isBelowCost && <p className="text-[8px] font-black text-rose-500 uppercase mt-0.5 flex items-center gap-1"><AlertTriangle size={8} /> Selling below cost!</p>}
                     </div>
                     <div className="flex items-center gap-3">
                       <button onClick={() => updateQuantity(item.productId, -1)} className="p-1.5 bg-white rounded-lg text-rose-500 shadow-sm"><Minus size={12} /></button>
@@ -563,32 +566,6 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
                  {isProcessing ? 'Saving...' : 'Checkout'} <ChevronRight size={18} className="inline ml-1"/>
                </button>
              </div>
-          </div>
-       </div>
-
-       <div className="lg:hidden fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-slate-200 z-[400] flex gap-3 shadow-[0_-10px_20px_rgba(0,0,0,0.05)]">
-          <button 
-            onClick={() => setShowMobileCart(true)} 
-            className="flex-1 bg-slate-900 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2"
-          >
-            <ShoppingCart size={18} />
-            Cart ({cart.reduce((a,b) => a + b.quantity, 0)})
-          </button>
-          <div className="flex-[1.5] flex gap-2">
-            <button 
-                disabled={cart.length === 0 || isProcessing} 
-                onClick={() => setShowParkModal(true)} 
-                className="flex-1 bg-amber-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg disabled:opacity-50 flex items-center justify-center"
-              >
-                <Pause size={18} />
-            </button>
-            <button 
-                disabled={cart.length === 0 || isProcessing} 
-                onClick={handleOpenCheckout} 
-                className="flex-[2] bg-emerald-600 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg disabled:opacity-50"
-              >
-                {isProcessing ? '...' : `₦${total.toLocaleString()}`}
-            </button>
           </div>
        </div>
 
@@ -694,11 +671,6 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
                       value={saleDate}
                       onChange={e => setSaleDate(e.target.value)}
                     />
-                    {new Date(saleDate).getTime() < Date.now() - 60000 && (
-                      <p className="text-[10px] font-black text-amber-600 uppercase mt-2 flex items-center gap-1 leading-tight">
-                        <AlertTriangle size={10} /> Note: You are recording a historical sale.
-                      </p>
-                    )}
                  </div>
 
                  <div className="p-4 bg-slate-50 rounded-3xl border border-slate-200 space-y-4">
@@ -712,6 +684,15 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
                       value={customerPhone}
                       onChange={e => setCustomerPhone(e.target.value.replace(/\D/g, ''))}
                     />
+                    {customerPhone.length >= 10 && !activeWallet && (
+                       <input 
+                         type="text" 
+                         placeholder="Customer Name (Optional)"
+                         className="w-full px-5 py-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-sm" 
+                         value={customerName}
+                         onChange={e => setCustomerName(e.target.value)}
+                       />
+                    )}
                     {activeWallet && activeWallet.balance > 0 && (
                       <div className="flex items-center justify-between p-3 bg-emerald-50 rounded-xl border border-emerald-100">
                         <div>
