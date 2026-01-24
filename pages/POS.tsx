@@ -124,14 +124,15 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
 
   const handleParkSale = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (cart.length === 0) {
-      alert("Nothing to park!");
+    if (cart.length === 0 || isProcessing) {
       return;
     }
     
+    setIsProcessing(true);
     const customerName = tempName.trim() || 'Quick Order';
 
     try {
+      // Fix: Cast db to any to access transaction method (fixes reported error on line 135)
       await (db as any).transaction('rw', [db.products, db.parked_orders, db.inventory_logs], async () => {
         for (const item of cart) {
           const product = await db.products.get(item.productId);
@@ -163,12 +164,16 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
         });
       });
 
+      // Atomic UI Cleanup
       setCart([]);
       setTempName('');
       setShowParkModal(false);
       setShowMobileCart(false);
     } catch (err) {
-      alert("Failed to park order: " + err);
+      console.error(err);
+      alert("Database Busy. Please try again.");
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -197,6 +202,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
     if(!confirm("Delete this parked order? This will return the items to stock.")) return;
 
     try {
+      // Fix: Cast db to any to access transaction method (fixes reported error on line 204)
       await (db as any).transaction('rw', [db.products, db.parked_orders, db.inventory_logs], async () => {
         const order = await db.parked_orders.get(orderId);
         if (order) {
@@ -231,15 +237,8 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
   const handleCompleteSale = async () => {
     if (cart.length === 0 || isProcessing || !paymentType) return;
     setIsProcessing(true);
+    
     try {
-      for (const item of cart) {
-        const product = await db.products.get(item.productId);
-        if (product && !item.isStockAlreadyDeducted && item.quantity > product.stock_qty) {
-          alert(`Oga, stock mismatch for ${product.name}. Only ${product.stock_qty} left.`);
-          setIsProcessing(false);
-          return;
-        }
-      }
       const saleId = crypto.randomUUID ? crypto.randomUUID() : `SAL-${Date.now()}`;
       const saleData: Sale = {
         sale_id: saleId,
@@ -255,15 +254,23 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
       };
 
       let lowItems: string[] = [];
+
+      // Fix: Cast db to any to access transaction method (fixes reported error on line 256)
       await (db as any).transaction('rw', [db.sales, db.products, db.inventory_logs], async () => {
+        // 1. Add the Sale Record
         await db.sales.add(saleData);
+
+        // 2. Process Items and Deduct Stock if needed
         for (const item of cart) {
+          // If item was resumed from park, stock is already deducted
           if (!item.isStockAlreadyDeducted) {
             const product = await db.products.get(item.productId);
             if (product) {
               const oldStock = product.stock_qty;
               const newStock = Math.max(0, oldStock - item.quantity);
+              
               await db.products.update(item.productId, { stock_qty: newStock });
+              
               await db.inventory_logs.add({
                 product_id: item.productId,
                 product_name: product.name,
@@ -274,17 +281,22 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
                 timestamp: Date.now(),
                 performed_by: currentUser?.name || 'Staff'
               });
-              if (newStock <= (product.low_stock_threshold || 5)) lowItems.push(product.name);
+              
+              if (newStock <= (product.low_stock_threshold || 5)) {
+                lowItems.push(product.name);
+              }
             }
           }
         }
       });
 
+      // Atomic UI Success Transitions
       setLastCompletedSale(saleData);
-      setCart([]);
+      setCart([]); // Clear state immediately after transaction
       setCashAmount(0);
       setPaymentType(null);
       setShowCheckoutModal(false);
+      
       if (lowItems.length > 0) {
         setLowStockProducts(lowItems);
         setShowLowStockAlert(true);
@@ -292,7 +304,8 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
         setShowSuccessModal(true);
       }
     } catch (error: any) {
-      alert('Database Error: ' + error.message);
+      console.error(error);
+      alert('Database Busy. Please try again.');
     } finally {
       setIsProcessing(false);
     }
@@ -386,18 +399,18 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
              </div>
              <div className="grid grid-cols-2 gap-2">
                <button 
-                disabled={cart.length === 0} 
+                disabled={cart.length === 0 || isProcessing} 
                 onClick={() => setShowParkModal(true)} 
                 className="py-4 bg-slate-100 text-slate-600 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-sm active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
                >
-                 <Pause size={18} /> Park
+                 <Pause size={18} /> {isProcessing ? 'Wait...' : 'Park'}
                </button>
                <button 
-                disabled={cart.length === 0} 
+                disabled={cart.length === 0 || isProcessing} 
                 onClick={handleOpenCheckout} 
                 className="py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase text-[10px] shadow-lg active:scale-95 disabled:opacity-50"
                >
-                 Checkout <ChevronRight size={18} className="inline ml-1"/>
+                 {isProcessing ? 'Saving...' : 'Checkout'} <ChevronRight size={18} className="inline ml-1"/>
                </button>
              </div>
           </div>
@@ -414,18 +427,18 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
           </button>
           <div className="flex-[1.5] flex gap-2">
             <button 
-                disabled={cart.length === 0} 
+                disabled={cart.length === 0 || isProcessing} 
                 onClick={() => setShowParkModal(true)} 
                 className="flex-1 bg-amber-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg disabled:opacity-50 flex items-center justify-center"
               >
                 <Pause size={18} />
             </button>
             <button 
-                disabled={cart.length === 0} 
+                disabled={cart.length === 0 || isProcessing} 
                 onClick={handleOpenCheckout} 
                 className="flex-[2] bg-emerald-600 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg disabled:opacity-50"
               >
-                Pay ₦{total.toLocaleString()}
+                {isProcessing ? '...' : `₦${total.toLocaleString()}`}
             </button>
           </div>
        </div>
@@ -453,8 +466,10 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
-                     <button type="button" onClick={() => setShowParkModal(false)} className="py-4 bg-slate-100 text-slate-400 rounded-2xl font-black text-xs uppercase tracking-widest">Cancel</button>
-                     <button type="submit" className="py-4 bg-amber-500 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl">Park Order</button>
+                     <button type="button" disabled={isProcessing} onClick={() => setShowParkModal(false)} className="py-4 bg-slate-100 text-slate-400 rounded-2xl font-black text-xs uppercase tracking-widest">Cancel</button>
+                     <button type="submit" disabled={isProcessing} className="py-4 bg-amber-500 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl flex items-center justify-center gap-2">
+                       {isProcessing ? <Loader2 className="animate-spin" size={16} /> : 'Park Order'}
+                     </button>
                   </div>
                </form>
             </div>
@@ -532,8 +547,8 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
                  </div>
                </div>
                <div className="p-8 border-t">
-                 <button disabled={isProcessing} onClick={handleCompleteSale} className="w-full py-6 bg-emerald-600 text-white rounded-[2rem] font-black text-xl shadow-xl hover:bg-emerald-700 active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-4">
-                   {isProcessing ? <Loader2 className="animate-spin" size={24} /> : <CheckCircle size={28} />} Complete Sale
+                 <button disabled={isProcessing || !paymentType} onClick={handleCompleteSale} className="w-full py-6 bg-emerald-600 text-white rounded-[2rem] font-black text-xl shadow-xl hover:bg-emerald-700 active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-4">
+                   {isProcessing ? <Loader2 className="animate-spin" size={24} /> : <CheckCircle size={28} />} {isProcessing ? 'Saving Sale...' : 'Complete Sale'}
                  </button>
                </div>
             </div>
