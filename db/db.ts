@@ -1,6 +1,6 @@
 
-import { Dexie } from 'dexie';
-import type { Table } from 'dexie';
+// Fix: Use default import for Dexie to resolve type definition issues in some environments
+import Dexie, { Table } from 'dexie';
 import { Product, Sale, Debt, Settings, ParkedOrder, InventoryLog, Staff, Expense, AuditEntry, CustomerWallet, WalletTransaction } from '../types';
 
 export class NaijaShopDB extends Dexie {
@@ -13,15 +13,17 @@ export class NaijaShopDB extends Dexie {
   inventory_logs!: Table<InventoryLog>;
   expenses!: Table<Expense>;
   audit_trail!: Table<AuditEntry>;
-  customer_wallets!: Table<CustomerWallet>; // Legacy
-  wallets!: Table<any>; // Requested 'wallets' table: ++id, &phone, name, balance, lastUpdated
+  customer_wallets!: Table<CustomerWallet>; // Legacy table
+  wallets!: Table<any>; // New wallets table: ++id, &phone, name, balance, lastUpdated
   wallet_transactions!: Table<WalletTransaction>;
 
   constructor() {
     super('NaijaShopDB');
     
-    // Version 22 ensures all current and requested tables are active
-    (this as any).version(22).stores({
+    // Version 24 ensures all current and requested tables are active in a single block
+    // Fix: this.version is a method inherited from Dexie base class. 
+    // Using default import for Dexie ensures the prototype chain is correctly recognized by TypeScript.
+    this.version(24).stores({
       products: '++id, name, category, barcode',
       sales: '++id, sale_id, timestamp, payment_method, staff_name',
       debts: '++id, customer_name, status',

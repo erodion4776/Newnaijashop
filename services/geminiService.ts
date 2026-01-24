@@ -2,7 +2,8 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Product, Sale } from "../types";
 
-const MODEL_NAME = 'gemini-3-flash-preview';
+// Guideline: Complex Text Tasks (e.g., advanced reasoning, coding, math, and STEM) use 'gemini-3-pro-preview'
+const MODEL_NAME = 'gemini-3-pro-preview';
 
 /**
  * Custom error class for rate limiting to provide specific UI feedback
@@ -39,6 +40,7 @@ export const getAIInsights = async (sales: Sale[], products: Product[]) => {
     return null;
   }
 
+  // Always use new GoogleGenAI({apiKey: process.env.API_KEY});
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   const contents = `
@@ -48,6 +50,7 @@ export const getAIInsights = async (sales: Sale[], products: Product[]) => {
   `;
 
   try {
+    // Guideline: Always use ai.models.generateContent to query GenAI with both the model name and prompt.
     const response = await ai.models.generateContent({
       model: MODEL_NAME,
       contents: contents,
@@ -74,6 +77,7 @@ export const getAIInsights = async (sales: Sale[], products: Product[]) => {
       }
     });
 
+    // Guideline: The GenerateContentResponse object features a text property (not a method, so do not call text())
     const jsonStr = cleanJsonResponse(response.text || "");
     if (!jsonStr) return null;
     return JSON.parse(jsonStr).insights;
@@ -88,9 +92,11 @@ export const processHandwrittenLedger = async (base64Image: string) => {
     return null;
   }
 
+  // Always use new GoogleGenAI({apiKey: process.env.API_KEY});
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   try {
+    // Guideline: Always use ai.models.generateContent to query GenAI with both the model name and prompt.
     const response = await ai.models.generateContent({
       model: MODEL_NAME,
       contents: {
@@ -129,6 +135,7 @@ export const processHandwrittenLedger = async (base64Image: string) => {
       }
     });
 
+    // Guideline: The GenerateContentResponse object features a text property (not a method, so do not call text())
     const text = response.text || "";
     const jsonStr = cleanJsonResponse(text);
     
