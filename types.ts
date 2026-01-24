@@ -49,6 +49,14 @@ export interface Sale {
   sync_status?: 'pending' | 'synced' | 'verified';
 }
 
+export interface Expense {
+  id?: number;
+  category: 'Fuel' | 'Rent' | 'Salary' | 'Others';
+  amount: number;
+  description: string;
+  timestamp: number;
+}
+
 export interface ParkedOrder {
   id?: number;
   customerName: string;
@@ -92,6 +100,6 @@ export interface Settings {
   last_synced_timestamp?: number;
 }
 
-export type View = 'dashboard' | 'pos' | 'inventory' | 'inventory-ledger' | 'debts' | 'settings' | 'ai-insights' | 'staff-management' | 'activity-log' | 'security-backups' | 'transfer-station';
+export type View = 'dashboard' | 'pos' | 'inventory' | 'inventory-ledger' | 'debts' | 'settings' | 'ai-insights' | 'staff-management' | 'activity-log' | 'security-backups' | 'transfer-station' | 'expense-tracker';
 
 export type SyncStatus = 'offline' | 'connecting' | 'live' | 'reconnecting' | 'failed';

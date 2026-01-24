@@ -21,7 +21,8 @@ import {
   Banknote,
   PiggyBank,
   Briefcase,
-  BellRing
+  BellRing,
+  TrendingDown
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { Staff, Product, Sale } from '../types';
@@ -50,6 +51,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, isStaffLock
   const sales = useLiveQuery(() => db.sales.toArray());
   const products = useLiveQuery(() => db.products.toArray());
   const debts = useLiveQuery(() => db.debts.toArray());
+  const expenses = useLiveQuery(() => db.expenses.toArray());
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -68,11 +70,11 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, isStaffLock
   }, []);
 
   useEffect(() => {
-    if (sales !== undefined && products !== undefined && debts !== undefined) {
+    if (sales !== undefined && products !== undefined && debts !== undefined && expenses !== undefined) {
       setIsDataReady(true);
       setTimeout(() => setIsChartLoading(false), 500);
     }
-  }, [sales, products, debts]);
+  }, [sales, products, debts, expenses]);
 
   useEffect(() => {
     if (isOnline && isDataReady && sales && sales.length >= 5 && !guruTip && !isLoadingTip) {
@@ -100,15 +102,17 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, isStaffLock
     return map;
   }, [products]);
 
-  // 1. KPI Calculations
+  // 1. KPI Calculations including Net Profit
   const stats = useMemo(() => {
-    if (!sales || !products) return { todaySales: 0, todayInterest: 0, lifeSales: 0, lifeInterest: 0 };
+    if (!sales || !products || !expenses) return { todaySales: 0, todayNet: 0, lifeSales: 0, lifeNet: 0, todayExp: 0 };
     
     const today = new Date().setHours(0, 0, 0, 0);
     let todaySales = 0;
     let todayInterest = 0;
     let lifeSales = 0;
     let lifeInterest = 0;
+    let todayExp = 0;
+    let lifeExp = 0;
 
     sales.forEach(sale => {
       const isToday = sale.timestamp >= today;
@@ -126,8 +130,20 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, isStaffLock
       });
     });
 
-    return { todaySales, todayInterest, lifeSales, lifeInterest };
-  }, [sales, productMap]);
+    expenses.forEach(exp => {
+      const isToday = exp.timestamp >= today;
+      lifeExp += exp.amount;
+      if (isToday) todayExp += exp.amount;
+    });
+
+    return { 
+      todaySales, 
+      todayNet: todayInterest - todayExp, 
+      lifeSales, 
+      lifeNet: lifeInterest - lifeExp,
+      todayExp
+    };
+  }, [sales, productMap, expenses]);
 
   const formatCurrency = (val: number, isSensitive: boolean = false) => {
     if (isSensitive && !showSensitiveData) return "₦ ****";
@@ -210,22 +226,23 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, isStaffLock
           color="emerald" 
         />
         <StatCard 
-          title="Today's Interest" 
-          value={formatCurrency(stats.todayInterest, true)} 
+          title="Today's Net Profit" 
+          value={formatCurrency(stats.todayNet, true)} 
           icon={<PiggyBank size={20} />} 
           color="gold" 
+          subtitle={stats.todayExp > 0 ? `After ₦${stats.todayExp.toLocaleString()} expenses` : ''}
         />
         <StatCard 
-          title="Lifetime Sales" 
-          value={formatCurrency(stats.lifeSales, true)} 
-          icon={<Briefcase size={20} />} 
+          title="Life Net Profit" 
+          value={formatCurrency(stats.lifeNet, true)} 
+          icon={<Coins size={20} />} 
           color="emerald-deep" 
         />
         <StatCard 
-          title="Lifetime Interest" 
-          value={formatCurrency(stats.lifeInterest, true)} 
-          icon={<Coins size={20} />} 
-          color="gold-deep" 
+          title="Today's Expenses" 
+          value={formatCurrency(stats.todayExp)} 
+          icon={<TrendingDown size={20} />} 
+          color="rose" 
         />
       </div>
 
@@ -322,12 +339,13 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, isStaffLock
   );
 };
 
-const StatCard: React.FC<{title: string, value: string, icon: any, color: string}> = ({ title, value, icon, color }) => {
+const StatCard: React.FC<{title: string, value: string, icon: any, color: string, subtitle?: string}> = ({ title, value, icon, color, subtitle }) => {
   const styles: {[key:string]:string} = { 
     emerald: 'bg-emerald-600 text-white', 
     'emerald-deep': 'bg-emerald-900 text-white',
     gold: 'bg-amber-500 text-white', 
-    'gold-deep': 'bg-amber-700 text-white'
+    'gold-deep': 'bg-amber-700 text-white',
+    rose: 'bg-rose-600 text-white'
   };
 
   return (
@@ -342,6 +360,7 @@ const StatCard: React.FC<{title: string, value: string, icon: any, color: string
         <div>
           <p className="text-white/70 text-[10px] font-black uppercase tracking-widest">{title}</p>
           <h4 className="text-2xl font-black mt-1 tracking-tight">{value}</h4>
+          {subtitle && <p className="text-[9px] font-bold text-white/60 mt-1 uppercase tracking-wider">{subtitle}</p>}
         </div>
       </div>
     </div>

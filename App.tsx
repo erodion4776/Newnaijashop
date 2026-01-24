@@ -15,6 +15,7 @@ import StaffManagement from './pages/StaffManagement';
 import ActivityLog from './pages/ActivityLog';
 import SecurityBackups from './pages/SecurityBackups';
 import Settings from './pages/Settings';
+import ExpenseTracker from './pages/ExpenseTracker';
 import InstallModal from './components/InstallModal';
 import SupportChat from './components/SupportChat';
 import { performAutoSnapshot } from './utils/backup';
@@ -255,6 +256,7 @@ const AppContent: React.FC = () => {
         {currentView === 'dashboard' && <Dashboard currentUser={currentUser} setView={setCurrentView} isStaffLock={isStaffLock} />}
         {currentView === 'pos' && <POS setView={setCurrentView} currentUser={currentUser} />}
         {currentView === 'activity-log' && <ActivityLog currentUser={currentUser} />}
+        {currentView === 'expense-tracker' && <ExpenseTracker />}
         {currentView === 'transfer-station' && <TransferStation setView={setCurrentView} />}
         {currentView === 'inventory' && <Inventory setView={setCurrentView} currentUser={currentUser} isStaffLock={isStaffLock} />}
         {currentView === 'inventory-ledger' && <InventoryLedger />}

@@ -1,7 +1,7 @@
 
 import { Dexie } from 'dexie';
 import type { Table } from 'dexie';
-import { Product, Sale, Debt, Settings, ParkedOrder, InventoryLog, Staff } from '../types';
+import { Product, Sale, Debt, Settings, ParkedOrder, InventoryLog, Staff, Expense } from '../types';
 
 export class NaijaShopDB extends Dexie {
   products!: Table<Product>;
@@ -11,18 +11,20 @@ export class NaijaShopDB extends Dexie {
   settings!: Table<Settings>;
   parked_orders!: Table<ParkedOrder>;
   inventory_logs!: Table<InventoryLog>;
+  expenses!: Table<Expense>;
 
   constructor() {
     super('NaijaShopDB');
     
-    (this as any).version(14).stores({
+    (this as any).version(15).stores({
       products: '++id, name, category, barcode',
       sales: '++id, sale_id, timestamp, payment_method, staff_name',
       debts: '++id, customer_name, status',
       staff: '++id, name, role, status',
       settings: 'id',
       parked_orders: '++id, customerName, timestamp',
-      inventory_logs: '++id, product_id, product_name, type, timestamp'
+      inventory_logs: '++id, product_id, product_name, type, timestamp',
+      expenses: '++id, category, timestamp'
     });
   }
 }
