@@ -28,11 +28,13 @@ import {
   ChevronRight,
   Printer,
   Share2,
-  MessageSquare
+  MessageSquare,
+  Bluetooth
 } from 'lucide-react';
 import { Product, SaleItem, ParkedOrder, View, Staff, Sale, Settings } from '../types';
 import BarcodeScanner from '../components/BarcodeScanner';
 import NotificationService from '../services/NotificationService';
+import BluetoothPrintService from '../services/BluetoothPrintService';
 
 interface POSProps {
   setView: (view: View) => void;
@@ -54,6 +56,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
   const [cashAmount, setCashAmount] = useState<number>(0);
   const [showMobileCart, setShowMobileCart] = useState(false);
   const [animatingId, setAnimatingId] = useState<number | null>(null);
+  const [isBTPrinting, setIsBTPrinting] = useState(false);
 
   // Parked Orders States
   const [showParkModal, setShowParkModal] = useState(false);
@@ -315,6 +318,18 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
     window.print();
   };
 
+  const handleBTPrint = async () => {
+    if (!lastCompletedSale || !settings) return;
+    setIsBTPrinting(true);
+    try {
+      await BluetoothPrintService.printReceipt(lastCompletedSale, settings);
+    } catch (err) {
+      alert("BT Printing failed. Check connection in Settings.");
+    } finally {
+      setIsBTPrinting(false);
+    }
+  };
+
   const handleShareWhatsApp = () => {
     if (!lastCompletedSale || !settings) return;
     const itemsText = lastCompletedSale.items.map(i => `${i.name} x${i.quantity} @ ₦${i.price.toLocaleString()} = ₦${(i.price * i.quantity).toLocaleString()}`).join('\n');
@@ -566,12 +581,23 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
                  <p className="text-slate-500 font-medium">₦{lastCompletedSale?.total_amount.toLocaleString()} logged.</p>
                </div>
                
-               <div className="grid grid-cols-2 gap-3">
-                  <button onClick={handlePrint} className="py-4 bg-slate-100 text-slate-600 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-slate-200 transition-colors">
-                    <Printer size={16} /> Print
-                  </button>
+               <div className="grid grid-cols-1 gap-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <button onClick={handlePrint} className="py-4 bg-slate-100 text-slate-600 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-slate-200 transition-colors">
+                      <Printer size={16} /> Print
+                    </button>
+                    {BluetoothPrintService.isConnected() && (
+                      <button 
+                        onClick={handleBTPrint} 
+                        disabled={isBTPrinting}
+                        className="py-4 bg-emerald-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-emerald-700 transition-colors shadow-lg"
+                      >
+                        {isBTPrinting ? <Loader2 className="animate-spin" size={16} /> : <Bluetooth size={16} />} BT Print
+                      </button>
+                    )}
+                  </div>
                   <button onClick={handleShareWhatsApp} className="py-4 bg-emerald-50 text-emerald-600 border border-emerald-100 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-emerald-100 transition-colors">
-                    <MessageSquare size={16} /> Share
+                    <MessageSquare size={16} /> Share via WhatsApp
                   </button>
                </div>
 

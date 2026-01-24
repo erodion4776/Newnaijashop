@@ -25,9 +25,13 @@ import {
   ChevronUp,
   MessageCircle,
   MapPin,
-  FileText
+  FileText,
+  Printer,
+  Bluetooth,
+  AlertTriangle
 } from 'lucide-react';
 import { Staff } from '../types';
+import BluetoothPrintService from '../services/BluetoothPrintService';
 
 const FAQ_DATA = [
   {
@@ -64,6 +68,12 @@ const Settings: React.FC<{ currentUser: Staff | null }> = ({ currentUser }) => {
   const [accountName, setAccountName] = useState('');
   const [shopAddress, setShopAddress] = useState('');
   const [receiptFooter, setReceiptFooter] = useState('');
+
+  // Bluetooth States
+  const [btStatus, setBtStatus] = useState<'connected' | 'disconnected' | 'unsupported'>(
+    BluetoothPrintService.isSupported() ? (BluetoothPrintService.isConnected() ? 'connected' : 'disconnected') : 'unsupported'
+  );
+  const [isConnectingBT, setIsConnectingBT] = useState(false);
 
   // FAQ states
   const [faqSearch, setFaqSearch] = useState('');
@@ -105,6 +115,23 @@ const Settings: React.FC<{ currentUser: Staff | null }> = ({ currentUser }) => {
       alert("Failed to update settings");
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleConnectPrinter = async () => {
+    if (btStatus === 'unsupported') {
+      alert("Bluetooth printing is only supported on Chrome for Android. Please use 'Download PDF' instead.");
+      return;
+    }
+    
+    setIsConnectingBT(true);
+    try {
+      const success = await BluetoothPrintService.connect();
+      if (success) setBtStatus('connected');
+    } catch (err) {
+      alert("Could not connect to printer. Ensure Bluetooth is ON and printer is in pairing mode.");
+    } finally {
+      setIsConnectingBT(false);
     }
   };
 
@@ -153,6 +180,63 @@ const Settings: React.FC<{ currentUser: Staff | null }> = ({ currentUser }) => {
           </div>
 
           <form onSubmit={handleSaveSettings} className="space-y-8">
+            {/* Bluetooth Printer Section */}
+            <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl"><Printer size={24} /></div>
+                <h3 className="text-xl font-black text-slate-800 tracking-tight">Thermal Printer</h3>
+              </div>
+              <p className="text-sm text-slate-500 font-medium">Connect a physical thermal printer for professional receipts.</p>
+              
+              <div className="flex flex-col sm:flex-row items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                <div className="flex-1">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Printer Status</p>
+                  <div className="flex items-center gap-2">
+                    {btStatus === 'connected' ? (
+                      <>
+                        <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                        <span className="font-bold text-slate-700">Connected: {BluetoothPrintService.getDeviceName()}</span>
+                      </>
+                    ) : btStatus === 'unsupported' ? (
+                      <>
+                        <div className="w-2 h-2 bg-rose-500 rounded-full" />
+                        <span className="font-bold text-slate-400 italic">Not Supported on this Device</span>
+                      </>
+                    ) : (
+                      <>
+                        <div className="w-2 h-2 bg-slate-300 rounded-full" />
+                        <span className="font-bold text-slate-400">Disconnected</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+                <button 
+                  type="button"
+                  onClick={handleConnectPrinter}
+                  disabled={isConnectingBT || btStatus === 'unsupported'}
+                  className={`px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center gap-2 transition-all ${
+                    btStatus === 'connected' ? 'bg-slate-100 text-slate-500' : 'bg-emerald-600 text-white shadow-lg active:scale-95 disabled:opacity-50'
+                  }`}
+                >
+                  {isConnectingBT ? 'Searching...' : (
+                    <>
+                      <Bluetooth size={16} /> 
+                      {btStatus === 'connected' ? 'Change Printer' : 'Connect Printer'}
+                    </>
+                  )}
+                </button>
+              </div>
+              
+              {btStatus === 'unsupported' && (
+                <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-100 rounded-2xl text-amber-800">
+                  <AlertTriangle size={20} className="shrink-0 mt-0.5" />
+                  <p className="text-xs font-medium leading-relaxed">
+                    <b>iOS Alert:</b> Bluetooth printing is not available in Safari on iPhone. For the best experience, use the "Download PDF" option at checkout.
+                  </p>
+                </div>
+              )}
+            </div>
+
             {/* General Shop Info */}
             <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
               <div className="flex items-center gap-3">
