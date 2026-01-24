@@ -30,7 +30,8 @@ import {
   Share2,
   MessageSquare,
   Bluetooth,
-  Edit3
+  Edit3,
+  Calendar
 } from 'lucide-react';
 import { Product, SaleItem, ParkedOrder, View, Staff, Sale, Settings } from '../types';
 import BarcodeScanner from '../components/BarcodeScanner';
@@ -58,6 +59,13 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
   const [showMobileCart, setShowMobileCart] = useState(false);
   const [animatingId, setAnimatingId] = useState<number | null>(null);
   const [isBTPrinting, setIsBTPrinting] = useState(false);
+
+  // Backdating State
+  const [saleDate, setSaleDate] = useState<string>(() => {
+    const now = new Date();
+    const offset = now.getTimezoneOffset() * 60000;
+    return new Date(now.getTime() - offset).toISOString().slice(0, 16);
+  });
 
   // Editable Price State
   const [editingPriceId, setEditingPriceId] = useState<number | null>(null);
@@ -141,6 +149,10 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
       alert(`Error: '${overstockItem.name}' quantity exceeds available stock. Please adjust.`);
       return;
     }
+    // Reset date to current whenever checkout is opened
+    const now = new Date();
+    const offset = now.getTimezoneOffset() * 60000;
+    setSaleDate(new Date(now.getTime() - offset).toISOString().slice(0, 16));
     setShowCheckoutModal(true);
   };
 
@@ -262,6 +274,8 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
     
     try {
       const saleId = crypto.randomUUID ? crypto.randomUUID() : `SAL-${Date.now()}`;
+      const saleTimestamp = new Date(saleDate).getTime(); // Use selected date
+      
       const saleData: Sale = {
         sale_id: saleId,
         items: [...cart],
@@ -271,7 +285,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
         cash_amount: paymentType === 'split' ? cashAmount : (paymentType === 'cash' ? total : 0),
         staff_id: currentUser?.id?.toString() || '0',
         staff_name: currentUser?.name || 'Staff',
-        timestamp: Date.now(),
+        timestamp: saleTimestamp,
         sync_status: 'pending'
       };
 
@@ -300,7 +314,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
                 old_stock: oldStock,
                 new_stock: newStock,
                 type: 'Sale',
-                timestamp: Date.now(),
+                timestamp: Date.now(), // Logs always use actual execution time
                 performed_by: currentUser?.name || 'Staff'
               });
               
@@ -599,13 +613,34 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
                  <div><p className="text-[10px] font-black text-slate-400 uppercase mb-1">Payable</p><h3 className="text-4xl font-black text-slate-900">₦{total.toLocaleString()}</h3></div>
                  <button onClick={() => setShowCheckoutModal(false)} className="p-3 bg-slate-50 rounded-full text-slate-400"><X size={24} /></button>
                </div>
-               <div className="flex-1 overflow-y-auto p-8 space-y-8">
-                 <div className="grid grid-cols-2 gap-3">
-                   {['cash', 'transfer', 'pos', 'split'].map(m => (
-                     <button key={m} onClick={() => setPaymentType(m as any)} className={`py-6 rounded-3xl border-2 flex flex-col items-center gap-3 transition-all ${paymentType === m ? 'bg-emerald-600 border-emerald-600 text-white shadow-xl scale-[1.02]' : 'bg-slate-50 border-transparent text-slate-400'}`}>
-                       <span className="font-black uppercase text-[10px] tracking-widest">{m}</span>
-                     </button>
-                   ))}
+               <div className="flex-1 overflow-y-auto p-8 space-y-6">
+                 {/* Backdating Section */}
+                 <div>
+                    <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">
+                      <Calendar size={12} /> Sale Date & Time
+                    </label>
+                    <input 
+                      type="datetime-local" 
+                      className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 font-bold" 
+                      value={saleDate}
+                      onChange={e => setSaleDate(e.target.value)}
+                    />
+                    {new Date(saleDate).getTime() < Date.now() - 60000 && (
+                      <p className="text-[10px] font-black text-amber-600 uppercase mt-2 flex items-center gap-1 leading-tight animate-in fade-in slide-in-from-top-1">
+                        <AlertTriangle size={10} /> Note: You are recording a historical sale.
+                      </p>
+                    )}
+                 </div>
+
+                 <div>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase mb-3 ml-1">Payment Method</label>
+                    <div className="grid grid-cols-2 gap-3">
+                      {['cash', 'transfer', 'pos', 'split'].map(m => (
+                        <button key={m} onClick={() => setPaymentType(m as any)} className={`py-6 rounded-3xl border-2 flex flex-col items-center gap-3 transition-all ${paymentType === m ? 'bg-emerald-600 border-emerald-600 text-white shadow-xl scale-[1.02]' : 'bg-slate-50 border-transparent text-slate-400'}`}>
+                          <span className="font-black uppercase text-[10px] tracking-widest">{m}</span>
+                        </button>
+                      ))}
+                    </div>
                  </div>
                </div>
                <div className="p-8 border-t">
