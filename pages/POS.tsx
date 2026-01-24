@@ -286,49 +286,88 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
           ))}
         </div>
       </div>
+
+      {/* MOBILE FAB - View Cart */}
+      {!showMobileCart && (
+        <button 
+          onClick={() => setShowMobileCart(true)}
+          className="lg:hidden fixed bottom-24 right-6 z-[600] bg-emerald-600 text-white px-6 py-4 rounded-full shadow-[0_15px_30px_rgba(5,150,105,0.4)] flex items-center gap-2 font-black text-xs uppercase tracking-widest animate-in slide-in-from-bottom-10"
+        >
+          <ShoppingCart size={20} />
+          View Cart ({cart.length})
+        </button>
+      )}
       
-      <div className={`fixed inset-y-0 right-0 w-[85%] max-w-[400px] bg-white z-[500] shadow-2xl transition-transform lg:static lg:w-[350px] rounded-l-[2.5rem] lg:rounded-[2.5rem] flex flex-col p-6 ${showMobileCart ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'}`}>
+      {/* CART OVERLAY / SIDEBAR */}
+      <div className={`fixed inset-y-0 right-0 w-full lg:w-[350px] max-w-full lg:max-w-[400px] bg-white z-[700] shadow-2xl transition-transform lg:static rounded-none lg:rounded-[2.5rem] flex flex-col p-6 ${showMobileCart ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'}`}>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="font-black text-slate-800 flex items-center gap-2"><ShoppingCart size={20} className="text-emerald-600" /> Cart</h3>
+          <div className="flex items-center gap-3">
+            <button onClick={() => setShowMobileCart(false)} className="lg:hidden p-2 -ml-2 text-slate-400 hover:text-slate-600"><X size={24} /></button>
+            <h3 className="font-black text-slate-800 flex items-center gap-2"><ShoppingCart size={20} className="text-emerald-600" /> Cart</h3>
+          </div>
           <button onClick={() => setCart([])} className="text-xs font-black text-rose-400 uppercase tracking-widest hover:text-rose-600">Clear</button>
         </div>
         <div className="flex-1 overflow-y-auto space-y-4 scrollbar-hide">
-          {cart.length === 0 ? <div className="h-full flex flex-col items-center justify-center opacity-20 py-20"><ShoppingCart size={64} /><p className="mt-4 font-black text-xs uppercase">Empty</p></div> : cart.map((item, idx) => {
-            const isEditing = editingPriceId === item.productId;
-            return (
-              <div key={idx} className="flex justify-between items-center bg-slate-50 p-3 rounded-2xl border border-slate-100">
-                <div className="flex-1 min-w-0 pr-2">
-                  <p className="font-bold text-sm truncate text-slate-800">{item.name}</p>
-                  <div className="flex items-center gap-2">
-                    {isEditing ? (
-                      <div className="flex items-center gap-1 mt-1">
-                        <input autoFocus type="number" className="w-24 px-2 py-1 text-[10px] font-black border rounded outline-none border-emerald-300" value={tempPrice} onChange={e => setTempPrice(e.target.value)} onBlur={() => handlePriceSave(item.productId)} onKeyDown={e => e.key === 'Enter' && handlePriceSave(item.productId)} />
+          {cart.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center opacity-20 py-20 text-center">
+              <ShoppingCart size={64} />
+              <p className="mt-4 font-black text-xs uppercase">Your cart is empty</p>
+            </div>
+          ) : (
+            cart.map((item, idx) => {
+              try {
+                const isEditing = editingPriceId === item.productId;
+                return (
+                  <div key={idx} className="flex justify-between items-center bg-slate-50 p-3 rounded-2xl border border-slate-100 animate-in fade-in slide-in-from-right-2 duration-300">
+                    <div className="flex-1 min-w-0 pr-2">
+                      <p className="font-bold text-sm truncate text-slate-800">{item.name}</p>
+                      <div className="flex items-center gap-2">
+                        {isEditing ? (
+                          <div className="flex items-center gap-1 mt-1">
+                            <input autoFocus type="number" className="w-24 px-2 py-1 text-[10px] font-black border rounded outline-none border-emerald-300" value={tempPrice} onChange={e => setTempPrice(e.target.value)} onBlur={() => handlePriceSave(item.productId)} onKeyDown={e => e.key === 'Enter' && handlePriceSave(item.productId)} />
+                          </div>
+                        ) : (
+                          <button onClick={() => handlePriceClick(item)} className="flex items-center gap-1 text-emerald-600">
+                            <p className="text-[10px] font-black">₦{item.price.toLocaleString()}</p><Edit3 size={10} className="opacity-40" />
+                          </button>
+                        )}
+                        {item.isStockAlreadyDeducted && <span className="text-[8px] font-black text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100 uppercase">Resumed</span>}
                       </div>
-                    ) : (
-                      <button onClick={() => handlePriceClick(item)} className="flex items-center gap-1 text-emerald-600">
-                        <p className="text-[10px] font-black">₦{item.price.toLocaleString()}</p><Edit3 size={10} className="opacity-40" />
-                      </button>
-                    )}
-                    {item.isStockAlreadyDeducted && <span className="text-[8px] font-black text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100 uppercase">Resumed</span>}
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <button onClick={() => updateQuantity(item.productId, -1)} className="p-1.5 bg-white rounded-lg text-rose-500 shadow-sm"><Minus size={12} /></button>
+                      <span className="font-black text-sm">{item.quantity}</span>
+                      <button onClick={() => updateQuantity(item.productId, 1)} className="p-1.5 bg-white rounded-lg text-emerald-500 shadow-sm"><Plus size={12} /></button>
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <button onClick={() => updateQuantity(item.productId, -1)} className="p-1.5 bg-white rounded-lg text-rose-500 shadow-sm"><Minus size={12} /></button>
-                  <span className="font-black text-sm">{item.quantity}</span>
-                  <button onClick={() => updateQuantity(item.productId, 1)} className="p-1.5 bg-white rounded-lg text-emerald-500 shadow-sm"><Plus size={12} /></button>
-                </div>
-              </div>
-            );
-          })}
+                );
+              } catch (e) {
+                console.error("Cart item render error:", e);
+                return null;
+              }
+            })
+          )}
         </div>
-        <div className="mt-6 pt-6 border-t space-y-4">
+        <div className="mt-6 pt-6 border-t space-y-4 bg-white z-[710]">
           <div className="flex justify-between items-center px-2">
             <span className="font-black text-[10px] text-slate-400 uppercase">Total Payable</span>
             <span className="text-3xl font-black text-emerald-600">₦{total.toLocaleString()}</span>
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <button disabled={cart.length === 0 || isProcessing} onClick={() => setShowParkModal(true)} className="py-4 bg-slate-100 text-slate-600 rounded-2xl font-black text-[10px] uppercase flex items-center justify-center gap-2"><Pause size={18} /> Park</button>
-            <button disabled={cart.length === 0 || isProcessing} onClick={handleOpenCheckout} className="py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase text-[10px] shadow-lg flex items-center justify-center gap-2">Checkout <ChevronRight size={18}/></button>
+            <button 
+              disabled={cart.length === 0 || isProcessing} 
+              onClick={() => setShowParkModal(true)} 
+              className="py-5 bg-slate-100 text-slate-600 rounded-2xl font-black text-[10px] uppercase flex items-center justify-center gap-2 hover:bg-slate-200 transition-colors disabled:opacity-50"
+            >
+              <Pause size={18} /> Park
+            </button>
+            <button 
+              disabled={cart.length === 0 || isProcessing} 
+              onClick={handleOpenCheckout} 
+              className="py-5 bg-emerald-600 text-white rounded-2xl font-black uppercase text-[10px] shadow-[0_10px_20px_rgba(5,150,105,0.3)] flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all active:scale-[0.98] disabled:opacity-50 z-[720]"
+            >
+              Checkout <ChevronRight size={18}/>
+            </button>
           </div>
         </div>
       </div>
