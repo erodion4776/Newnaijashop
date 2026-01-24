@@ -177,7 +177,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
   const total = cart.reduce((acc, curr) => acc + (curr.price * curr.quantity), 0);
   const walletDiscount = useWallet && activeWallet ? Math.min(activeWallet.balance, total) : 0;
   const payableTotal = Math.max(0, total - walletDiscount);
-  const changeAmount = (paymentType === 'cash' && cashAmount > payableTotal) ? (cashAmount - payableTotal) : 0;
+  const changeAmount = (paymentType === 'cash' && Number(cashAmount) > payableTotal) ? (Number(cashAmount) - payableTotal) : 0;
 
   const handleOpenCheckout = () => {
     if (cart.length === 0) return;
@@ -193,7 +193,6 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
     const offset = now.getTimezoneOffset() * 60000;
     setSaleDate(new Date(now.getTime() - offset).toISOString().slice(0, 16));
     
-    // Reset Checkout State
     setCustomerPhone('');
     setActiveWallet(null);
     setUseWallet(false);
@@ -307,6 +306,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
     try {
       const saleId = crypto.randomUUID ? crypto.randomUUID() : `SAL-${Date.now()}`;
       const saleTimestamp = new Date(saleDate).getTime();
+      const currentChange = Number(changeAmount);
       
       const saleData: Sale = {
         sale_id: saleId,
@@ -316,7 +316,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
         payment_method: paymentType === 'split' ? 'split' : paymentType,
         cash_amount: paymentType === 'split' ? cashAmount : (paymentType === 'cash' ? (saveChangeToWallet ? payableTotal : cashAmount) : 0),
         wallet_amount_used: walletDiscount,
-        wallet_amount_credited: saveChangeToWallet ? changeAmount : 0,
+        wallet_amount_credited: saveChangeToWallet ? currentChange : 0,
         customer_phone: customerPhone || undefined,
         staff_id: currentUser?.id?.toString() || '0',
         staff_name: currentUser?.name || 'Staff',
@@ -326,21 +326,50 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
 
       let lowItems: string[] = [];
 
-      await (db as any).transaction('rw', [db.sales, db.products, db.inventory_logs, db.customer_wallets], async () => {
+      await (db as any).transaction('rw', [db.sales, db.products, db.inventory_logs, db.customer_wallets, db.wallet_transactions], async () => {
         await db.sales.add(saleData);
 
-        // Process Wallet
-        if (customerPhone) {
+        // Process Wallet Update and Transactions
+        if (customerPhone && customerPhone.length >= 10) {
           const wallet = await db.customer_wallets.where('phone').equals(customerPhone).first();
           let currentBalance = wallet?.balance || 0;
           
-          if (useWallet) currentBalance -= walletDiscount;
-          if (saveChangeToWallet) currentBalance += changeAmount;
+          // Apply Debit for Wallet usage
+          if (useWallet && walletDiscount > 0) {
+            currentBalance -= walletDiscount;
+            await db.wallet_transactions.add({
+              phone: customerPhone,
+              amount: walletDiscount,
+              type: 'Debit',
+              timestamp: Date.now(),
+              details: `Used for Sale #${saleId.substring(0,8)}`
+            });
+          }
 
+          // Apply Credit for Change saving
+          if (saveChangeToWallet && currentChange > 0) {
+            currentBalance += currentChange;
+            await db.wallet_transactions.add({
+              phone: customerPhone,
+              amount: currentChange,
+              type: 'Credit',
+              timestamp: Date.now(),
+              details: `Change from Sale #${saleId.substring(0,8)}`
+            });
+          }
+
+          // Persist Wallet Balance
           if (wallet) {
-            await db.customer_wallets.update(wallet.id!, { balance: currentBalance, last_updated: Date.now() });
-          } else {
-            await db.customer_wallets.add({ phone: customerPhone, balance: currentBalance, last_updated: Date.now() });
+            await db.customer_wallets.update(wallet.id!, { 
+              balance: Math.max(0, currentBalance), 
+              last_updated: Date.now() 
+            });
+          } else if (saveChangeToWallet || useWallet) {
+            await db.customer_wallets.add({ 
+              phone: customerPhone, 
+              balance: Math.max(0, currentBalance), 
+              last_updated: Date.now() 
+            });
           }
         }
 
@@ -537,7 +566,6 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
           </div>
        </div>
 
-       {/* Mobile Sticky Bottom Bar */}
        <div className="lg:hidden fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-slate-200 z-[400] flex gap-3 shadow-[0_-10px_20px_rgba(0,0,0,0.05)]">
           <button 
             onClick={() => setShowMobileCart(true)} 
@@ -564,7 +592,6 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
           </div>
        </div>
 
-       {/* Park Name Modal */}
        {showParkModal && (
          <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4">
             <div className="bg-white rounded-[3rem] p-8 w-full max-w-sm space-y-8 animate-in zoom-in duration-300">
@@ -597,7 +624,6 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
          </div>
        )}
 
-       {/* Parked Orders List Modal */}
        {showParkedListModal && (
          <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4">
             <div className="bg-white rounded-[3rem] w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in duration-300 flex flex-col max-h-[80vh]">
@@ -650,7 +676,6 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
          </div>
        )}
 
-       {/* Checkout Modal with high z-index and conditional rendering */}
        {showCheckoutModal && (
          <div className="fixed inset-0 z-[1200] flex items-center justify-center lg:p-4 bg-slate-950/80 backdrop-blur-md">
             <div className="bg-white lg:rounded-[3rem] w-full h-full lg:h-auto lg:max-w-md animate-in slide-in-from-bottom-full lg:zoom-in duration-300 flex flex-col relative">
@@ -659,7 +684,6 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
                  <button onClick={() => setShowCheckoutModal(false)} className="p-3 bg-slate-50 rounded-full text-slate-400"><X size={24} /></button>
                </div>
                <div className="flex-1 overflow-y-auto p-8 space-y-6">
-                 {/* Backdating Section */}
                  <div>
                     <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">
                       <Calendar size={12} /> Sale Date & Time
@@ -677,7 +701,6 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
                     )}
                  </div>
 
-                 {/* Customer Wallet Section */}
                  <div className="p-4 bg-slate-50 rounded-3xl border border-slate-200 space-y-4">
                     <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase ml-1">
                       <Phone size={12} /> Customer Phone
@@ -725,18 +748,18 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
                         value={cashAmount || ''}
                         onChange={e => setCashAmount(Number(e.target.value))}
                       />
-                      {changeAmount > 0 && customerPhone.length >= 10 && (
+                      {Number(changeAmount) > 0 && customerPhone.length >= 10 && (
                         <button 
                           onClick={() => setSaveChangeToWallet(!saveChangeToWallet)}
                           className={`w-full py-4 rounded-2xl flex items-center justify-center gap-2 font-black text-xs uppercase tracking-widest transition-all ${saveChangeToWallet ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-600 border border-indigo-100'}`}
                         >
-                          <Wallet size={18} /> {saveChangeToWallet ? 'Saving Change to Wallet' : `Save ₦${changeAmount} to Wallet`}
+                          <Wallet size={18} /> {saveChangeToWallet ? 'Saving Change to Wallet' : `Save ₦${Number(changeAmount)} to Wallet`}
                         </button>
                       )}
-                      {changeAmount > 0 && !saveChangeToWallet && (
+                      {Number(changeAmount) > 0 && !saveChangeToWallet && (
                         <div className="text-center p-3 bg-amber-50 rounded-xl border border-amber-100">
                           <p className="text-[10px] font-black text-amber-600 uppercase">Change Due</p>
-                          <p className="text-2xl font-black text-amber-700">₦{changeAmount.toLocaleString()}</p>
+                          <p className="text-2xl font-black text-amber-700">₦{Number(changeAmount).toLocaleString()}</p>
                         </div>
                       )}
                    </div>
@@ -816,7 +839,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
              {lastCompletedSale?.wallet_amount_used && lastCompletedSale.wallet_amount_used > 0 && (
                <div className="flex justify-between text-[10px]"><span>WALLET CREDIT USED</span><span>-₦{lastCompletedSale.wallet_amount_used.toLocaleString()}</span></div>
              )}
-             <div className="flex justify-between"><span>TOTAL PAID</span><span>₦{(lastCompletedSale?.total_amount || 0) - (lastCompletedSale?.wallet_amount_used || 0)}.toLocaleString()</span></div>
+             <div className="flex justify-between"><span>TOTAL PAID</span><span>₦{((lastCompletedSale?.total_amount || 0) - (lastCompletedSale?.wallet_amount_used || 0)).toLocaleString()}</span></div>
              <div className="flex justify-between text-[10px] font-bold"><span>PAYMENT</span><span className="uppercase">{lastCompletedSale?.payment_method}</span></div>
           </div>
           <div className="text-center border-t border-dashed border-slate-300 pt-4 space-y-2">

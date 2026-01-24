@@ -63,8 +63,18 @@ export interface Sale {
 export interface CustomerWallet {
   id?: number;
   phone: string;
+  name?: string;
   balance: number;
   last_updated: number;
+}
+
+export interface WalletTransaction {
+  id?: number;
+  phone: string;
+  amount: number;
+  type: 'Credit' | 'Debit';
+  timestamp: number;
+  details?: string;
 }
 
 export interface Expense {
