@@ -15,7 +15,8 @@ import {
   LayoutDashboard,
   LogOut,
   ChevronRight,
-  Globe
+  Globe,
+  RefreshCw
 } from 'lucide-react';
 
 const MASTER_PIN = "8844";
@@ -56,19 +57,37 @@ const MasterAdminHub: React.FC = () => {
   };
 
   const fetchData = async () => {
-    const siteId = process.env.VITE_NETLIFY_SITE_ID;
-    const token = process.env.VITE_NETLIFY_ACCESS_TOKEN;
+    // Vite uses import.meta.env for environment variables
+    // Fix: Cast import.meta to any to allow access to env property in environments where Vite types aren't globally extended.
+    const SITE_ID = (import.meta as any).env.VITE_NETLIFY_SITE_ID;
+    const ACCESS_TOKEN = (import.meta as any).env.VITE_NETLIFY_ACCESS_TOKEN;
     
-    if (!siteId || !token) {
-      setError("API Credentials Missing. Configure site_id and access_token in project environment.");
+    if (!SITE_ID || !ACCESS_TOKEN) {
+      setError("Environment configuration missing. Check VITE_NETLIFY_SITE_ID and VITE_NETLIFY_ACCESS_TOKEN.");
       return;
     }
 
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetch(`https://api.netlify.com/api/v1/sites/${siteId}/submissions?access_token=${token}`);
-      if (!response.ok) throw new Error("Failed to reach Netlify API.");
+      const response = await fetch(`https://api.netlify.com/api/v1/sites/${SITE_ID}/submissions`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${ACCESS_TOKEN}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.status === 401) {
+        throw new Error("Invalid Access Token");
+      }
+      if (response.status === 404) {
+        throw new Error("Site ID not found");
+      }
+      if (!response.ok) {
+        throw new Error(`Satellite Connection Error: ${response.statusText}`);
+      }
+
       const data = await response.json();
       setSubmissions(data);
     } catch (err: any) {
@@ -221,12 +240,22 @@ const MasterAdminHub: React.FC = () => {
              />
            </div>
 
-           <button 
-             onClick={downloadCSV}
-             className="px-8 py-5 bg-slate-800 hover:bg-slate-700 text-white rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-3 transition-all active:scale-95 border border-slate-700"
-           >
-             <Download size={20} /> Export CSV
-           </button>
+           <div className="flex gap-2">
+             <button 
+               onClick={fetchData}
+               disabled={isLoading}
+               className="p-5 bg-slate-800 hover:bg-slate-700 text-emerald-400 rounded-2xl border border-slate-700 transition-all active:scale-95 disabled:opacity-50"
+               title="Refresh Data"
+             >
+               <RefreshCw size={24} className={isLoading ? 'animate-spin' : ''} />
+             </button>
+             <button 
+               onClick={downloadCSV}
+               className="px-8 py-5 bg-slate-800 hover:bg-slate-700 text-white rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-3 transition-all active:scale-95 border border-slate-700"
+             >
+               <Download size={20} /> Export CSV
+             </button>
+           </div>
         </div>
 
         {/* Data View */}
@@ -239,8 +268,8 @@ const MasterAdminHub: React.FC = () => {
            ) : error ? (
              <div className="flex flex-col items-center justify-center py-40 gap-4 text-rose-500 px-6 text-center">
                 <ShieldAlert size={64} />
-                <p className="font-bold">{error}</p>
-                <button onClick={fetchData} className="px-6 py-2 bg-slate-800 rounded-xl text-white">Reconnect Bridge</button>
+                <p className="font-black text-xl">{error}</p>
+                <button onClick={fetchData} className="px-8 py-3 bg-slate-800 rounded-2xl text-white font-black text-xs uppercase tracking-widest hover:bg-slate-700 border border-slate-700 transition-all">Reconnect Bridge</button>
              </div>
            ) : filteredData.length === 0 ? (
              <div className="flex flex-col items-center justify-center py-40 text-slate-600 gap-4">
