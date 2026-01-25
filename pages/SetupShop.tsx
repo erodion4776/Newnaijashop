@@ -31,22 +31,22 @@ const SetupShop: React.FC<SetupShopProps> = ({ onComplete }) => {
     e.preventDefault();
     setIsProcessing(true);
 
-    // 1. Submit to Netlify Tracking (AJAX)
-    const netlifyFormData = new FormData();
+    // 1. Submit to Netlify Tracking (AJAX) - Fields must match forms.html exactly
+    const netlifyFormData = new URLSearchParams();
     netlifyFormData.append("form-name", "shop-registration");
     netlifyFormData.append("shop-name", formData.shopName);
     netlifyFormData.append("admin-name", formData.adminName);
-    netlifyFormData.append("referral-code-used", formData.referralCode || "NONE");
     netlifyFormData.append("terminal-id", terminalId);
+    netlifyFormData.append("referral-code-used", formData.referralCode || "NONE");
 
     try {
       await fetch("/", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams(netlifyFormData as any).toString(),
+        body: netlifyFormData.toString(),
       });
     } catch (err) {
-      console.warn("Netlify Tracking failed (offline), proceeding with local setup.");
+      console.warn("Netlify Tracking failed (offline or network error), proceeding with local setup.");
     }
 
     // 2. Perform Local DB Setup (Guaranteed regardless of network)
@@ -80,15 +80,6 @@ const SetupShop: React.FC<SetupShopProps> = ({ onComplete }) => {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
-      {/* Hidden Netlify Form Definition for Build-time detection */}
-      <form name="shop-registration" data-netlify="true" hidden netlify-honeypot="bot-field">
-        <input type="text" name="shop-name" />
-        <input type="text" name="admin-name" />
-        <input type="text" name="referral-code-used" />
-        <input type="text" name="terminal-id" />
-        <input type="text" name="bot-field" />
-      </form>
-
       <div className="w-full max-w-md space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
         <div className="text-center space-y-2">
           <h2 className="text-4xl font-black text-slate-900 tracking-tight">Onboarding</h2>
@@ -101,12 +92,16 @@ const SetupShop: React.FC<SetupShopProps> = ({ onComplete }) => {
           </div>
 
           <form onSubmit={handleSetup} className="space-y-6 relative z-10">
+            {/* Netlify Form Logic - This hidden field is standard for AJAX submissions */}
+            <input type="hidden" name="form-name" value="shop-registration" />
+
             <div>
               <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1 tracking-widest">Store Name</label>
               <div className="relative">
                 <Store className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
                 <input 
                   required 
+                  name="shop-name"
                   type="text" 
                   placeholder="e.g. Alaba Provisions Store" 
                   className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
@@ -122,6 +117,7 @@ const SetupShop: React.FC<SetupShopProps> = ({ onComplete }) => {
                 <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
                 <input 
                   required 
+                  name="admin-name"
                   type="text" 
                   placeholder="Your Full Name" 
                   className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
@@ -153,6 +149,7 @@ const SetupShop: React.FC<SetupShopProps> = ({ onComplete }) => {
                   <Ticket className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
                   <input 
                     type="text" 
+                    name="referral-code-used"
                     placeholder="Optional" 
                     className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-center outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
                     value={formData.referralCode}

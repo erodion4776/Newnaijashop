@@ -10,7 +10,8 @@ import {
   CreditCard,
   UserPlus,
   ShieldCheck,
-  Smartphone
+  Smartphone,
+  Landmark
 } from 'lucide-react';
 import { generateRequestCode } from '../utils/licensing';
 
@@ -20,10 +21,6 @@ const AffiliatePortal: React.FC = () => {
   const marketerCode = generateRequestCode().replace('NS-', 'MARK-');
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    // We let the default browser behavior handle the Netlify form submission 
-    // unless we wanted to do it via AJAX. For standard Netlify forms, 
-    // we can just let it submit or use AJAX for better UX.
-    // Let's use AJAX to show the local Success Card immediately.
     setIsSubmitting(true);
     const form = e.currentTarget;
     const formData = new FormData(form);
@@ -170,14 +167,31 @@ const AffiliatePortal: React.FC = () => {
               />
             </div>
 
-            <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Bank Details (For Payouts)</label>
-              <textarea 
-                required 
-                name="bank-details"
-                placeholder="Bank Name, Account Number, Account Name"
-                className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold h-24 resize-none"
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Bank Name</label>
+                <div className="relative">
+                  <Landmark className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
+                  <input 
+                    required 
+                    name="bank-name"
+                    type="text" 
+                    placeholder="e.g. OPay" 
+                    className="w-full pl-10 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Account Number</label>
+                <input 
+                  required 
+                  name="account-number"
+                  type="text" 
+                  inputMode="numeric"
+                  placeholder="0123456789" 
+                  className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                />
+              </div>
             </div>
 
             <button 
