@@ -9,7 +9,6 @@ import POS from './pages/POS';
 import Inventory from './pages/Inventory';
 import InventoryLedger from './pages/InventoryLedger';
 import Debts from './pages/Debts';
-import AIInsights from './pages/AIInsights';
 import BusinessHub from './pages/BusinessHub';
 import TransferStation from './pages/TransferStation';
 import StaffManagement from './pages/StaffManagement';
@@ -23,7 +22,6 @@ import SupportChat from './components/SupportChat';
 import { performAutoSnapshot } from './utils/backup';
 import { 
   AlertTriangle,
-  Loader2,
   Lock,
   ShieldAlert
 } from 'lucide-react';
@@ -264,7 +262,6 @@ const AppContent: React.FC = () => {
         {currentView === 'inventory' && <Inventory setView={setCurrentView} currentUser={currentUser} isStaffLock={isStaffLock} />}
         {currentView === 'inventory-ledger' && <InventoryLedger />}
         {currentView === 'debts' && <Debts />}
-        {currentView === 'ai-insights' && <AIInsights />}
         {currentView === 'business-hub' && <BusinessHub />}
         {currentView === 'staff-management' && <StaffManagement />}
         {currentView === 'security-backups' && <SecurityBackups currentUser={currentUser} />}

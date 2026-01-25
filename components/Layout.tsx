@@ -6,7 +6,6 @@ import {
   Package, 
   Users, 
   Settings as SettingsIcon, 
-  Sparkles,
   Landmark,
   Menu,
   X,
@@ -61,7 +60,6 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, setView, shopName
     { id: 'inventory-ledger', label: 'Inventory Ledger', icon: ClipboardList, restrict: true },
     { id: 'debts', label: 'Debt Tracker', icon: Users, restrict: true },
     { id: 'staff-management', label: 'Manage Staff', icon: UserCog, restrict: true },
-    { id: 'ai-insights', label: 'AI Business Hub', icon: Sparkles, restrict: true },
     { id: 'security-backups', label: 'Security & Backup', icon: Database, restrict: true },
     { id: 'settings', label: 'Settings', icon: SettingsIcon, restrict: true },
   ];

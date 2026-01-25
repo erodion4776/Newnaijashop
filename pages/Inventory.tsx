@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
 import { 
@@ -8,22 +8,10 @@ import {
   Edit, 
   Trash2, 
   PackagePlus, 
-  Sparkles, 
   Camera, 
-  UploadCloud, 
-  Loader2, 
   X, 
-  CheckCircle2, 
-  ClipboardList,
-  AlertCircle,
   AlertTriangle,
-  PackageCheck,
-  RefreshCw,
-  Info,
   Package,
-  Minus,
-  FileImage,
-  Save,
   Trash,
   ShieldAlert,
   ChevronRight,
@@ -35,14 +23,15 @@ import {
   Coins,
   ArrowUp,
   ArrowDown,
-  Settings2,
-  Filter,
   Layers,
   ShoppingBag,
-  Clock
+  Clock,
+  CheckCircle2,
+  // Fix: Added missing icon imports
+  Sparkles,
+  Loader2
 } from 'lucide-react';
 import { Product, View, Staff } from '../types';
-import { processHandwrittenLedger, RateLimitError } from '../services/geminiService';
 import StockScanner from '../components/StockScanner';
 import { ScannedProduct } from '../utils/LocalVisionService';
 
@@ -54,35 +43,6 @@ interface InventoryProps {
 
 const CATEGORIES = ['General', 'Electronics', 'Food & Drinks', 'Clothing', 'Health', 'Beauty', 'Home', 'Office', 'Other'];
 
-const resizeImage = (file: File, maxWidth: number = 1024): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = (event) => {
-      const img = new Image();
-      img.src = event.target?.result as string;
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        let width = img.width;
-        let height = img.height;
-
-        if (width > maxWidth) {
-          height = (maxWidth / width) * height;
-          width = maxWidth;
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx?.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', 0.8));
-      };
-      img.onerror = reject;
-    };
-    reader.onerror = reject;
-  });
-};
-
 const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock = false }) => {
   const canEdit = currentUser?.role === 'Admin' || (currentUser?.role === 'Manager' && !isStaffLock);
   const isStaff = currentUser?.role === 'Sales';
@@ -92,7 +52,6 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
   const [stockFilter, setStockFilter] = useState<'all' | 'low'>('all');
   
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isMigrationModalOpen, setIsMigrationModalOpen] = useState(false);
   const [isRestockModalOpen, setIsRestockModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
@@ -110,9 +69,7 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
   const [bulkValue, setBulkValue] = useState<number>(0);
   const [bulkDirection, setBulkDirection] = useState<'increase' | 'decrease'>('increase');
   
-  const [isProcessingAI, setIsProcessingAI] = useState(false);
-  const [migrationData, setMigrationData] = useState<Product[]>([]);
-  const [failedImagePreview, setFailedImagePreview] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const allProductsData = useLiveQuery(() => db.products.toArray());
   const allProducts = allProductsData || [];
@@ -272,7 +229,7 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
     const confirmed = confirm(`You are about to update prices for ${targetProducts.length} products. This cannot be undone. Proceed?`);
     if (!confirmed) return;
 
-    setIsProcessingAI(true);
+    setIsProcessing(true);
     try {
       const updatedProducts = targetProducts.map(p => {
         let adjustment = 0;
@@ -315,7 +272,7 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
     } catch (err) {
       alert("Update failed: " + err);
     } finally {
-      setIsProcessingAI(false);
+      setIsProcessing(false);
     }
   };
 
@@ -376,57 +333,6 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
     }
   };
 
-  const handleAIMigration = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!navigator.onLine) {
-      alert("AI features require internet connection. Please turn on data to use the Notebook Scanner.");
-      return;
-    }
-
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setIsProcessingAI(true);
-    setFailedImagePreview(null);
-    try {
-      const resizedBase64 = await resizeImage(file, 1024);
-      
-      try {
-        const extractedProducts = await processHandwrittenLedger(resizedBase64);
-        if (extractedProducts && extractedProducts.length > 0) {
-          setMigrationData(extractedProducts);
-          setIsMigrationModalOpen(true);
-        } else {
-          setFailedImagePreview(resizedBase64);
-          alert("NaijaShop Guru couldn't read this ledger. Is it too blurry or dark? Please check the preview.");
-        }
-      } catch (err) {
-        if (err instanceof RateLimitError) {
-          alert(err.message);
-        } else {
-          setFailedImagePreview(resizedBase64);
-          alert("OCR Error: The AI struggled with this image. Please check the preview below.");
-        }
-      }
-    } catch (err) {
-      console.error(err);
-      alert("Image processing failed. Please try a different photo.");
-    } finally {
-      setIsProcessingAI(false);
-      e.target.value = '';
-    }
-  };
-
-  const saveMigrationData = async () => {
-    try {
-      await db.products.bulkAdd(migrationData);
-      setMigrationData([]);
-      setIsMigrationModalOpen(false);
-      alert("Inventory successfully imported!");
-    } catch (err) {
-      alert("Import error: " + err);
-    }
-  };
-
   const handleLocalScanConfirm = async (products: ScannedProduct[]) => {
     try {
       const productsToAdd = products.map(p => ({
@@ -483,13 +389,8 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
                 className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-indigo-600 text-white px-6 py-3 rounded-2xl font-black transition-all shadow-xl shadow-indigo-600/20 hover:bg-indigo-700"
               >
                 <Camera size={20} /> 
-                <span className="hidden sm:inline">Scan Ledger</span>
+                <span className="hidden sm:inline">Scan Paper Ledger</span>
               </button>
-              <label className={`flex-1 md:flex-none flex items-center justify-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-2xl font-black transition-all shadow-xl cursor-pointer ${isProcessingAI ? 'opacity-50 cursor-not-allowed' : 'hover:bg-black'}`}>
-                {isProcessingAI ? <Loader2 className="animate-spin" size={20} /> : <Sparkles size={20} />}
-                <span className="hidden sm:inline">{isProcessingAI ? 'Scanning...' : 'Cloud AI Import'}</span>
-                <input type="file" accept="image/*" className="hidden" onChange={handleAIMigration} disabled={isProcessingAI} />
-              </label>
             </>
           ) : (
             <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 border border-amber-100 rounded-full text-amber-600">
@@ -537,21 +438,6 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
               <p className="text-xl font-black text-white tracking-tight">{formatCurrency(valuation.expectedProfit)}</p>
             </div>
           </div>
-        </div>
-      )}
-
-      {failedImagePreview && (
-        <div className="bg-rose-50 border border-rose-200 p-6 rounded-[2rem] flex flex-col md:flex-row items-center gap-6 animate-in slide-in-from-top-4">
-           <div className="w-24 h-24 bg-white rounded-2xl border border-rose-100 overflow-hidden shrink-0 shadow-sm">
-             <img src={failedImagePreview} alt="Failed Preview" className="w-full h-full object-cover" />
-           </div>
-           <div className="flex-1 text-center md:text-left">
-              <h4 className="font-black text-rose-800 flex items-center gap-2 justify-center md:justify-start">
-                <AlertCircle size={18} /> OCR Scan Preview
-              </h4>
-              <p className="text-sm text-rose-600/80 font-medium">This is what the AI saw. If it's blurry, dark, or messy, Guru will fail. Try taking a clearer photo from directly above.</p>
-           </div>
-           <button onClick={() => setFailedImagePreview(null)} className="p-2 text-rose-400 hover:text-rose-600"><X size={20} /></button>
         </div>
       )}
 
@@ -769,10 +655,10 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
 
             <button 
               onClick={handleBulkUpdate}
-              disabled={isProcessingAI}
+              disabled={isProcessing}
               className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-lg shadow-xl hover:bg-emerald-700 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3"
             >
-              {isProcessingAI ? <Loader2 className="animate-spin" size={24} /> : <CheckCircle2 size={24} />}
+              {isProcessing ? <Loader2 className="animate-spin" size={24} /> : <CheckCircle2 size={24} />}
               Apply Bulk Changes
             </button>
           </div>
@@ -817,44 +703,6 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
                 <button onClick={async () => { await db.products.delete(deleteProduct.id!); setIsDeleteModalOpen(false); }} className="flex-1 py-4 bg-rose-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl">Confirm</button>
               </div>
            </div>
-        </div>
-      )}
-      
-      {isMigrationModalOpen && (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-emerald-950/90 backdrop-blur-xl">
-          <div className="bg-white rounded-[3rem] w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="p-8 border-b border-slate-100 flex items-center justify-between">
-              <div>
-                <h3 className="text-2xl font-black text-slate-900">Scan Results</h3>
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Found {migrationData.length} items from ledger</p>
-              </div>
-              <button onClick={() => setIsMigrationModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full"><X size={24} /></button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-8 space-y-4">
-              {migrationData.map((prod, idx) => (
-                <div key={idx} className="bg-slate-50 p-4 rounded-2xl flex justify-between items-center border border-slate-100">
-                  <div className="flex-1">
-                    <p className="font-black text-slate-800">{prod.name}</p>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{prod.category}</p>
-                  </div>
-                  <div className="flex gap-6 text-right">
-                    <div>
-                      <p className="text-[9px] font-black text-slate-400 uppercase">Price</p>
-                      <p className="font-black text-emerald-600">₦{prod.price.toLocaleString()}</p>
-                    </div>
-                    <div>
-                      <p className="text-[9px] font-black text-slate-400 uppercase">Stock</p>
-                      <p className="font-black text-slate-900">{prod.stock_qty}</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="p-8 bg-slate-50 border-t border-slate-200 flex gap-4">
-              <button onClick={() => setIsMigrationModalOpen(false)} className="flex-1 py-4 bg-white border border-slate-200 text-slate-500 rounded-2xl font-black uppercase text-xs">Discard</button>
-              <button onClick={saveMigrationData} className="flex-[2] py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase text-xs shadow-xl shadow-emerald-600/20">Import {migrationData.length} Items</button>
-            </div>
-          </div>
         </div>
       )}
 

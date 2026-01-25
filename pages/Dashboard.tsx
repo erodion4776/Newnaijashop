@@ -7,7 +7,6 @@ import {
   Package, 
   AlertTriangle, 
   Wallet,
-  ArrowUpRight,
   ShieldAlert,
   Eye,
   EyeOff,
@@ -15,18 +14,14 @@ import {
   Layers,
   ChevronRight,
   Loader2,
-  Sparkles,
-  Lightbulb,
-  WifiOff,
   Banknote,
   PiggyBank,
-  Briefcase,
   BellRing,
-  TrendingDown
+  TrendingDown,
+  Lightbulb
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { Staff, Product, Sale } from '../types';
-import { getAIInsights } from '../services/geminiService';
 import NotificationService from '../services/NotificationService';
 
 interface DashboardProps {
@@ -41,9 +36,6 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, isStaffLock
   const [showSensitiveData, setShowSensitiveData] = useState(false);
   const [isDataReady, setIsDataReady] = useState(false);
   const [isChartLoading, setIsChartLoading] = useState(true);
-  const [guruTip, setGuruTip] = useState<any>(null);
-  const [isLoadingTip, setIsLoadingTip] = useState(false);
-  const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [notifPermission, setNotifPermission] = useState<NotificationPermission>(Notification.permission);
   
   const chartParentRef = useRef<HTMLDivElement>(null);
@@ -54,19 +46,9 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, isStaffLock
   const expenses = useLiveQuery(() => db.expenses.toArray());
 
   useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-    
     // Check for daily report and inactivity
     NotificationService.checkDailyReport();
     NotificationService.checkInactivityReminder();
-
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
   }, []);
 
   useEffect(() => {
@@ -75,18 +57,6 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, isStaffLock
       setTimeout(() => setIsChartLoading(false), 500);
     }
   }, [sales, products, debts, expenses]);
-
-  useEffect(() => {
-    if (isOnline && isDataReady && sales && sales.length >= 5 && !guruTip && !isLoadingTip) {
-      setIsLoadingTip(true);
-      getAIInsights(sales, products || []).then(insights => {
-        if (insights && insights.length > 0) {
-          setGuruTip(insights[0]);
-        }
-        setIsLoadingTip(false);
-      }).catch(() => setIsLoadingTip(false));
-    }
-  }, [isOnline, isDataReady, sales, products]);
 
   const handleEnableNotifs = async () => {
     const result = await NotificationService.requestPermission();
@@ -246,44 +216,15 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, isStaffLock
         />
       </div>
 
-      {/* AI Guru Quick Tip Section */}
-      {isOnline ? (
-        (guruTip || isLoadingTip) && (
-          <div className="bg-emerald-900 rounded-[2.5rem] p-6 text-white relative overflow-hidden border border-emerald-700 shadow-xl animate-in fade-in slide-in-from-bottom-4">
-             <div className="absolute right-[-20px] top-[-20px] opacity-10">
-               <Sparkles size={140} />
-             </div>
-             <div className="relative z-10 flex items-start gap-4">
-                <div className="w-12 h-12 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center shrink-0 border border-white/10">
-                   {isLoadingTip ? <Loader2 size={24} className="animate-spin text-emerald-300" /> : <Lightbulb size={24} className="text-amber-300" />}
-                </div>
-                <div className="flex-1">
-                   <p className="text-[10px] font-black uppercase tracking-widest text-emerald-400 mb-1 flex items-center gap-2">
-                     <Sparkles size={12} /> NaijaShop Guru Tip
-                   </p>
-                   {isLoadingTip ? (
-                     <p className="text-sm font-medium animate-pulse">Analyzing sales velocity for insights...</p>
-                   ) : (
-                     <div>
-                       <h4 className="font-black text-lg leading-tight mb-1">{guruTip.title}</h4>
-                       <p className="text-sm text-emerald-100/80 font-medium">{guruTip.description}</p>
-                     </div>
-                   )}
-                </div>
-                {setView && (
-                  <button onClick={() => setView('ai-insights')} className="hidden sm:flex self-center items-center gap-1 text-[10px] font-black uppercase tracking-widest bg-white/10 px-3 py-2 rounded-xl hover:bg-white/20 transition-all">
-                    More Hub <ChevronRight size={14} />
-                  </button>
-                )}
-             </div>
-          </div>
-        )
-      ) : (
-        <div className="bg-amber-50 border border-amber-100 rounded-[2.5rem] p-6 flex items-center gap-4 text-amber-800">
-           <WifiOff size={24} className="shrink-0" />
-           <p className="text-sm font-bold">Guru Tips offline. Turn on data for smart business insights.</p>
-        </div>
-      )}
+      <div className="bg-emerald-50 border border-emerald-100 p-6 rounded-[2.5rem] flex items-center gap-4 text-emerald-800">
+         <Lightbulb size={24} className="shrink-0 text-emerald-600" />
+         <div className="flex-1">
+           <p className="text-sm font-bold">Use the <b>Business Hub</b> to see smart, local insights about your shop's stock and movers.</p>
+         </div>
+         {setView && (
+           <button onClick={() => setView('business-hub')} className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-md">Open Hub</button>
+         )}
+      </div>
 
       {lowStockItems.length > 0 && (
         <div className="bg-rose-50 border border-rose-100 p-6 rounded-[2.5rem] flex flex-col md:flex-row items-center gap-6 animate-in slide-in-from-top-4">
