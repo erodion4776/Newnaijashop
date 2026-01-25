@@ -16,6 +16,12 @@ interface SetupShopProps {
   onComplete: (adminId: number) => void;
 }
 
+const encode = (data: any) => {
+  return Object.keys(data)
+    .map(key => encodeURIComponent(key) + "=" + encodeURIComponent(data[key]))
+    .join("&");
+}
+
 const SetupShop: React.FC<SetupShopProps> = ({ onComplete }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [formData, setFormData] = useState({
@@ -32,20 +38,22 @@ const SetupShop: React.FC<SetupShopProps> = ({ onComplete }) => {
     setIsProcessing(true);
 
     // 1. Submit to Netlify Tracking (AJAX) using URLSearchParams for reliability
-    const netlifyFormData = new FormData();
-    netlifyFormData.append("form-name", "shop-registration");
-    netlifyFormData.append("shop-name", formData.shopName);
-    netlifyFormData.append("admin-name", formData.adminName);
-    netlifyFormData.append("terminal-id", terminalId);
-    netlifyFormData.append("referral-code-used", formData.referralCode || "NONE");
+    // We use the encode helper provided in instructions for consistency
+    const netlifyData = { 
+      "form-name": "shop-registration",
+      "shop-name": formData.shopName,
+      "admin-name": formData.adminName,
+      "terminal-id": terminalId,
+      "referral-code-used": formData.referralCode || "NONE"
+    };
 
     fetch("/", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams(netlifyFormData as any).toString(),
+      body: encode(netlifyData),
     })
-    .then(() => console.log("Netlify Form Success"))
-    .catch((error) => console.error("Netlify Form Error:", error));
+    .then(() => console.log("Netlify Form Tracking Success"))
+    .catch((error) => console.error("Netlify Form Tracking Error:", error));
 
     // 2. Perform Local DB Setup (Guaranteed regardless of network)
     try {
@@ -89,7 +97,15 @@ const SetupShop: React.FC<SetupShopProps> = ({ onComplete }) => {
             <Store size={120} />
           </div>
 
-          <form onSubmit={handleSetup} className="space-y-6 relative z-10">
+          <form 
+            name="shop-registration"
+            method="POST"
+            action="/"
+            target="hidden_iframe"
+            data-netlify="true"
+            onSubmit={handleSetup} 
+            className="space-y-6 relative z-10"
+          >
             <input type="hidden" name="form-name" value="shop-registration" />
             <input type="hidden" name="terminal-id" value={terminalId} />
 
@@ -110,82 +126,4 @@ const SetupShop: React.FC<SetupShopProps> = ({ onComplete }) => {
             </div>
 
             <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1 tracking-widest">Business Owner Name</label>
-              <div className="relative">
-                <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
-                <input 
-                  required 
-                  name="admin-name"
-                  type="text" 
-                  placeholder="Your Full Name" 
-                  className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
-                  value={formData.adminName}
-                  onChange={e => setFormData({...formData, adminName: e.target.value})}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1 tracking-widest">Admin PIN</label>
-                <div className="relative">
-                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
-                  <input 
-                    required 
-                    type="password" 
-                    maxLength={4} 
-                    placeholder="••••" 
-                    className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-2xl text-center outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
-                    value={formData.adminPin}
-                    onChange={e => setFormData({...formData, adminPin: e.target.value.replace(/\D/g, '')})}
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1 tracking-widest">Promo Code</label>
-                <div className="relative">
-                  <Ticket className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
-                  <input 
-                    type="text" 
-                    name="referral-code-used"
-                    placeholder="Optional" 
-                    className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-center outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
-                    value={formData.referralCode}
-                    onChange={e => setFormData({...formData, referralCode: e.target.value.toUpperCase()})}
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="pt-4">
-              <button 
-                type="submit" 
-                disabled={isProcessing}
-                className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-xl hover:bg-emerald-700 shadow-xl shadow-emerald-900/20 transition-all active:scale-[0.98] flex items-center justify-center gap-3"
-              >
-                {isProcessing ? (
-                  <>
-                    <Loader2 size={24} className="animate-spin" />
-                    Registering Terminal...
-                  </>
-                ) : (
-                  <>
-                    <Rocket size={24} />
-                    Complete Setup
-                  </>
-                )}
-              </button>
-            </div>
-          </form>
-
-          <div className="mt-8 flex items-center justify-center gap-2 text-slate-400">
-            <CheckCircle2 size={14} />
-            <span className="text-[10px] font-black uppercase tracking-widest">Hardware ID: {terminalId}</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-export default SetupShop;
+              <label className="block text-[10px] font-

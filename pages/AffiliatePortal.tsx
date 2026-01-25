@@ -21,28 +21,15 @@ const AffiliatePortal: React.FC = () => {
   const marketerCode = generateRequestCode().replace('NS-', 'MARK-');
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    // Do not call e.preventDefault() immediately to allow standard form submission to target iframe
     setIsSubmitting(true);
-    const form = e.currentTarget;
-    const formData = new FormData(form);
-
-    fetch("/", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams(formData as any).toString(),
-    })
-      .then(() => {
-        console.log("Netlify Form Success");
-        setIsRegistered(true);
-        setIsSubmitting(false);
-      })
-      .catch((error) => {
-        console.error("Netlify Form Error:", error);
-        // Still show success locally so marketer can work offline
-        setIsRegistered(true);
-        setIsSubmitting(false);
-      });
-
-    e.preventDefault();
+    console.log("Submitting affiliate registration to Netlify via hidden iframe...");
+    
+    // Show success UI after a brief delay to simulate network turnaround
+    setTimeout(() => {
+      setIsRegistered(true);
+      setIsSubmitting(false);
+    }, 600);
   };
 
   const copyCode = () => {
@@ -136,6 +123,8 @@ const AffiliatePortal: React.FC = () => {
           <form 
             name="affiliate-registration" 
             method="POST" 
+            action="/"
+            target="hidden_iframe"
             data-netlify="true" 
             onSubmit={handleSubmit}
             className="space-y-6"
