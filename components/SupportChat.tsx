@@ -1,23 +1,21 @@
-
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   MessageCircle, 
   X, 
   Send, 
-  CheckCheck, 
-  PlayCircle, 
   Clock, 
   User,
   Bot,
   Trash2,
-  ChevronRight,
   Headphones,
-  Loader2
+  Loader2,
+  CreditCard,
+  Package
 } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
 import { generateRequestCode } from '../utils/licensing';
-import { getBestMatch } from '../utils/SupportBotEngine';
+import { getBestMatch, ShopData } from '../utils/SupportBotEngine';
 
 interface ChatMessage {
   id: string;
@@ -25,6 +23,7 @@ interface ChatMessage {
   text: string;
   timestamp: number;
   showOptions?: boolean;
+  action?: 'RENEW_LICENSE' | 'VIEW_STOCK' | 'NONE';
 }
 
 const SupportChat: React.FC = () => {
@@ -42,6 +41,42 @@ const SupportChat: React.FC = () => {
   
   const scrollRef = useRef<HTMLDivElement>(null);
   const settings = useLiveQuery(() => db.settings.get('app_settings'));
+  const products = useLiveQuery(() => db.products.toArray()) || [];
+  const sales = useLiveQuery(() => {
+    const today = new Date().setHours(0, 0, 0, 0);
+    return db.sales.where('timestamp').above(today).toArray();
+  }) || [];
+
+  // Calculate Real-time Shop Data
+  const shopStats: ShopData = useMemo(() => {
+    let todayTotal = 0;
+    let interestTotal = 0;
+    
+    // Product map for interest calculation
+    const pMap: Record<number, number> = {};
+    products.forEach(p => { if(p.id) pMap[p.id] = p.cost_price; });
+
+    sales.forEach(s => {
+      todayTotal += s.total_amount;
+      s.items.forEach(item => {
+        const cost = pMap[item.productId] || (item.price * 0.85);
+        interestTotal += (item.price - cost) * item.quantity;
+      });
+    });
+
+    const lowCount = products.filter(p => p.stock_qty <= (p.low_stock_threshold || 5)).length;
+    const expiry = settings?.license_expiry ? new Date(settings.license_expiry).toLocaleDateString() : 'Not Set';
+
+    return {
+      adminName: settings?.admin_name || 'Oga',
+      shopName: settings?.shop_name || 'the shop',
+      todaySales: `₦${todayTotal.toLocaleString()}`,
+      lowStockCount: lowCount,
+      licenseExpiryDate: expiry,
+      totalInterest: `₦${interestTotal.toLocaleString()}`
+    };
+  }, [settings, products, sales]);
+
   const terminalId = generateRequestCode();
   const supportNumber = '2348184774884';
 
@@ -69,32 +104,27 @@ const SupportChat: React.FC = () => {
       timestamp: Date.now()
     };
 
-    // Step A: Show user's message instantly
     setMessages(prev => [...prev, newUserMsg]);
     setInputText('');
 
-    // Step B: 500ms delay before starting to 'type'
     setTimeout(() => {
-      const botResponse = getBestMatch(userText);
-      const botMsgText = botResponse || "I'm still learning! I couldn't find a direct answer for that. Let me connect you to a human expert who can help you better.";
-      
       setIsTyping(true);
-
-      // Step C: Typing duration based on length (1.5s to 3s)
-      const typingTime = Math.min(Math.max(botMsgText.length * 15, 1500), 3000);
-
+      const match = getBestMatch(userText, shopStats);
+      const botMsgText = match?.answer || "I'm still learning! I couldn't find a direct answer for that. Let me connect you to a human expert who can help you better.";
+      
+      // 2-second realistic delay
       setTimeout(() => {
-        // Step D: Hide typing and show bot answer
         setIsTyping(false);
         const botMsg: ChatMessage = {
           id: (Date.now() + 1).toString(),
           sender: 'bot',
           text: botMsgText,
           timestamp: Date.now(),
-          showOptions: true
+          showOptions: true,
+          action: match?.action || 'NONE'
         };
         setMessages(prev => [...prev, botMsg]);
-      }, typingTime);
+      }, 2000);
     }, 500);
   };
 
@@ -103,7 +133,7 @@ const SupportChat: React.FC = () => {
       {
         id: 'welcome',
         sender: 'bot',
-        text: "👋 Welcome back! How can I help you today?",
+        text: `👋 Welcome back ${shopStats.adminName}! How can I help you today?`,
         timestamp: Date.now()
       }
     ]);
@@ -118,9 +148,28 @@ const SupportChat: React.FC = () => {
     window.open(whatsappUrl, '_blank');
   };
 
+  const handleAction = (action: string) => {
+    if (action === 'VIEW_STOCK') {
+      // In a real app we might use a global state or custom event
+      // For this implementation, we give the user visual feedback
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        sender: 'bot',
+        text: "Please click 'Inventory' in the sidebar to see your low stock items.",
+        timestamp: Date.now()
+      }]);
+    } else if (action === 'RENEW_LICENSE') {
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        sender: 'bot',
+        text: "Please go to 'Settings' and click the 'Activate Terminal' button to use Paystack.",
+        timestamp: Date.now()
+      }]);
+    }
+  };
+
   return (
     <>
-      {/* Floating Toggle Button */}
       <button 
         onClick={() => setIsOpen(!isOpen)}
         className="fixed bottom-6 right-6 z-[999] w-16 h-16 bg-emerald-600 text-white rounded-full shadow-2xl flex items-center justify-center hover:bg-emerald-700 hover:scale-110 active:scale-95 transition-all animate-in fade-in zoom-in duration-500"
@@ -131,11 +180,9 @@ const SupportChat: React.FC = () => {
         )}
       </button>
 
-      {/* Chat Widget Panel */}
       {isOpen && (
         <div className="fixed bottom-24 right-6 z-[999] w-[380px] max-w-[calc(100vw-3rem)] h-[600px] max-h-[calc(100vh-10rem)] bg-white rounded-[2.5rem] shadow-[0_20px_60px_rgba(0,0,0,0.3)] border border-slate-100 flex flex-col overflow-hidden animate-in slide-in-from-bottom-10 fade-in duration-300">
           
-          {/* Header Area */}
           <div className="bg-emerald-900 p-6 text-white relative overflow-hidden shrink-0">
             <div className="absolute right-[-20px] top-[-20px] opacity-10">
               <Bot size={120} />
@@ -148,7 +195,7 @@ const SupportChat: React.FC = () => {
                 </div>
                 <div>
                   <h3 className="text-xl font-black tracking-tight leading-none">Assistant Guru</h3>
-                  <p className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest mt-1">NaijaShop AI (Offline)</p>
+                  <p className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest mt-1">NaijaShop Assistant</p>
                 </div>
               </div>
               <button 
@@ -161,7 +208,6 @@ const SupportChat: React.FC = () => {
             </div>
           </div>
 
-          {/* Conversation Area */}
           <div 
             ref={scrollRef}
             className="flex-1 p-6 space-y-4 overflow-y-auto bg-slate-50/50 scrollbar-hide"
@@ -180,20 +226,36 @@ const SupportChat: React.FC = () => {
                 </div>
                 <div className="mt-1 flex items-center gap-1 text-[8px] font-black text-slate-300 uppercase tracking-widest">
                   {msg.sender === 'user' ? <User size={8} /> : <Bot size={8} />}
-                  {msg.sender === 'user' ? 'You' : 'NaijaShop Assistant'} • {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  {msg.sender === 'user' ? 'You' : 'Assistant Guru'} • {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </div>
 
                 {msg.sender === 'bot' && msg.showOptions && (
                   <div className="mt-3 flex flex-wrap gap-2 animate-in fade-in duration-700">
+                    {msg.action === 'RENEW_LICENSE' && (
+                      <button 
+                        onClick={() => handleAction('RENEW_LICENSE')}
+                        className="px-3 py-1.5 bg-indigo-600 text-white rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 transition-colors flex items-center gap-2 shadow-lg"
+                      >
+                        <CreditCard size={12} /> 💳 Renew License Now
+                      </button>
+                    )}
+                    {msg.action === 'VIEW_STOCK' && (
+                      <button 
+                        onClick={() => handleAction('VIEW_STOCK')}
+                        className="px-3 py-1.5 bg-emerald-600 text-white rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 transition-colors flex items-center gap-2 shadow-lg"
+                      >
+                        <Package size={12} /> 📦 View Low Stock
+                      </button>
+                    )}
                     <button 
-                      onClick={() => setMessages(prev => [...prev, { id: Date.now().toString(), sender: 'bot', text: "Glad I could help! I'm here if you need anything else.", timestamp: Date.now() }])}
+                      onClick={() => setMessages(prev => [...prev, { id: Date.now().toString(), sender: 'bot', text: "No wahala, I am here if you need me!", timestamp: Date.now() }])}
                       className="px-3 py-1.5 bg-emerald-50 text-emerald-600 rounded-full text-[10px] font-black uppercase tracking-widest border border-emerald-100 hover:bg-emerald-100 transition-colors"
                     >
-                      ✅ That helped
+                      ✅ This helped
                     </button>
                     <button 
                       onClick={connectToHuman}
-                      className="px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-full text-[10px] font-black uppercase tracking-widest border border-indigo-100 hover:bg-indigo-100 transition-colors flex items-center gap-1"
+                      className="px-3 py-1.5 bg-rose-50 text-rose-600 rounded-full text-[10px] font-black uppercase tracking-widest border border-rose-100 hover:bg-rose-100 transition-colors flex items-center gap-1 shadow-sm"
                     >
                       <Headphones size={12} /> Talk to Human
                     </button>
@@ -210,13 +272,12 @@ const SupportChat: React.FC = () => {
                   <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce"></div>
                 </div>
                 <div className="mt-1 flex items-center gap-1 text-[8px] font-black text-slate-300 uppercase tracking-widest">
-                  <Bot size={8} /> Assistant is typing...
+                  <Bot size={8} /> Assistant is thinking...
                 </div>
               </div>
             )}
           </div>
 
-          {/* Input Area */}
           <div className="p-6 border-t border-slate-100 bg-white shrink-0">
             <div className="relative">
               <input 
@@ -238,7 +299,7 @@ const SupportChat: React.FC = () => {
             
             <div className="flex items-center justify-center gap-2 text-slate-300 mt-4">
               <Clock size={12} />
-              <span className="text-[9px] font-black uppercase tracking-widest">Offline Support 24/7</span>
+              <span className="text-[9px] font-black uppercase tracking-widest">Offline Intelligence active</span>
             </div>
           </div>
         </div>

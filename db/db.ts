@@ -1,5 +1,5 @@
 
-import { Dexie } from 'dexie';
+import Dexie from 'dexie';
 import type { Table } from 'dexie';
 import { Product, Sale, Debt, Settings, ParkedOrder, InventoryLog, Staff, Expense, AuditEntry, CustomerWallet, WalletTransaction, UsedReference } from '../types';
 
@@ -20,8 +20,7 @@ export class NaijaShopDB extends Dexie {
   constructor() {
     super('NaijaShopDB');
     
-    // Fix: Using this.version() which is inherited from the Dexie base class.
-    // Ensure Dexie is imported as a named import to help TypeScript resolve the base class methods.
+    // Inherit the version method from the Dexie base class to define schema.
     this.version(27).stores({
       products: '++id, name, category, barcode',
       sales: '++id, sale_id, timestamp, payment_method, staff_name',
