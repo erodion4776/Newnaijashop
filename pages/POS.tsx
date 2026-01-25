@@ -27,6 +27,7 @@ import { Product, SaleItem, View, Staff, Sale, Settings } from '../types';
 import BarcodeScanner from '../components/BarcodeScanner';
 import BluetoothPrintService from '../services/BluetoothPrintService';
 import CheckoutModal from '../components/CheckoutModal';
+import VoiceAssistant from '../components/VoiceAssistant';
 
 interface POSProps {
   setView: (view: View) => void;
@@ -250,15 +251,25 @@ const POS: React.FC<POSProps> = ({ setView, currentUser }) => {
       
       <div className="flex-1 overflow-y-auto space-y-4 pb-20 lg:pb-0">
         <div className="sticky top-0 z-30 bg-slate-50 py-2 flex gap-4">
-          <div className="relative flex-1">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-            <input type="text" placeholder="Search product..." className="w-full h-14 pl-12 pr-4 bg-white border border-slate-200 rounded-2xl outline-none" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+          <div className="relative flex-1 flex gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+              <input type="text" placeholder="Search product..." className="w-full h-14 pl-12 pr-4 bg-white border border-slate-200 rounded-2xl outline-none shadow-sm transition-all focus:ring-2 focus:ring-emerald-500" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+            </div>
+            {/* Voice Assistant Integrated Here */}
+            <VoiceAssistant 
+              products={products}
+              onAddToCart={addToCart}
+              onClearCart={() => setCart([])}
+              onCheckout={handleOpenCheckout}
+              onParkOrder={() => setShowParkModal(true)}
+            />
           </div>
           <div className="flex gap-2">
-            <button onClick={() => setShowParkedListModal(true)} className={`h-14 px-4 rounded-2xl flex items-center gap-2 font-black text-[10px] uppercase transition-all ${parkedOrders.length > 0 ? 'bg-amber-100 text-amber-700 border-2 border-amber-200' : 'bg-white border text-slate-400'}`}>
+            <button onClick={() => setShowParkedListModal(true)} className={`h-14 px-4 rounded-2xl flex items-center gap-2 font-black text-[10px] uppercase transition-all ${parkedOrders.length > 0 ? 'bg-amber-100 text-amber-700 border-2 border-amber-200 shadow-sm' : 'bg-white border text-slate-400'}`}>
               <History size={18} /> Parked ({parkedOrders.length})
             </button>
-            <button onClick={() => setShowScanner(true)} className="h-14 w-14 bg-emerald-600 text-white rounded-2xl flex items-center justify-center shadow-lg"><Camera /></button>
+            <button onClick={() => setShowScanner(true)} className="h-14 w-14 bg-emerald-600 text-white rounded-2xl flex items-center justify-center shadow-lg active:scale-95 transition-all"><Camera /></button>
           </div>
         </div>
         
