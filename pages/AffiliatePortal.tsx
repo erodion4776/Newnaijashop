@@ -15,12 +15,6 @@ import {
 } from 'lucide-react';
 import { generateRequestCode } from '../utils/licensing';
 
-const encode = (data: any) => {
-  return Object.keys(data)
-    .map(key => encodeURIComponent(key) + "=" + encodeURIComponent(data[key]))
-    .join("&");
-}
-
 const AffiliatePortal: React.FC = () => {
   const [isRegistered, setIsRegistered] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -30,16 +24,11 @@ const AffiliatePortal: React.FC = () => {
     setIsSubmitting(true);
     const form = e.currentTarget;
     const formData = new FormData(form);
-    const data: any = {};
-    formData.forEach((value, key) => (data[key] = value));
 
     fetch("/", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: encode({ 
-        "form-name": "affiliate-registration",
-        ...data
-      }),
+      body: new URLSearchParams(formData as any).toString(),
     })
       .then(() => {
         console.log("Netlify Form Success");

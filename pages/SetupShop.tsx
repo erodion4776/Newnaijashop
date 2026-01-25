@@ -16,12 +16,6 @@ interface SetupShopProps {
   onComplete: (adminId: number) => void;
 }
 
-const encode = (data: any) => {
-  return Object.keys(data)
-    .map(key => encodeURIComponent(key) + "=" + encodeURIComponent(data[key]))
-    .join("&");
-}
-
 const SetupShop: React.FC<SetupShopProps> = ({ onComplete }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [formData, setFormData] = useState({
@@ -37,17 +31,18 @@ const SetupShop: React.FC<SetupShopProps> = ({ onComplete }) => {
     e.preventDefault();
     setIsProcessing(true);
 
-    // 1. Submit to Netlify Tracking (AJAX)
+    // 1. Submit to Netlify Tracking (AJAX) using URLSearchParams for reliability
+    const netlifyFormData = new FormData();
+    netlifyFormData.append("form-name", "shop-registration");
+    netlifyFormData.append("shop-name", formData.shopName);
+    netlifyFormData.append("admin-name", formData.adminName);
+    netlifyFormData.append("terminal-id", terminalId);
+    netlifyFormData.append("referral-code-used", formData.referralCode || "NONE");
+
     fetch("/", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: encode({ 
-        "form-name": "shop-registration",
-        "shop-name": formData.shopName,
-        "admin-name": formData.adminName,
-        "terminal-id": terminalId,
-        "referral-code-used": formData.referralCode || "NONE"
-      }),
+      body: new URLSearchParams(netlifyFormData as any).toString(),
     })
     .then(() => console.log("Netlify Form Success"))
     .catch((error) => console.error("Netlify Form Error:", error));

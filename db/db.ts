@@ -1,9 +1,9 @@
 
-import { Dexie } from 'dexie';
+import Dexie from 'dexie';
 import type { Table } from 'dexie';
 import { Product, Sale, Debt, Settings, ParkedOrder, InventoryLog, Staff, Expense, AuditEntry, CustomerWallet, WalletTransaction, UsedReference } from '../types';
 
-// Use named import for Dexie class to ensure all prototype methods like 'version' are correctly inherited and typed on subclasses.
+// Fix: Use default import for Dexie class to ensure all prototype methods like 'version' are correctly inherited and typed on subclasses.
 export class NaijaShopDB extends Dexie {
   products!: Table<Product>;
   sales!: Table<Sale>;
@@ -22,11 +22,11 @@ export class NaijaShopDB extends Dexie {
     super('NaijaShopDB');
     
     // Define the schema for the database using the version method inherited from the Dexie base class.
-    // Fix: Using named import resolves the issue where 'version' was not recognized on the instance by the TypeScript compiler.
+    // Fix: Using default import for Dexie resolves common TypeScript inheritance recognition issues in many environments.
     this.version(27).stores({
       products: '++id, name, category, barcode',
       sales: '++id, sale_id, timestamp, payment_method, staff_name',
-      debts: '++id, customer_name, status',
+      debts: '++id, customer_name, phone, status',
       staff: '++id, name, role, status',
       settings: 'id',
       parked_orders: '++id, customerName, timestamp',
