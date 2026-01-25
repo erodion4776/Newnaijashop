@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { 
   LayoutDashboard, 
@@ -22,7 +21,8 @@ import {
   TrendingDown,
   ShieldAlert as ShieldIcon,
   Lightbulb,
-  Moon
+  Moon,
+  Zap
 } from 'lucide-react';
 import { View, Staff } from '../types';
 import ClosingReport from './ClosingReport';
@@ -43,9 +43,27 @@ interface LayoutProps {
   onLogout: () => void;
   canInstall?: boolean;
   onInstall?: () => void;
+  trialRemaining?: { days: number, hours: number, minutes: number, totalMs: number };
+  isSubscribed?: boolean;
+  onSubscribe?: () => void;
 }
 
-const Layout: React.FC<LayoutProps> = ({ children, activeView, setView, shopName, currentUser, isStaffLock, toggleStaffLock, adminPin, onLogout, canInstall, onInstall }) => {
+const Layout: React.FC<LayoutProps> = ({ 
+  children, 
+  activeView, 
+  setView, 
+  shopName, 
+  currentUser, 
+  isStaffLock, 
+  toggleStaffLock, 
+  adminPin, 
+  onLogout, 
+  canInstall, 
+  onInstall,
+  trialRemaining,
+  isSubscribed,
+  onSubscribe
+}) => {
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
   const [showUnlockModal, setShowUnlockModal] = useState(false);
   const [showClosingModal, setShowClosingModal] = useState(false);
@@ -88,6 +106,32 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, setView, shopName
     }
   };
 
+  const renderTrialWidget = () => {
+    if (isSubscribed || !trialRemaining) return null;
+
+    const trialPeriodTotal = 30 * 24 * 60 * 60 * 1000;
+    const percentage = Math.max(0, (trialRemaining.totalMs / trialPeriodTotal) * 100);
+    const isUrgent = trialRemaining.days < 5;
+
+    return (
+      <div className="px-4 py-3 bg-white/5 rounded-2xl border border-white/10 mb-4 mx-4">
+        <div className="flex items-center justify-between mb-2">
+           <div className="flex items-center gap-1.5">
+              <Zap size={12} className={isUrgent ? 'text-rose-400' : 'text-emerald-400'} />
+              <span className="text-[9px] font-black uppercase tracking-widest text-white/60">Free Trial</span>
+           </div>
+           <span className={`text-[10px] font-black ${isUrgent ? 'text-rose-400' : 'text-white'}`}>{trialRemaining.days} Days Left</span>
+        </div>
+        <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
+           <div 
+            className={`h-full transition-all duration-1000 ${isUrgent ? 'bg-rose-500' : 'bg-emerald-500'}`} 
+            style={{ width: `${percentage}%` }}
+           />
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden">
       <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-emerald-900 text-white flex flex-col transform transition-transform duration-300 ease-in-out lg:relative lg:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
@@ -110,6 +154,8 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, setView, shopName
         </nav>
         
         <div className="p-4 space-y-3">
+          {renderTrialWidget()}
+
           {canInstall && (
             <button 
               onClick={onInstall} 

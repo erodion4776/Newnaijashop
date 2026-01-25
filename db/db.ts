@@ -1,9 +1,9 @@
 
-import Dexie from 'dexie';
+import { Dexie } from 'dexie';
 import type { Table } from 'dexie';
 import { Product, Sale, Debt, Settings, ParkedOrder, InventoryLog, Staff, Expense, AuditEntry, CustomerWallet, WalletTransaction, UsedReference } from '../types';
 
-// Fix: Using default import for Dexie to ensure proper class inheritance and recognition of prototype methods like 'version'.
+// Fix: Using named import for Dexie to ensure proper class inheritance and recognition of prototype methods like 'version' in TypeScript.
 export class NaijaShopDB extends Dexie {
   products!: Table<Product>;
   sales!: Table<Sale>;

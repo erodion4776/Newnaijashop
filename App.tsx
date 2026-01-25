@@ -37,6 +37,21 @@ import {
 const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-9987-b4ed4c0e3c36.png";
 const MASTER_RECOVERY_PIN = "9999";
 
+// Trial Logic Helper
+export const getTrialRemainingTime = (installationDate: number) => {
+  const trialPeriod = 30 * 24 * 60 * 60 * 1000;
+  const expiry = installationDate + trialPeriod;
+  const remaining = expiry - Date.now();
+  
+  if (remaining <= 0) return { days: 0, hours: 0, minutes: 0, totalMs: 0 };
+  
+  const days = Math.floor(remaining / (24 * 60 * 60 * 1000));
+  const hours = Math.floor((remaining % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
+  const minutes = Math.floor((remaining % (60 * 60 * 1000)) / (60 * 1000));
+  
+  return { days, hours, minutes, totalMs: remaining };
+};
+
 interface ErrorBoundaryProps { children?: ReactNode; }
 interface ErrorBoundaryState { hasError: boolean; error: Error | null; }
 
@@ -91,8 +106,16 @@ const AppContent: React.FC = () => {
   const [activationSession, setActivationSession] = useState<string | null>(null);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
 
+  // Real-time trial tick
+  const [now, setNow] = useState(Date.now());
+
   const settings = useLiveQuery(() => db.settings.get('app_settings'));
   const staffList = useLiveQuery(() => db.staff.toArray()) || [];
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60000); // Tick every minute
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -128,7 +151,6 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     initSettings().then(async () => {
       setIsInitialized(true);
-      // Security Check: Anti-Time Travel Update
       const s = await db.settings.get('app_settings');
       if (s) {
         await db.settings.update('app_settings', { last_used_timestamp: Date.now() });
@@ -144,14 +166,15 @@ const AppContent: React.FC = () => {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, []);
 
-  // Trial & Security Logic (Derived State)
-  const trialPeriod = 30 * 24 * 60 * 60 * 1000;
+  // Trial & Security Logic
   const s = settings as any;
-  const isLicensed = settings?.license_expiry && settings.license_expiry > Date.now();
-  const isTrialExpired = s?.installationDate && (Date.now() > s.installationDate + trialPeriod) && !s.isSubscribed && !isLicensed;
+  const isLicensed = settings?.license_expiry && settings.license_expiry > now;
   
-  // Anti-Time Travel Detection: Current time is notably behind last recorded usage
-  const isTampered = s?.last_used_timestamp && (Date.now() < s.last_used_timestamp - 300000); // 5 min drift tolerance
+  // Real-time Expiry Calculation
+  const trial = s?.installationDate ? getTrialRemainingTime(s.installationDate) : { totalMs: 9999999999, days: 30 };
+  const isTrialExpired = s?.installationDate && (trial.totalMs <= 0) && !s.isSubscribed && !isLicensed;
+  
+  const isTampered = s?.last_used_timestamp && (now < s.last_used_timestamp - 300000);
 
   const handlePaystackPayment = () => {
     setIsProcessingPayment(true);
@@ -219,12 +242,10 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // PUBLIC ROUTE: Master Control (EXEMPT FROM LOCKS)
   if (isMasterView) {
     return <MasterAdminHub />;
   }
 
-  // SECURITY: Clock Tampering Guard
   if (isTampered) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6 text-center">
@@ -244,7 +265,6 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // TRIAL LOCKOUT: 30-day Free Trial Guard
   if (isTrialExpired && currentView !== 'activation') {
     return (
       <div className="min-h-screen bg-emerald-950 flex items-center justify-center p-6">
@@ -276,7 +296,6 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // PUBLIC ROUTE: Affiliate Portal
   if (isAffiliateView) {
     return (
       <div className="min-h-screen bg-slate-50">
@@ -290,12 +309,10 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // ONBOARDING: Setup Shop
   if (isInitialized && (!settings?.is_setup_complete || staffList.length === 0)) {
     return <SetupShop onComplete={() => window.location.reload()} />;
   }
 
-  // LICENSE EXPIRED: Annual License Guard
   if (isLicensed === false && s?.isSubscribed && currentView !== 'activation') {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
@@ -360,9 +377,12 @@ const AppContent: React.FC = () => {
         onLogout={() => { setCurrentUser(null); }}
         canInstall={!!deferredPrompt || (!isPWA && /iPhone|iPad|iPod/.test(navigator.userAgent))}
         onInstall={handleInstallClick}
+        trialRemaining={trial}
+        isSubscribed={s?.isSubscribed}
+        onSubscribe={handlePaystackPayment}
       >
         {showInstallModal && <InstallModal onInstall={handleInstallClick} onClose={() => setShowInstallModal(false)} />}
-        {currentView === 'dashboard' && <Dashboard currentUser={currentUser} setView={setCurrentView} isStaffLock={isStaffLock} />}
+        {currentView === 'dashboard' && <Dashboard currentUser={currentUser} setView={setCurrentView} isStaffLock={isStaffLock} trialRemaining={trial} isSubscribed={s?.isSubscribed} onSubscribe={handlePaystackPayment} />}
         {currentView === 'pos' && <POS setView={setCurrentView} currentUser={currentUser} />}
         {currentView === 'activity-log' && <ActivityLog currentUser={currentUser} />}
         {currentView === 'audit-trail' && <AuditTrail />}

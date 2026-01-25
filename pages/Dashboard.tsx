@@ -19,7 +19,8 @@ import {
   TrendingDown,
   Lightbulb,
   Zap,
-  Gift
+  Gift,
+  CreditCard
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { Staff, Product, Sale } from '../types';
@@ -29,9 +30,12 @@ interface DashboardProps {
   currentUser?: Staff | null;
   setView?: (view: any) => void;
   isStaffLock?: boolean;
+  trialRemaining?: { days: number, hours: number, minutes: number, totalMs: number };
+  isSubscribed?: boolean;
+  onSubscribe?: () => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, isStaffLock = false }) => {
+const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, isStaffLock = false, trialRemaining, isSubscribed, onSubscribe }) => {
   const canSeeFinancials = currentUser?.role === 'Admin' || (currentUser?.role === 'Manager' && !isStaffLock);
   
   const [showSensitiveData, setShowSensitiveData] = useState(false);
@@ -63,15 +67,6 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, isStaffLock
     const result = await NotificationService.requestPermission();
     setNotifPermission(result);
   };
-
-  // Trial Countdown Logic
-  const trialDaysRemaining = useMemo(() => {
-    const s = settings as any;
-    if (!s?.installationDate || s?.isSubscribed) return null;
-    const trialPeriod = 30 * 24 * 60 * 60 * 1000;
-    const timeLeft = (s.installationDate + trialPeriod) - Date.now();
-    return Math.max(0, Math.ceil(timeLeft / (24 * 60 * 60 * 1000)));
-  }, [settings]);
 
   const productMap = useMemo(() => {
     const map: Record<number, Product> = {};
@@ -159,29 +154,52 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, isStaffLock
     );
   }
 
+  const renderTrialBar = () => {
+    if (isSubscribed || !trialRemaining) return null;
+
+    const { days, hours, minutes } = trialRemaining;
+    
+    let bgColor = "bg-emerald-50 border-emerald-200 text-emerald-900";
+    let iconColor = "bg-emerald-600";
+    let message = `🎁 Free Trial Active: ${days}d ${hours}h remaining`;
+    let urgency = "normal";
+
+    if (days < 3) {
+      bgColor = "bg-rose-50 border-rose-200 text-rose-900 animate-pulse";
+      iconColor = "bg-rose-600";
+      message = `🚨 URGENT: Only ${hours}h ${minutes}m left! Subscribe now to avoid lockout.`;
+      urgency = "critical";
+    } else if (days < 7) {
+      bgColor = "bg-amber-50 border-amber-200 text-amber-900";
+      iconColor = "bg-amber-600";
+      message = `⚠️ Trial Ending Soon: ${days}d ${hours}h left. Subscribe to keep your data safe.`;
+      urgency = "warning";
+    }
+
+    return (
+      <div className={`p-4 rounded-2xl flex items-center justify-between border shadow-sm transition-all duration-500 mb-6 ${bgColor}`}>
+        <div className="flex items-center gap-3">
+           <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white ${iconColor}`}>
+              {urgency === 'critical' ? <ShieldAlert size={16} /> : <Zap size={16} />}
+           </div>
+           <p className="text-xs font-bold leading-tight">
+             {message}
+           </p>
+        </div>
+        <button 
+          onClick={onSubscribe}
+          className={`px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest text-white shadow-lg active:scale-95 transition-all flex items-center gap-2 ${iconColor} hover:brightness-110`}
+        >
+          <CreditCard size={14} /> Subscribe Now
+        </button>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-6">
-      {/* Trial Banner */}
-      {trialDaysRemaining !== null && (
-        <div className={`p-4 rounded-2xl flex items-center justify-between border shadow-sm animate-in slide-in-from-top-4 transition-all duration-500 ${trialDaysRemaining <= 5 ? 'bg-rose-50 border-rose-200 text-rose-900' : 'bg-emerald-50 border-emerald-200 text-emerald-900'}`}>
-          <div className="flex items-center gap-3">
-             <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${trialDaysRemaining <= 5 ? 'bg-rose-600 text-white' : 'bg-emerald-600 text-white'}`}>
-                <Zap size={16} />
-             </div>
-             <p className="text-xs font-bold leading-tight">
-               <span className="hidden sm:inline">🎁 Free Trial:</span> <b>{trialDaysRemaining} days remaining</b>. Subscribe now to avoid lockout.
-             </p>
-          </div>
-          {setView && (
-            <button 
-              onClick={() => setView('settings')}
-              className={`px-4 py-2 rounded-lg font-black text-[10px] uppercase tracking-widest text-white shadow-sm active:scale-95 transition-all ${trialDaysRemaining <= 5 ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}
-            >
-              Get License
-            </button>
-          )}
-        </div>
-      )}
+      {/* Trial Status Banner */}
+      {renderTrialBar()}
 
       {/* Notification Banner */}
       {notifPermission === 'default' && (
