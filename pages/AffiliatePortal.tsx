@@ -42,6 +42,7 @@ const AffiliatePortal: React.FC = () => {
       }),
     })
       .then(() => {
+        console.log("Netlify Form Success");
         setIsRegistered(true);
         setIsSubmitting(false);
       })

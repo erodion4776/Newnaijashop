@@ -38,21 +38,19 @@ const SetupShop: React.FC<SetupShopProps> = ({ onComplete }) => {
     setIsProcessing(true);
 
     // 1. Submit to Netlify Tracking (AJAX)
-    try {
-      await fetch("/", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: encode({ 
-          "form-name": "shop-registration",
-          "shop-name": formData.shopName,
-          "admin-name": formData.adminName,
-          "terminal-id": terminalId,
-          "referral-code-used": formData.referralCode || "NONE"
-        }),
-      });
-    } catch (err) {
-      console.warn("Netlify Tracking failed (offline or network error), proceeding with local setup.");
-    }
+    fetch("/", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: encode({ 
+        "form-name": "shop-registration",
+        "shop-name": formData.shopName,
+        "admin-name": formData.adminName,
+        "terminal-id": terminalId,
+        "referral-code-used": formData.referralCode || "NONE"
+      }),
+    })
+    .then(() => console.log("Netlify Form Success"))
+    .catch((error) => console.error("Netlify Form Error:", error));
 
     // 2. Perform Local DB Setup (Guaranteed regardless of network)
     try {
@@ -98,6 +96,7 @@ const SetupShop: React.FC<SetupShopProps> = ({ onComplete }) => {
 
           <form onSubmit={handleSetup} className="space-y-6 relative z-10">
             <input type="hidden" name="form-name" value="shop-registration" />
+            <input type="hidden" name="terminal-id" value={terminalId} />
 
             <div>
               <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1 tracking-widest">Store Name</label>
