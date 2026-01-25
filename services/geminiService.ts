@@ -1,5 +1,6 @@
 
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
+import { Type } from "@google/genai";
 import { Product, Sale } from "../types";
 
 // Guideline: Complex Text Tasks (e.g., advanced reasoning, coding, math, and STEM) use 'gemini-3-pro-preview'
@@ -34,6 +35,7 @@ const handleGenAIError = (error: any) => {
   throw error;
 };
 
+// Fix: Strictly follow Gemini API guidelines for initialization, model selection, and direct response property access.
 export const getAIInsights = async (sales: Sale[], products: Product[]) => {
   if (!process.env.API_KEY) {
     console.error('API Key is missing from Environment Variables');
@@ -78,14 +80,16 @@ export const getAIInsights = async (sales: Sale[], products: Product[]) => {
     });
 
     // Guideline: The GenerateContentResponse object features a text property (not a method, so do not call text())
-    const jsonStr = cleanJsonResponse(response.text || "");
-    if (!jsonStr) return null;
-    return JSON.parse(jsonStr).insights;
+    const jsonStr = (response.text || "").trim();
+    const cleaned = cleanJsonResponse(jsonStr);
+    if (!cleaned) return null;
+    return JSON.parse(cleaned).insights;
   } catch (error) {
     return handleGenAIError(error);
   }
 };
 
+// Fix: Follow Gemini API multimodal guidelines and ensure correct response parsing using the text property.
 export const processHandwrittenLedger = async (base64Image: string) => {
   if (!process.env.API_KEY) {
     console.error('API Key is missing from Environment Variables');
@@ -137,14 +141,14 @@ export const processHandwrittenLedger = async (base64Image: string) => {
 
     // Guideline: The GenerateContentResponse object features a text property (not a method, so do not call text())
     const text = response.text || "";
-    const jsonStr = cleanJsonResponse(text);
+    const cleaned = cleanJsonResponse(text);
     
-    if (!jsonStr) {
+    if (!cleaned) {
       console.warn("Empty response from AI");
       return null;
     }
 
-    const parsed = JSON.parse(jsonStr);
+    const parsed = JSON.parse(cleaned);
     
     // Fallback normalization: map 'stock' from AI example to 'stock_qty' if schema was ignored
     const normalizedProducts = (parsed.products || parsed).map((p: any) => ({

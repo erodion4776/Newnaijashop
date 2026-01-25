@@ -132,6 +132,51 @@ class BluetoothPrintService {
 
     await this.writeBuffer(new Uint8Array(commands));
   }
+
+  public async printZReport(summary: any, settings: Settings | undefined, notes: string): Promise<void> {
+    if (!this.isConnected()) throw new Error("Printer not connected");
+
+    const encoder = new TextEncoder();
+    const commands: number[] = [
+      0x1B, 0x40, // Initialize
+      0x1B, 0x61, 0x01, // Center
+      0x1B, 0x45, 0x01, // Bold ON
+    ];
+
+    commands.push(...Array.from(encoder.encode("DAILY Z-REPORT\n")));
+    commands.push(...Array.from(encoder.encode(`${settings?.shop_name || 'NAIJASHOP'}\n`)));
+    commands.push(0x1B, 0x45, 0x00); // Bold OFF
+    
+    commands.push(...Array.from(encoder.encode(`DATE: ${new Date().toLocaleDateString()}\n`)));
+    commands.push(...Array.from(encoder.encode("--------------------------------\n")));
+    
+    commands.push(0x1B, 0x61, 0x00); // Left
+    commands.push(...Array.from(encoder.encode(`CASH IN HAND:  N${summary.cash.toLocaleString()}\n`)));
+    commands.push(...Array.from(encoder.encode(`BANK TRANSFERS: N${summary.transfer.toLocaleString()}\n`)));
+    commands.push(...Array.from(encoder.encode(`POS SALES:      N${summary.pos.toLocaleString()}\n`)));
+    commands.push(...Array.from(encoder.encode(`TOTAL REVENUE:  N${summary.totalSales.toLocaleString()}\n`)));
+    
+    commands.push(...Array.from(encoder.encode("--------------------------------\n")));
+    commands.push(...Array.from(encoder.encode(`TOTAL EXPENSES: N${summary.expenses.toLocaleString()}\n`)));
+    
+    commands.push(0x1B, 0x45, 0x01); // Bold ON
+    commands.push(...Array.from(encoder.encode(`NET TAKE-HOME:  N${summary.netTakeHome.toLocaleString()}\n`)));
+    commands.push(...Array.from(encoder.encode(`EST. PROFIT:    N${summary.interest.toLocaleString()}\n`)));
+    commands.push(0x1B, 0x45, 0x00); // Bold OFF
+    
+    if (notes) {
+      commands.push(...Array.from(encoder.encode("--------------------------------\n")));
+      commands.push(...Array.from(encoder.encode(`NOTES: ${notes}\n`)));
+    }
+    
+    commands.push(...Array.from(encoder.encode("\nTERMINAL SECURED FOR NIGHT\n")));
+    commands.push(...Array.from(encoder.encode("--------------------------------\n\n\n\n\n")));
+    
+    // Cut
+    commands.push(0x1D, 0x56, 0x41, 0x00);
+
+    await this.writeBuffer(new Uint8Array(commands));
+  }
 }
 
 export default new BluetoothPrintService();

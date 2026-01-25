@@ -21,9 +21,13 @@ import {
   Download,
   TrendingDown,
   ShieldAlert as ShieldIcon,
-  Lightbulb
+  Lightbulb,
+  Moon
 } from 'lucide-react';
 import { View, Staff } from '../types';
+import ClosingReport from './ClosingReport';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db } from '../db/db';
 
 const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-9987-b4ed4c0e3c36.png";
 
@@ -44,8 +48,10 @@ interface LayoutProps {
 const Layout: React.FC<LayoutProps> = ({ children, activeView, setView, shopName, currentUser, isStaffLock, toggleStaffLock, adminPin, onLogout, canInstall, onInstall }) => {
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
   const [showUnlockModal, setShowUnlockModal] = useState(false);
+  const [showClosingModal, setShowClosingModal] = useState(false);
   const [unlockPin, setUnlockPin] = useState('');
 
+  const settings = useLiveQuery(() => db.settings.get('app_settings'));
   const showAllFeatures = currentUser?.role === 'Admin' || (currentUser?.role === 'Manager' && !isStaffLock);
 
   const navItems = [
@@ -110,6 +116,15 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, setView, shopName
               className="w-full flex items-center justify-center gap-2 py-3 bg-white/5 border border-white/10 rounded-2xl font-black text-[10px] uppercase tracking-widest text-emerald-400 hover:bg-white/10 transition-all"
             >
               <Download size={14} /> Install Terminal
+            </button>
+          )}
+
+          {showAllFeatures && (
+            <button 
+              onClick={() => setShowClosingModal(true)}
+              className="w-full flex items-center justify-center gap-2 py-4 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-emerald-500 transition-all shadow-xl shadow-emerald-950/20 active:scale-95"
+            >
+              <Moon size={16} /> Close Shop for Today
             </button>
           )}
 
@@ -189,6 +204,15 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, setView, shopName
             </form>
           </div>
         </div>
+      )}
+
+      {showClosingModal && (
+        <ClosingReport 
+          onClose={() => setShowClosingModal(false)} 
+          currentUser={currentUser}
+          onLogout={onLogout}
+          settings={settings}
+        />
       )}
     </div>
   );
