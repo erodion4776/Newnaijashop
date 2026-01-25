@@ -29,7 +29,9 @@ import {
   ShieldAlert,
   CreditCard,
   AlertCircle,
-  ChevronLeft
+  ChevronLeft,
+  Clock,
+  Loader2
 } from 'lucide-react';
 
 const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-9987-b4ed4c0e3c36.png";
@@ -87,6 +89,7 @@ const AppContent: React.FC = () => {
   const [showInstallModal, setShowInstallModal] = useState(false);
   const [isPWA, setIsPWA] = useState(false);
   const [activationSession, setActivationSession] = useState<string | null>(null);
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
 
   const settings = useLiveQuery(() => db.settings.get('app_settings'));
   const staffList = useLiveQuery(() => db.staff.toArray()) || [];
@@ -123,7 +126,14 @@ const AppContent: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    initSettings().then(() => setIsInitialized(true));
+    initSettings().then(async () => {
+      setIsInitialized(true);
+      // Security Check: Anti-Time Travel Update
+      const s = await db.settings.get('app_settings');
+      if (s) {
+        await db.settings.update('app_settings', { last_used_timestamp: Date.now() });
+      }
+    });
     
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
@@ -134,7 +144,31 @@ const AppContent: React.FC = () => {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, []);
 
-  const isExpired = settings?.license_expiry && settings.license_expiry < Date.now();
+  // Trial & Security Logic (Derived State)
+  const trialPeriod = 30 * 24 * 60 * 60 * 1000;
+  const s = settings as any;
+  const isLicensed = settings?.license_expiry && settings.license_expiry > Date.now();
+  const isTrialExpired = s?.installationDate && (Date.now() > s.installationDate + trialPeriod) && !s.isSubscribed && !isLicensed;
+  
+  // Anti-Time Travel Detection: Current time is notably behind last recorded usage
+  const isTampered = s?.last_used_timestamp && (Date.now() < s.last_used_timestamp - 300000); // 5 min drift tolerance
+
+  const handlePaystackPayment = () => {
+    setIsProcessingPayment(true);
+    const handler = (window as any).PaystackPop.setup({
+      key: 'pk_test_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx', 
+      email: 'customer@naijashop.pos',
+      amount: 1000000, // ₦10,000.00
+      currency: 'NGN',
+      ref: 'NS-' + Math.floor((Math.random() * 1000000000) + 1),
+      callback: (response: any) => {
+        setIsProcessingPayment(false);
+        window.location.href = `/?session=${response.reference}`;
+      },
+      onClose: () => setIsProcessingPayment(false)
+    });
+    handler.openIframe();
+  };
 
   const handleInstallClick = async () => {
     if (deferredPrompt) {
@@ -185,12 +219,64 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // 1. PUBLIC ROUTE: Master Control
+  // PUBLIC ROUTE: Master Control (EXEMPT FROM LOCKS)
   if (isMasterView) {
     return <MasterAdminHub />;
   }
 
-  // 1. PUBLIC ROUTE: Affiliate Portal
+  // SECURITY: Clock Tampering Guard
+  if (isTampered) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6 text-center">
+        <div className="max-w-md w-full bg-slate-900 p-12 rounded-[3.5rem] shadow-2xl border border-rose-500/30 space-y-8">
+          <div className="w-24 h-24 bg-rose-500/10 text-rose-500 rounded-full flex items-center justify-center mx-auto animate-pulse">
+            <Clock size={48} />
+          </div>
+          <div className="space-y-3">
+            <h2 className="text-3xl font-black text-white tracking-tight leading-tight">Security Alert</h2>
+            <p className="text-rose-200/60 font-medium leading-relaxed">
+              System clock tampering detected. Oga, please ensure your phone date and time are set correctly to use NaijaShop.
+            </p>
+          </div>
+          <button onClick={() => window.location.reload()} className="w-full py-5 bg-rose-600 text-white rounded-2xl font-black text-lg shadow-xl">Re-validate Terminal</button>
+        </div>
+      </div>
+    );
+  }
+
+  // TRIAL LOCKOUT: 30-day Free Trial Guard
+  if (isTrialExpired && currentView !== 'activation') {
+    return (
+      <div className="min-h-screen bg-emerald-950 flex items-center justify-center p-6">
+        <div className="max-w-md w-full bg-white p-12 rounded-[3.5rem] shadow-[0_40px_100px_rgba(0,0,0,0.5)] text-center space-y-8 animate-in zoom-in">
+          <div className="w-24 h-24 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
+            <ShieldAlert size={48} />
+          </div>
+          <div className="space-y-4">
+            <h2 className="text-3xl font-black text-slate-900 tracking-tighter leading-tight">Trial Expired</h2>
+            <p className="text-slate-500 font-medium leading-relaxed">
+              Oga, your 30-day free trial has ended. To continue using <b>NaijaShop</b> and protect your records, please subscribe.
+            </p>
+          </div>
+          <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100">
+             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Annual Subscription</p>
+             <p className="text-3xl font-black text-slate-900">₦10,000<span className="text-sm font-bold text-slate-400">/Year</span></p>
+          </div>
+          <button 
+            onClick={handlePaystackPayment}
+            disabled={isProcessingPayment}
+            className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-xl shadow-xl flex items-center justify-center gap-3 hover:bg-emerald-700 transition-all active:scale-95"
+          >
+            {isProcessingPayment ? <Loader2 className="animate-spin" /> : <CreditCard size={24} />} 
+            Subscribe Now
+          </button>
+          <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Instant Activation • Secure via Paystack</p>
+        </div>
+      </div>
+    );
+  }
+
+  // PUBLIC ROUTE: Affiliate Portal
   if (isAffiliateView) {
     return (
       <div className="min-h-screen bg-slate-50">
@@ -204,25 +290,26 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // 2. ONBOARDING: Setup Shop
+  // ONBOARDING: Setup Shop
   if (isInitialized && (!settings?.is_setup_complete || staffList.length === 0)) {
     return <SetupShop onComplete={() => window.location.reload()} />;
   }
 
-  if (isExpired && currentView !== 'activation') {
+  // LICENSE EXPIRED: Annual License Guard
+  if (isLicensed === false && s?.isSubscribed && currentView !== 'activation') {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
         <div className="max-w-md w-full bg-white p-12 rounded-[3.5rem] shadow-2xl border border-rose-100 text-center space-y-8">
-          <div className="w-24 h-24 bg-rose-50 text-rose-600 rounded-full flex items-center justify-center mx-auto shadow-inner animate-pulse">
+          <div className="w-24 h-24 bg-rose-50 text-rose-600 rounded-full flex items-center justify-center mx-auto animate-pulse">
             <AlertCircle size={48} />
           </div>
           <div className="space-y-2">
-            <h2 className="text-3xl font-black text-slate-900 tracking-tight">License Expired</h2>
-            <p className="text-slate-500">Your terminal license has ended. Please renew to continue using NaijaShop.</p>
+            <h2 className="text-3xl font-black text-slate-900 tracking-tight leading-tight">License Expired</h2>
+            <p className="text-slate-500 leading-relaxed font-medium">Your annual NaijaShop license has ended. Please renew to continue using the terminal.</p>
           </div>
           <button 
-            onClick={() => setCurrentView('settings')}
-            className="w-full py-5 bg-emerald-600 text-white rounded-2xl font-black text-lg shadow-xl flex items-center justify-center gap-3"
+            onClick={handlePaystackPayment}
+            className="w-full py-5 bg-emerald-600 text-white rounded-2xl font-black text-lg shadow-xl flex items-center justify-center gap-3 hover:bg-emerald-700 transition-all active:scale-95"
           >
             <CreditCard size={24} /> Renew License Now
           </button>
@@ -244,13 +331,13 @@ const AppContent: React.FC = () => {
 
           <div className="bg-white p-10 rounded-[3rem] shadow-2xl border border-slate-200 space-y-8 relative overflow-hidden">
             <form onSubmit={handleLoginSubmit} className="space-y-6">
-              <select required className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold" value={selectedStaffId} onChange={(e) => setSelectedStaffId(Number(e.target.value))}>
+              <select required className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold outline-none" value={selectedStaffId} onChange={(e) => setSelectedStaffId(Number(e.target.value))}>
                 <option value="">Select Account</option>
                 {staffList.sort((a,b) => (a.role === 'Admin' ? -1 : 1)).map(s => (
                   <option key={s.id} value={s.id!}>{s.name} ({s.role})</option>
                 ))}
               </select>
-              <input required type="password" placeholder="PIN / Password" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} />
+              <input required type="password" placeholder="PIN / Password" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold outline-none" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} />
               <button type="submit" className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-xl hover:bg-emerald-700 shadow-xl transition-all">Unlock Terminal</button>
             </form>
           </div>

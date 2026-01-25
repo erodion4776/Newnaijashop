@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
@@ -18,7 +17,9 @@ import {
   PiggyBank,
   BellRing,
   TrendingDown,
-  Lightbulb
+  Lightbulb,
+  Zap,
+  Gift
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { Staff, Product, Sale } from '../types';
@@ -44,9 +45,9 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, isStaffLock
   const products = useLiveQuery(() => db.products.toArray());
   const debts = useLiveQuery(() => db.debts.toArray());
   const expenses = useLiveQuery(() => db.expenses.toArray());
+  const settings = useLiveQuery(() => db.settings.get('app_settings'));
 
   useEffect(() => {
-    // Check for daily report and inactivity
     NotificationService.checkDailyReport();
     NotificationService.checkInactivityReminder();
   }, []);
@@ -63,7 +64,15 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, isStaffLock
     setNotifPermission(result);
   };
 
-  // Product lookup map for efficient interest calculations
+  // Trial Countdown Logic
+  const trialDaysRemaining = useMemo(() => {
+    const s = settings as any;
+    if (!s?.installationDate || s?.isSubscribed) return null;
+    const trialPeriod = 30 * 24 * 60 * 60 * 1000;
+    const timeLeft = (s.installationDate + trialPeriod) - Date.now();
+    return Math.max(0, Math.ceil(timeLeft / (24 * 60 * 60 * 1000)));
+  }, [settings]);
+
   const productMap = useMemo(() => {
     const map: Record<number, Product> = {};
     if (products) {
@@ -72,7 +81,6 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, isStaffLock
     return map;
   }, [products]);
 
-  // 1. KPI Calculations including Net Profit
   const stats = useMemo(() => {
     if (!sales || !products || !expenses) return { todaySales: 0, todayNet: 0, lifeSales: 0, lifeNet: 0, todayExp: 0 };
     
@@ -153,6 +161,28 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, isStaffLock
 
   return (
     <div className="space-y-6">
+      {/* Trial Banner */}
+      {trialDaysRemaining !== null && (
+        <div className={`p-4 rounded-2xl flex items-center justify-between border shadow-sm animate-in slide-in-from-top-4 transition-all duration-500 ${trialDaysRemaining <= 5 ? 'bg-rose-50 border-rose-200 text-rose-900' : 'bg-emerald-50 border-emerald-200 text-emerald-900'}`}>
+          <div className="flex items-center gap-3">
+             <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${trialDaysRemaining <= 5 ? 'bg-rose-600 text-white' : 'bg-emerald-600 text-white'}`}>
+                <Zap size={16} />
+             </div>
+             <p className="text-xs font-bold leading-tight">
+               <span className="hidden sm:inline">🎁 Free Trial:</span> <b>{trialDaysRemaining} days remaining</b>. Subscribe now to avoid lockout.
+             </p>
+          </div>
+          {setView && (
+            <button 
+              onClick={() => setView('settings')}
+              className={`px-4 py-2 rounded-lg font-black text-[10px] uppercase tracking-widest text-white shadow-sm active:scale-95 transition-all ${trialDaysRemaining <= 5 ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}
+            >
+              Get License
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Notification Banner */}
       {notifPermission === 'default' && (
         <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-2xl flex items-center justify-between animate-in slide-in-from-top-4">
@@ -187,121 +217,99 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, isStaffLock
         )}
       </div>
 
-      {/* KPI Section - OPay Style */}
+      {/* KPI Section */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard 
-          title="Today's Sales" 
-          value={formatCurrency(stats.todaySales)} 
-          icon={<TrendingUp size={20} />} 
-          color="emerald" 
-        />
-        <StatCard 
-          title="Today's Net Profit" 
-          value={formatCurrency(stats.todayNet, true)} 
-          icon={<PiggyBank size={20} />} 
-          color="gold" 
-          subtitle={stats.todayExp > 0 ? `After ₦${stats.todayExp.toLocaleString()} expenses` : ''}
-        />
-        <StatCard 
-          title="Life Net Profit" 
-          value={formatCurrency(stats.lifeNet, true)} 
-          icon={<Coins size={20} />} 
-          color="emerald-deep" 
-        />
-        <StatCard 
-          title="Today's Expenses" 
-          value={formatCurrency(stats.todayExp)} 
-          icon={<TrendingDown size={20} />} 
-          color="rose" 
-        />
-      </div>
-
-      <div className="bg-emerald-50 border border-emerald-100 p-6 rounded-[2.5rem] flex items-center gap-4 text-emerald-800">
-         <Lightbulb size={24} className="shrink-0 text-emerald-600" />
-         <div className="flex-1">
-           <p className="text-sm font-bold">Use the <b>Business Hub</b> to see smart, local insights about your shop's stock and movers.</p>
-         </div>
-         {setView && (
-           <button onClick={() => setView('business-hub')} className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-md">Open Hub</button>
-         )}
-      </div>
-
-      {lowStockItems.length > 0 && (
-        <div className="bg-rose-50 border border-rose-100 p-6 rounded-[2.5rem] flex flex-col md:flex-row items-center gap-6 animate-in slide-in-from-top-4">
-          <div className="w-16 h-16 bg-rose-600 text-white rounded-3xl flex items-center justify-center shrink-0 shadow-lg">
-            <AlertTriangle size={32} />
+        <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center shadow-inner"><TrendingUp size={24} /></div>
           </div>
-          <div className="flex-1 text-center md:text-left">
-            <h3 className="text-lg font-black text-slate-900 tracking-tight">Critical Stock Alert</h3>
-            <p className="text-sm text-slate-500 font-medium">There are <b>{lowStockItems.length} items</b> hitting reorder levels in your inventory.</p>
+          <div>
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Today's Sales</p>
+            <p className="text-2xl font-black text-slate-900">{formatCurrency(stats.todaySales)}</p>
           </div>
-          <button onClick={() => setView && setView('inventory')} className="px-6 py-3 bg-slate-900 text-white rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center gap-2 hover:bg-black transition-all">
-            View Items <ChevronRight size={14} />
-          </button>
         </div>
-      )}
+
+        <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center shadow-inner"><PiggyBank size={24} /></div>
+          </div>
+          <div>
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Estimated Profit</p>
+            <p className="text-2xl font-black text-emerald-600">{formatCurrency(stats.todayNet, true)}</p>
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="w-12 h-12 bg-rose-50 text-rose-600 rounded-2xl flex items-center justify-center shadow-inner"><TrendingDown size={24} /></div>
+          </div>
+          <div>
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Today's Expenses</p>
+            <p className="text-2xl font-black text-rose-600">{formatCurrency(stats.todayExp)}</p>
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="w-12 h-12 bg-slate-50 text-slate-600 rounded-2xl flex items-center justify-center shadow-inner"><Package size={24} /></div>
+            {lowStockItems.length > 0 && <span className="bg-rose-100 text-rose-600 px-2 py-1 rounded-lg text-[10px] font-black">{lowStockItems.length} Low</span>}
+          </div>
+          <div>
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Products</p>
+            <p className="text-2xl font-black text-slate-900">{products?.length || 0}</p>
+          </div>
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden min-h-0 block">
-          <h3 className="font-black text-slate-800 text-xl tracking-tight mb-8">Sales Velocity (7 Days)</h3>
-          <div ref={chartParentRef} className="relative block w-full h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={processedChartData}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12, fontWeight: 700 }} dy={10} />
-                <YAxis hide />
-                <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '20px', border: 'none', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }} />
-                <Bar dataKey="amount" radius={[10, 10, 0, 0]} barSize={40}>
-                  {processedChartData.map((_, index) => (
-                    <Cell key={`cell-${index}`} fill={index === 6 ? '#059669' : '#10b981'} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+        <div className="lg:col-span-2 bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm">
+          <div className="flex items-center justify-between mb-8">
+            <h4 className="font-black text-slate-800 uppercase text-xs tracking-widest flex items-center gap-2">
+              <Layers size={16} className="text-emerald-500" /> Sales Trend (7 Days)
+            </h4>
+          </div>
+          <div className="h-[300px] w-full" ref={chartParentRef}>
+            {isChartLoading ? (
+              <div className="h-full flex items-center justify-center"><Loader2 className="animate-spin text-slate-200" size={40} /></div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={processedChartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: '#94a3b8' }} dy={10} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: '#94a3b8' }} />
+                  <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
+                  <Bar dataKey="amount" radius={[8, 8, 8, 8]} barSize={32}>
+                    {processedChartData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={index === processedChartData.length - 1 ? '#10b981' : '#e2e8f0'} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
 
-        <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-200">
-           <h3 className="font-black text-slate-800 text-xl tracking-tight mb-6">Recent Log</h3>
-           <div className="space-y-5">
-              {(sales || []).slice(-5).reverse().map(sale => (
-                <div key={sale.id} className="flex justify-between items-center pb-4 border-b border-slate-50 last:border-0 last:pb-0">
-                  <div>
-                    <p className="font-bold text-slate-800">₦{sale.total_amount.toLocaleString()}</p>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase">{new Date(sale.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
-                  </div>
-                  <span className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 bg-slate-100 rounded text-slate-500">{sale.payment_method}</span>
-                </div>
-              ))}
-           </div>
-        </div>
-      </div>
-    </div>
-  );
-};
+        <div className="space-y-6">
+          <div className="bg-slate-900 p-8 rounded-[3rem] text-white space-y-6 relative overflow-hidden">
+            <div className="absolute right-[-20px] top-[-20px] opacity-10"><Coins size={120} /></div>
+            <div className="relative z-10">
+              <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest mb-1">Total Receivables</p>
+              <h4 className="text-4xl font-black tracking-tight">₦{(debts || []).reduce((acc, curr) => acc + (curr.status === 'pending' ? curr.amount : 0), 0).toLocaleString()}</h4>
+              <button onClick={() => setView && setView('debts')} className="mt-6 w-full flex items-center justify-center gap-2 py-4 bg-white/10 hover:bg-white/20 rounded-2xl font-black text-xs uppercase tracking-widest transition-all">
+                Manage Debts <ChevronRight size={16} />
+              </button>
+            </div>
+          </div>
 
-const StatCard: React.FC<{title: string, value: string, icon: any, color: string, subtitle?: string}> = ({ title, value, icon, color, subtitle }) => {
-  const styles: {[key:string]:string} = { 
-    emerald: 'bg-emerald-600 text-white', 
-    'emerald-deep': 'bg-emerald-900 text-white',
-    gold: 'bg-amber-500 text-white', 
-    'gold-deep': 'bg-amber-700 text-white',
-    rose: 'bg-rose-600 text-white'
-  };
-
-  return (
-    <div className={`${styles[color]} p-6 rounded-[2rem] shadow-lg relative overflow-hidden group hover:scale-[1.02] transition-transform`}>
-      <div className="absolute right-[-10px] top-[-10px] opacity-10 group-hover:scale-110 transition-transform">
-        {React.cloneElement(icon as React.ReactElement, { size: 80 })}
-      </div>
-      <div className="relative z-10 flex flex-col justify-between h-full">
-        <div className="w-10 h-10 bg-white/20 backdrop-blur-md rounded-xl flex items-center justify-center mb-4">
-          {icon}
-        </div>
-        <div>
-          <p className="text-white/70 text-[10px] font-black uppercase tracking-widest">{title}</p>
-          <h4 className="text-2xl font-black mt-1 tracking-tight">{value}</h4>
-          {subtitle && <p className="text-[9px] font-bold text-white/60 mt-1 uppercase tracking-wider">{subtitle}</p>}
+          <div className="bg-emerald-50 p-8 rounded-[3rem] border border-emerald-100 space-y-6">
+            <div className="flex items-center gap-3">
+               <div className="w-10 h-10 bg-white text-emerald-600 rounded-xl flex items-center justify-center shadow-sm"><Lightbulb size={20} /></div>
+               <h4 className="font-black text-slate-800 uppercase text-xs tracking-widest">Oga Tip</h4>
+            </div>
+            <p className="text-sm text-emerald-800 font-medium leading-relaxed italic">
+              "Regularly backup your terminal records to WhatsApp to prevent business data loss if your phone is stolen."
+            </p>
+          </div>
         </div>
       </div>
     </div>

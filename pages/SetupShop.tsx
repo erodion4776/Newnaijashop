@@ -58,19 +58,25 @@ const SetupShop: React.FC<SetupShopProps> = ({ onComplete }) => {
     // 2. Perform Local DB Setup (Guaranteed regardless of network)
     try {
       await (db as any).transaction('rw', [db.settings, db.staff], async () => {
+        const now = Date.now();
         await db.settings.update('app_settings', {
           shop_name: formData.shopName,
           admin_name: formData.adminName,
           admin_pin: formData.adminPin,
-          is_setup_complete: true
-        });
+          is_setup_complete: true,
+          // Trial Initialization & Security
+          installationDate: now,
+          isTrialActive: true,
+          isSubscribed: false,
+          last_used_timestamp: now
+        } as any);
 
         const adminId = await db.staff.add({
           name: formData.adminName,
           role: 'Admin',
           password: formData.adminPin,
           status: 'Active',
-          created_at: Date.now()
+          created_at: now
         });
 
         // 3. Finalize

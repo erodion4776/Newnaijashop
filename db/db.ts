@@ -1,9 +1,9 @@
 
-import { Dexie } from 'dexie';
+import Dexie from 'dexie';
 import type { Table } from 'dexie';
 import { Product, Sale, Debt, Settings, ParkedOrder, InventoryLog, Staff, Expense, AuditEntry, CustomerWallet, WalletTransaction, UsedReference } from '../types';
 
-// Fix: Using named import for Dexie to ensure all prototype methods like 'version' are correctly recognized by the TypeScript compiler.
+// Fix: Using default import for Dexie to ensure proper class inheritance and recognition of prototype methods like 'version'.
 export class NaijaShopDB extends Dexie {
   products!: Table<Product>;
   sales!: Table<Sale>;
@@ -21,7 +21,7 @@ export class NaijaShopDB extends Dexie {
   constructor() {
     super('NaijaShopDB');
     
-    // Fix: Explicitly call the version method inherited from Dexie to define the database schema.
+    // Fix: Accessing the 'version' method from the Dexie base class instance.
     this.version(27).stores({
       products: '++id, name, category, barcode',
       sales: '++id, sale_id, timestamp, payment_method, staff_name',
