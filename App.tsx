@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, ErrorInfo, ReactNode, Component } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, initSettings } from './db/db';
@@ -18,6 +17,8 @@ import Settings from './pages/Settings';
 import ExpenseTracker from './pages/ExpenseTracker';
 import AuditTrail from './pages/AuditTrail';
 import ActivationPage from './pages/ActivationPage';
+import AffiliatePortal from './pages/AffiliatePortal';
+import SetupShop from './pages/SetupShop';
 import InstallModal from './components/InstallModal';
 import SupportChat from './components/SupportChat';
 import { performAutoSnapshot } from './utils/backup';
@@ -26,7 +27,8 @@ import {
   Lock,
   ShieldAlert,
   CreditCard,
-  AlertCircle
+  AlertCircle,
+  ChevronLeft
 } from 'lucide-react';
 
 const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-9987-b4ed4c0e3c36.png";
@@ -77,13 +79,12 @@ const AppContent: React.FC = () => {
   const [loginPassword, setLoginPassword] = useState('');
   const [selectedStaffId, setSelectedStaffId] = useState<number | ''>('');
   const [isStaffLock, setIsStaffLock] = useState(localStorage.getItem('isStaffLock') === 'true');
+  const [isAffiliateView, setIsAffiliateView] = useState(window.location.pathname.includes('affiliate'));
   
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showInstallModal, setShowInstallModal] = useState(false);
   const [isPWA, setIsPWA] = useState(false);
   const [activationSession, setActivationSession] = useState<string | null>(null);
-
-  const [setupData, setSetupData] = useState({ shopName: '', adminName: '', adminPin: '' });
 
   const settings = useLiveQuery(() => db.settings.get('app_settings'));
   const staffList = useLiveQuery(() => db.staff.toArray()) || [];
@@ -105,10 +106,16 @@ const AppContent: React.FC = () => {
       setDeferredPrompt(e);
     };
 
+    const checkPath = () => {
+      setIsAffiliateView(window.location.pathname.includes('affiliate'));
+    };
+
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    window.addEventListener('popstate', checkPath);
     return () => {
       clearTimeout(splashTimer);
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('popstate', checkPath);
     };
   }, []);
 
@@ -125,32 +132,6 @@ const AppContent: React.FC = () => {
   }, []);
 
   const isExpired = settings?.license_expiry && settings.license_expiry < Date.now();
-
-  const handleSetupComplete = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await (db as any).transaction('rw', [db.settings, db.staff], async () => {
-      await db.settings.update('app_settings', {
-        shop_name: setupData.shopName,
-        admin_name: setupData.adminName,
-        admin_pin: setupData.adminPin,
-        is_setup_complete: true
-      });
-      const adminId = await db.staff.add({
-        name: setupData.adminName,
-        role: 'Admin',
-        password: setupData.adminPin,
-        status: 'Active',
-        created_at: Date.now()
-      });
-      const adminUser = await db.staff.get(adminId);
-      if (adminUser) setCurrentUser(adminUser);
-    });
-    
-    setCurrentView('dashboard');
-    if (!isPWA) {
-      setTimeout(() => setShowInstallModal(true), 1500);
-    }
-  };
 
   const handleInstallClick = async () => {
     if (deferredPrompt) {
@@ -201,25 +182,23 @@ const AppContent: React.FC = () => {
     );
   }
 
-  if (isInitialized && staffList.length === 0) {
+  // 1. PUBLIC ROUTE: Affiliate Portal
+  if (isAffiliateView) {
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
-        <div className="w-full max-w-md space-y-8">
-          <div className="text-center space-y-2">
-            <h2 className="text-4xl font-black text-slate-900 tracking-tight">Onboarding</h2>
-            <p className="text-slate-500 font-medium">Initialize your shop terminal</p>
-          </div>
-          <div className="bg-white p-10 rounded-[3rem] shadow-2xl border border-slate-100 space-y-8">
-            <form onSubmit={handleSetupComplete} className="space-y-6">
-              <input required type="text" placeholder="Shop Name" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold" value={setupData.shopName} onChange={e => setSetupData({...setupData, shopName: e.target.value})} />
-              <input required type="text" placeholder="Admin Name" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold" value={setupData.adminName} onChange={e => setSetupData({...setupData, adminName: e.target.value})} />
-              <input required type="password" maxLength={4} placeholder="Set Admin PIN (4 digits)" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-2xl text-center" value={setupData.adminPin} onChange={e => setSetupData({...setupData, adminPin: e.target.value})} />
-              <button type="submit" className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-xl hover:bg-emerald-700 shadow-xl transition-all">Start New Shop</button>
-            </form>
-          </div>
+      <div className="min-h-screen bg-slate-50">
+        <div className="max-w-7xl mx-auto p-4 lg:p-8">
+          <button onClick={() => { window.history.pushState({}, '', '/'); setIsAffiliateView(false); }} className="mb-6 flex items-center gap-2 text-slate-400 font-black uppercase text-[10px] tracking-widest hover:text-emerald-600 transition-all">
+            <ChevronLeft size={14} /> Back to Terminal
+          </button>
+          <AffiliatePortal />
         </div>
       </div>
     );
+  }
+
+  // 2. ONBOARDING: Setup Shop
+  if (isInitialized && (!settings?.is_setup_complete || staffList.length === 0)) {
+    return <SetupShop onComplete={() => window.location.reload()} />;
   }
 
   if (isExpired && currentView !== 'activation') {

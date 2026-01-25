@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { 
   Users, 
@@ -15,21 +14,46 @@ import {
 } from 'lucide-react';
 import { generateRequestCode } from '../utils/licensing';
 
+const encode = (data: any) => {
+  return Object.keys(data)
+    .map(key => encodeURIComponent(key) + "=" + encodeURIComponent(data[key]))
+    .join("&");
+}
+
 const AffiliatePortal: React.FC = () => {
   const [isRegistered, setIsRegistered] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const marketerCode = generateRequestCode().replace('NS-', 'MARK-');
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    // Do not call e.preventDefault() immediately to allow standard form submission to target iframe
     setIsSubmitting(true);
-    console.log("Submitting affiliate registration to Netlify via hidden iframe...");
+    const form = e.currentTarget;
+    const formData = new FormData(form);
+    const data: any = {};
+    formData.forEach((value, key) => (data[key] = value));
+
+    try {
+      fetch("/", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: encode({ 
+          "form-name": "affiliate-registration",
+          ...data 
+        }),
+      })
+      .then(() => console.log("Netlify Form Success"))
+      .catch((error) => console.error("Netlify Form Error:", error));
+    } catch (err) {
+      console.error("Submission failed", err);
+    }
     
-    // Show success UI after a brief delay to simulate network turnaround
+    // Immediate success state for UX, submission happens in background
     setTimeout(() => {
       setIsRegistered(true);
       setIsSubmitting(false);
-    }, 600);
+    }, 800);
+
+    e.preventDefault();
   };
 
   const copyCode = () => {
@@ -123,8 +147,6 @@ const AffiliatePortal: React.FC = () => {
           <form 
             name="affiliate-registration" 
             method="POST" 
-            action="/"
-            target="hidden_iframe"
             data-netlify="true" 
             onSubmit={handleSubmit}
             className="space-y-6"
