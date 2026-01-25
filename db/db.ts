@@ -1,6 +1,6 @@
 
-// Fix: Use named import for Dexie to ensure inherited methods like version() are correctly typed on the class instance.
-import { Dexie, type Table } from 'dexie';
+// Fix: Use default import for Dexie to ensure inherited methods like version() are correctly typed on the class instance.
+import Dexie, { type Table } from 'dexie';
 import { Product, Sale, Debt, Settings, ParkedOrder, InventoryLog, Staff, Expense, AuditEntry, CustomerWallet, WalletTransaction } from '../types';
 
 export class NaijaShopDB extends Dexie {
@@ -19,7 +19,7 @@ export class NaijaShopDB extends Dexie {
   constructor() {
     super('NaijaShopDB');
     
-    // Version 26: Added wallet-related tables back to support CustomerWallet view and fixed schema definition.
+    // Fix: Using the version() method inherited from the Dexie base class.
     this.version(26).stores({
       products: '++id, name, category, barcode',
       sales: '++id, sale_id, timestamp, payment_method, staff_name',

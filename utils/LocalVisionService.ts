@@ -62,6 +62,13 @@ class LocalVisionService {
     
     // Tesseract.js runs entirely on-device
     const worker = await createWorker('eng');
+    
+    // Set parameters to whitelist only specific characters: alphanumeric, space, dash, and dot.
+    // This prevents the local AI from returning messy symbols like #, %, etc.
+    await worker.setParameters({
+      tessedit_char_whitelist: '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ -. ',
+    });
+
     const { data: { text } } = await worker.recognize(optimizedImage);
     await worker.terminate();
 
