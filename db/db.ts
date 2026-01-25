@@ -1,6 +1,6 @@
 
-// Fix: Use named import for Dexie to ensure inherited methods like version() are correctly typed on the class instance.
-import { Dexie } from 'dexie';
+// Fix: Use default import for Dexie to ensure inherited methods like version() are correctly typed on the class instance.
+import Dexie from 'dexie';
 import type { Table } from 'dexie';
 import { Product, Sale, Debt, Settings, ParkedOrder, InventoryLog, Staff, Expense, AuditEntry, CustomerWallet, WalletTransaction, UsedReference } from '../types';
 

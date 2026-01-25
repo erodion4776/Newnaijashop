@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   MessageCircle, 
   X, 
@@ -7,46 +7,98 @@ import {
   CheckCheck, 
   PlayCircle, 
   Clock, 
-  ExternalLink 
+  User,
+  Bot,
+  Trash2,
+  ChevronRight,
+  Headphones,
+  Loader2
 } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
 import { generateRequestCode } from '../utils/licensing';
+import { getBestMatch } from '../utils/SupportBotEngine';
+
+interface ChatMessage {
+  id: string;
+  sender: 'user' | 'bot';
+  text: string;
+  timestamp: number;
+  showOptions?: boolean;
+}
 
 const SupportChat: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
-  const [message, setMessage] = useState('');
-  const [isSent, setIsSent] = useState(false);
-  const [showStatus, setShowStatus] = useState(false);
+  const [inputText, setInputText] = useState('');
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      id: 'welcome',
+      sender: 'bot',
+      text: "👋 Welcome to NaijaShop! I am your Assistant Guru. How can I help you manage your shop today?",
+      timestamp: Date.now()
+    }
+  ]);
+  const [isTyping, setIsTyping] = useState(false);
   
+  const scrollRef = useRef<HTMLDivElement>(null);
   const settings = useLiveQuery(() => db.settings.get('app_settings'));
   const terminalId = generateRequestCode();
   const supportNumber = '2348184774884';
 
-  const handleSend = () => {
-    if (!message.trim()) return;
-    
-    const shopName = settings?.shop_name || 'NaijaShop Terminal';
-    const autoContext = `[Shop: ${shopName} | ID: ${terminalId}]`;
-    const fullMessage = `${message} ${autoContext}`;
-    
-    const whatsappUrl = `https://wa.me/${supportNumber}?text=${encodeURIComponent(fullMessage)}`;
-    
-    window.open(whatsappUrl, '_blank');
-    
-    // Status Simulation
-    setIsSent(true);
-    setShowStatus(true);
-    setMessage('');
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages, isTyping]);
 
-    // Clear status after 10 seconds
+  const handleSend = async () => {
+    if (!inputText.trim() || isTyping) return;
+    
+    const userText = inputText.trim();
+    const newUserMsg: ChatMessage = {
+      id: Date.now().toString(),
+      sender: 'user',
+      text: userText,
+      timestamp: Date.now()
+    };
+
+    setMessages(prev => [...prev, newUserMsg]);
+    setInputText('');
+    setIsTyping(true);
+
+    // Artificial delay for "thinking"
     setTimeout(() => {
-      setShowStatus(false);
-    }, 10000);
+      const botResponse = getBestMatch(userText);
+      const botMsg: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        sender: 'bot',
+        text: botResponse || "I'm still learning! I couldn't find a direct answer for that. Let me connect you to a human expert who can help you better.",
+        timestamp: Date.now(),
+        showOptions: true
+      };
+      setMessages(prev => [...prev, botMsg]);
+      setIsTyping(false);
+    }, 1000);
   };
 
-  const openWhatsAppDirect = () => {
-    window.open(`https://wa.me/${supportNumber}`, '_blank');
+  const clearChat = () => {
+    setMessages([
+      {
+        id: 'welcome',
+        sender: 'bot',
+        text: "👋 Welcome back! How can I help you today?",
+        timestamp: Date.now()
+      }
+    ]);
+  };
+
+  const connectToHuman = () => {
+    const shopName = settings?.shop_name || 'NaijaShop Terminal';
+    const lastUserMsg = messages.filter(m => m.sender === 'user').pop()?.text || 'Support Request';
+    const autoContext = `[Shop: ${shopName} | ID: ${terminalId}]`;
+    const fullMessage = `Hello, I need help with: ${lastUserMsg} ${autoContext}`;
+    const whatsappUrl = `https://wa.me/${supportNumber}?text=${encodeURIComponent(fullMessage)}`;
+    window.open(whatsappUrl, '_blank');
   };
 
   return (
@@ -64,79 +116,108 @@ const SupportChat: React.FC = () => {
 
       {/* Chat Widget Panel */}
       {isOpen && (
-        <div className="fixed bottom-24 right-6 z-[999] w-[360px] max-w-[calc(100vw-3rem)] bg-white rounded-[2.5rem] shadow-[0_20px_60px_rgba(0,0,0,0.3)] border border-slate-100 flex flex-col overflow-hidden animate-in slide-in-from-bottom-10 fade-in duration-300">
+        <div className="fixed bottom-24 right-6 z-[999] w-[380px] max-w-[calc(100vw-3rem)] h-[600px] max-h-[calc(100vh-10rem)] bg-white rounded-[2.5rem] shadow-[0_20px_60px_rgba(0,0,0,0.3)] border border-slate-100 flex flex-col overflow-hidden animate-in slide-in-from-bottom-10 fade-in duration-300">
+          
           {/* Header Area */}
-          <div className="bg-emerald-900 p-6 text-white relative overflow-hidden">
+          <div className="bg-emerald-900 p-6 text-white relative overflow-hidden shrink-0">
             <div className="absolute right-[-20px] top-[-20px] opacity-10">
-              <MessageCircle size={120} />
+              <Bot size={120} />
             </div>
             
-            <div className="relative z-10 space-y-4">
+            <div className="relative z-10 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-white/20 backdrop-blur-md rounded-xl flex items-center justify-center">
-                  <MessageCircle size={20} />
+                  <Bot size={20} />
                 </div>
                 <div>
-                  <h3 className="text-xl font-black tracking-tight">Support Guru</h3>
-                  <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">Digital Assistant</p>
+                  <h3 className="text-xl font-black tracking-tight leading-none">Assistant Guru</h3>
+                  <p className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest mt-1">NaijaShop AI (Offline)</p>
                 </div>
               </div>
-
               <button 
-                onClick={openWhatsAppDirect}
-                className="w-full bg-emerald-800/50 hover:bg-emerald-800 border border-white/10 p-4 rounded-2xl transition-all text-center group"
+                onClick={clearChat}
+                className="p-2 hover:bg-white/10 rounded-xl transition-colors text-emerald-300"
+                title="Clear Chat"
               >
-                <div className="flex items-center justify-center gap-2 font-black text-xs uppercase tracking-widest">
-                  <PlayCircle size={16} className="text-emerald-400" />
-                  Open WhatsApp Chat
-                </div>
-                <p className="text-[9px] text-emerald-300/80 mt-1 font-medium">
-                  Replies will arrive in your WhatsApp app. Click here to check for messages.
-                </p>
+                <Trash2 size={18} />
               </button>
             </div>
           </div>
 
           {/* Conversation Area */}
-          <div className="flex-1 p-6 space-y-4 min-h-[150px] bg-slate-50/30">
-            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm text-xs text-slate-600 leading-relaxed font-medium">
-              👋 Welcome! How can we help you today? Type your request below and we'll reach out on WhatsApp.
-            </div>
-
-            {showStatus && (
-              <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100 animate-in zoom-in duration-300">
-                <div className="flex items-center justify-center gap-2 text-emerald-600 mb-1">
-                  <CheckCheck size={18} />
-                  <span className="text-xs font-black uppercase tracking-widest">Message Sent</span>
+          <div 
+            ref={scrollRef}
+            className="flex-1 p-6 space-y-4 overflow-y-auto bg-slate-50/50 scrollbar-hide"
+          >
+            {messages.map((msg) => (
+              <div 
+                key={msg.id} 
+                className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'} animate-in fade-in slide-in-from-bottom-2`}
+              >
+                <div className={`max-w-[85%] p-4 rounded-3xl text-sm font-medium leading-relaxed shadow-sm ${
+                  msg.sender === 'user' 
+                    ? 'bg-emerald-600 text-white rounded-tr-none' 
+                    : 'bg-white border border-slate-100 text-slate-700 rounded-tl-none'
+                }`}>
+                  {msg.text}
                 </div>
-                <p className="text-[10px] text-center text-emerald-700/70 font-bold">
-                  Message sent to Support. We usually reply within 10 minutes.
-                </p>
+                <div className="mt-1 flex items-center gap-1 text-[8px] font-black text-slate-300 uppercase tracking-widest">
+                  {msg.sender === 'user' ? <User size={8} /> : <Bot size={8} />}
+                  {msg.sender === 'user' ? 'You' : 'NaijaShop Assistant'} • {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </div>
+
+                {msg.sender === 'bot' && msg.showOptions && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button 
+                      onClick={() => setMessages(prev => [...prev, { id: Date.now().toString(), sender: 'bot', text: "Glad I could help! I'm here if you need anything else.", timestamp: Date.now() }])}
+                      className="px-3 py-1.5 bg-emerald-50 text-emerald-600 rounded-full text-[10px] font-black uppercase tracking-widest border border-emerald-100 hover:bg-emerald-100 transition-colors"
+                    >
+                      ✅ That helped
+                    </button>
+                    <button 
+                      onClick={connectToHuman}
+                      className="px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-full text-[10px] font-black uppercase tracking-widest border border-indigo-100 hover:bg-indigo-100 transition-colors flex items-center gap-1"
+                    >
+                      <Headphones size={12} /> Talk to Human
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+
+            {isTyping && (
+              <div className="flex items-center gap-2 text-slate-400 animate-pulse">
+                <div className="w-8 h-8 bg-white rounded-xl border border-slate-100 flex items-center justify-center">
+                  <Loader2 size={14} className="animate-spin" />
+                </div>
+                <span className="text-[10px] font-black uppercase tracking-widest">Assistant is thinking...</span>
               </div>
             )}
           </div>
 
           {/* Input Area */}
-          <div className="p-6 border-t border-slate-100 bg-white">
-            <div className="relative mb-4">
-              <textarea 
-                placeholder="Type your question..."
-                className="w-full p-4 pr-12 bg-slate-50 border border-slate-200 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-emerald-500 min-h-[80px] font-medium resize-none transition-all"
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
+          <div className="p-6 border-t border-slate-100 bg-white shrink-0">
+            <div className="relative">
+              <input 
+                type="text"
+                placeholder="Ask a question..."
+                className="w-full p-4 pr-12 bg-slate-50 border border-slate-200 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-emerald-500 font-medium transition-all"
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSend()}
               />
               <button 
                 onClick={handleSend}
-                disabled={!message.trim()}
-                className="absolute right-3 bottom-3 p-2 bg-emerald-600 text-white rounded-xl disabled:opacity-30 transition-all hover:bg-emerald-700 active:scale-90"
+                disabled={!inputText.trim() || isTyping}
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-2 bg-emerald-600 text-white rounded-xl disabled:opacity-30 transition-all hover:bg-emerald-700 active:scale-90 shadow-lg shadow-emerald-200"
               >
                 <Send size={18} />
               </button>
             </div>
             
-            <div className="flex items-center justify-center gap-2 text-slate-400 border-t border-slate-50 pt-4">
+            <div className="flex items-center justify-center gap-2 text-slate-300 mt-4">
               <Clock size={12} />
-              <span className="text-[10px] font-black uppercase tracking-widest">Support Hours: 8am - 8pm Daily</span>
+              <span className="text-[9px] font-black uppercase tracking-widest">Offline Support 24/7</span>
             </div>
           </div>
         </div>
