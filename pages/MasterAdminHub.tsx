@@ -16,7 +16,12 @@ import {
   LogOut,
   ChevronRight,
   Globe,
-  RefreshCw
+  RefreshCw,
+  Award,
+  ExternalLink,
+  SearchCheck,
+  CreditCard,
+  UserCheck
 } from 'lucide-react';
 
 const MASTER_PIN = "8844";
@@ -42,6 +47,8 @@ const MasterAdminHub: React.FC = () => {
   const [pinInput, setPinInput] = useState('');
   const [activeTab, setActiveTab] = useState<'shops' | 'marketers'>('shops');
   const [searchTerm, setSearchTerm] = useState('');
+  const [referralFilter, setReferralFilter] = useState<string | null>(null);
+  const [paymentAuditInput, setPaymentAuditInput] = useState('');
   const [submissions, setSubmissions] = useState<NetlifySubmission[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -57,8 +64,7 @@ const MasterAdminHub: React.FC = () => {
   };
 
   const fetchData = async () => {
-    // Vite uses import.meta.env for environment variables
-    // Fix: Cast import.meta to any to allow access to env property in environments where Vite types aren't globally extended.
+    // Correctly using Vite environment variables with type casting for safety
     const SITE_ID = (import.meta as any).env.VITE_NETLIFY_SITE_ID;
     const ACCESS_TOKEN = (import.meta as any).env.VITE_NETLIFY_ACCESS_TOKEN;
     
@@ -78,15 +84,9 @@ const MasterAdminHub: React.FC = () => {
         }
       });
 
-      if (response.status === 401) {
-        throw new Error("Invalid Access Token");
-      }
-      if (response.status === 404) {
-        throw new Error("Site ID not found");
-      }
-      if (!response.ok) {
-        throw new Error(`Satellite Connection Error: ${response.statusText}`);
-      }
+      if (response.status === 401) throw new Error("Invalid Access Token");
+      if (response.status === 404) throw new Error("Site ID not found");
+      if (!response.ok) throw new Error(`Satellite Connection Error: ${response.statusText}`);
 
       const data = await response.json();
       setSubmissions(data);
@@ -98,9 +98,7 @@ const MasterAdminHub: React.FC = () => {
   };
 
   useEffect(() => {
-    if (isAuthenticated) {
-      fetchData();
-    }
+    if (isAuthenticated) fetchData();
   }, [isAuthenticated]);
 
   const shopRegistrations = useMemo(() => 
@@ -113,14 +111,56 @@ const MasterAdminHub: React.FC = () => {
     [submissions]
   );
 
+  // Link shops to marketers for stats - Matching referral-code-used with phone-number
+  const marketerReferralMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    shopRegistrations.forEach(shop => {
+      const code = shop.data['referral-code-used'];
+      if (code && code !== 'NONE') {
+        map[code] = (map[code] || 0) + 1;
+      }
+    });
+    return map;
+  }, [shopRegistrations]);
+
   const filteredData = useMemo(() => {
-    const list = activeTab === 'shops' ? shopRegistrations : marketerRegistrations;
-    if (!searchTerm.trim()) return list;
-    const term = searchTerm.toLowerCase();
-    return list.filter(s => 
-      Object.values(s.data).some(v => String(v).toLowerCase().includes(term))
-    );
-  }, [activeTab, shopRegistrations, marketerRegistrations, searchTerm]);
+    if (activeTab === 'shops') {
+      let list = shopRegistrations;
+      if (referralFilter) {
+        list = list.filter(s => s.data['referral-code-used'] === referralFilter);
+      }
+      if (searchTerm.trim()) {
+        const term = searchTerm.toLowerCase();
+        list = list.filter(s => Object.values(s.data).some(v => String(v).toLowerCase().includes(term)));
+      }
+      return list;
+    } else {
+      let list = marketerRegistrations;
+      if (searchTerm.trim()) {
+        const term = searchTerm.toLowerCase();
+        list = list.filter(s => Object.values(s.data).some(v => String(v).toLowerCase().includes(term)));
+      }
+      return list;
+    }
+  }, [activeTab, shopRegistrations, marketerRegistrations, searchTerm, referralFilter]);
+
+  const auditedResult = useMemo(() => {
+    if (!paymentAuditInput.trim()) return null;
+    const terminalId = paymentAuditInput.trim();
+    const shop = shopRegistrations.find(s => s.data['terminal-id'] === terminalId);
+    if (!shop) return { found: false };
+    
+    const referrerCode = shop.data['referral-code-used'];
+    const marketer = referrerCode !== 'NONE' 
+      ? marketerRegistrations.find(m => m.data['phone-number'] === referrerCode)
+      : null;
+
+    return { 
+      found: true, 
+      shop, 
+      marketer 
+    };
+  }, [paymentAuditInput, shopRegistrations, marketerRegistrations]);
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -130,14 +170,11 @@ const MasterAdminHub: React.FC = () => {
   const downloadCSV = () => {
     const list = activeTab === 'shops' ? shopRegistrations : marketerRegistrations;
     if (list.length === 0) return;
-
     const headers = Object.keys(list[0].data).join(',');
     const rows = list.map(s => Object.values(s.data).map(v => `"${v}"`).join(',')).join('\n');
     const csvContent = "data:text/csv;charset=utf-8," + headers + "\n" + rows;
-    
-    const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
+    link.setAttribute("href", encodeURI(csvContent));
     link.setAttribute("download", `NaijaShop_Empire_${activeTab}_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
@@ -157,14 +194,9 @@ const MasterAdminHub: React.FC = () => {
           </div>
           <form onSubmit={handleLogin} className="space-y-6">
             <input 
-              autoFocus
-              required
-              type="password" 
-              maxLength={4}
-              placeholder="ENTER MASTER PIN"
+              autoFocus required type="password" maxLength={4} placeholder="ENTER MASTER PIN"
               className="w-full py-5 bg-slate-800 border border-slate-700 rounded-2xl text-center text-4xl font-black text-emerald-400 tracking-[0.5em] outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
-              value={pinInput}
-              onChange={e => setPinInput(e.target.value.replace(/\D/g, ''))}
+              value={pinInput} onChange={e => setPinInput(e.target.value.replace(/\D/g, ''))}
             />
             <button className="w-full py-5 bg-emerald-600 text-white rounded-2xl font-black text-xl flex items-center justify-center gap-3 shadow-xl hover:bg-emerald-500 transition-all active:scale-95">
                Authenticate Session <ChevronRight size={24} />
@@ -178,7 +210,7 @@ const MasterAdminHub: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-950 text-white p-4 md:p-10 font-sans">
-      <div className="max-w-7xl mx-auto space-y-10">
+      <div className="max-w-7xl mx-auto space-y-8">
         
         {/* Header Section */}
         <header className="flex flex-col md:flex-row md:items-center justify-between gap-8">
@@ -212,17 +244,60 @@ const MasterAdminHub: React.FC = () => {
           </div>
         </header>
 
+        {/* Payment Auditor Box */}
+        <div className="bg-slate-900/50 border border-indigo-500/20 p-6 rounded-[2.5rem] flex flex-col md:flex-row gap-6 items-center animate-in slide-in-from-top-4">
+          <div className="flex items-center gap-4 shrink-0">
+             <div className="w-12 h-12 bg-indigo-900/30 text-indigo-400 rounded-2xl flex items-center justify-center border border-indigo-500/20">
+               <SearchCheck size={24} />
+             </div>
+             <div>
+               <h4 className="font-black text-sm uppercase tracking-widest text-indigo-400">Payment Auditor</h4>
+               <p className="text-[10px] text-slate-500 font-bold">Paste Hardware ID to find Referrer</p>
+             </div>
+          </div>
+          <div className="relative flex-1 w-full">
+            <input 
+              type="text" 
+              placeholder="e.g. NS-A1B2C3D4"
+              className="w-full h-14 bg-slate-800 border border-slate-700 pl-6 pr-4 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-sm tracking-widest transition-all"
+              value={paymentAuditInput}
+              onChange={e => setPaymentAuditInput(e.target.value.toUpperCase())}
+            />
+          </div>
+          {auditedResult && auditedResult.found && (
+            <div className="flex-1 bg-slate-950 p-4 rounded-2xl border border-emerald-500/20 flex items-center justify-between animate-in zoom-in">
+               <div className="flex items-center gap-3">
+                  <UserCheck size={20} className="text-emerald-400" />
+                  <div>
+                    <p className="text-[9px] font-black uppercase text-slate-500">Pay To Referrer</p>
+                    <p className="font-black text-sm text-white">
+                      {auditedResult.marketer ? auditedResult.marketer.data['marketer-name'] : 'DIRECT (NO PAY)'}
+                    </p>
+                  </div>
+               </div>
+               {auditedResult.marketer && (
+                 <button 
+                  onClick={() => copyToClipboard(`${auditedResult.marketer?.data['bank-name']} | ${auditedResult.marketer?.data['account-number']}`)}
+                  className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-[9px] font-black uppercase tracking-widest flex items-center gap-2"
+                 >
+                   <CreditCard size={12}/> Copy Bank
+                 </button>
+               )}
+            </div>
+          )}
+        </div>
+
         {/* Control Bar */}
         <div className="flex flex-col md:flex-row gap-6 items-stretch md:items-center">
            <div className="flex bg-slate-900 p-1.5 rounded-2xl border border-slate-800 shrink-0">
               <button 
-                onClick={() => setActiveTab('shops')}
-                className={`px-8 py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${activeTab === 'shops' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}
+                onClick={() => { setActiveTab('shops'); setReferralFilter(null); }}
+                className={`px-8 py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${activeTab === 'shops' && !referralFilter ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}
               >
                 Retail Terminals
               </button>
               <button 
-                onClick={() => setActiveTab('marketers')}
+                onClick={() => { setActiveTab('marketers'); setReferralFilter(null); }}
                 className={`px-8 py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${activeTab === 'marketers' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}
               >
                 Marketer Leads
@@ -242,8 +317,7 @@ const MasterAdminHub: React.FC = () => {
 
            <div className="flex gap-2">
              <button 
-               onClick={fetchData}
-               disabled={isLoading}
+               onClick={fetchData} disabled={isLoading}
                className="p-5 bg-slate-800 hover:bg-slate-700 text-emerald-400 rounded-2xl border border-slate-700 transition-all active:scale-95 disabled:opacity-50"
                title="Refresh Data"
              >
@@ -257,6 +331,14 @@ const MasterAdminHub: React.FC = () => {
              </button>
            </div>
         </div>
+
+        {referralFilter && (
+          <div className="flex items-center gap-3 bg-emerald-900/20 p-4 rounded-2xl border border-emerald-500/20 animate-in slide-in-from-left-4">
+             <Users size={16} className="text-emerald-400" />
+             <p className="text-xs font-bold text-emerald-400">Filtering shops referred by: <span className="underline">{referralFilter}</span></p>
+             <button onClick={() => setReferralFilter(null)} className="ml-auto text-[10px] font-black uppercase text-slate-500 hover:text-white">Clear Filter</button>
+          </div>
+        )}
 
         {/* Data View */}
         <div className="bg-slate-900 rounded-[3rem] border border-slate-800 shadow-2xl overflow-hidden min-h-[500px]">
@@ -283,70 +365,110 @@ const MasterAdminHub: React.FC = () => {
                       <tr>
                         {activeTab === 'shops' ? (
                           <>
-                            <th className="px-10 py-6 text-[10px] font-black text-slate-500 uppercase tracking-widest">Shop & Owner</th>
+                            <th className="px-10 py-6 text-[10px] font-black text-slate-500 uppercase tracking-widest">Shop Identity</th>
+                            <th className="px-10 py-6 text-[10px] font-black text-slate-500 uppercase tracking-widest">Referrer Details</th>
                             <th className="px-10 py-6 text-[10px] font-black text-slate-500 uppercase tracking-widest">Hardware ID</th>
-                            <th className="px-10 py-6 text-[10px] font-black text-slate-500 uppercase tracking-widest">Campaigns</th>
                             <th className="px-10 py-6 text-[10px] font-black text-slate-500 uppercase tracking-widest">Timestamp</th>
                           </>
                         ) : (
                           <>
                             <th className="px-10 py-6 text-[10px] font-black text-slate-500 uppercase tracking-widest">Marketer Identity</th>
-                            <th className="px-10 py-6 text-[10px] font-black text-slate-500 uppercase tracking-widest">Phone Number</th>
+                            <th className="px-10 py-6 text-[10px] font-black text-slate-500 uppercase tracking-widest">Total Referrals</th>
                             <th className="px-10 py-6 text-[10px] font-black text-slate-500 uppercase tracking-widest">Settlement Details</th>
-                            <th className="px-10 py-6 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">Copy</th>
+                            <th className="px-10 py-6 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">Actions</th>
                           </>
                         )}
                       </tr>
                    </thead>
                    <tbody className="divide-y divide-slate-800/50">
-                      {filteredData.map((sub) => (
-                        <tr key={sub.id} className="hover:bg-slate-800/30 transition-colors group">
-                          {activeTab === 'shops' ? (
-                            <>
-                              <td className="px-10 py-8">
-                                <p className="font-black text-lg text-white">{sub.data['shop-name']}</p>
-                                <p className="text-xs text-emerald-500/60 font-bold uppercase tracking-wide">{sub.data['admin-name']}</p>
-                              </td>
-                              <td className="px-10 py-8">
-                                <code className="bg-slate-950 px-3 py-1.5 rounded-lg text-emerald-400 font-mono text-sm border border-emerald-500/10">
-                                  {sub.data['terminal-id']}
-                                </code>
-                              </td>
-                              <td className="px-10 py-8">
-                                <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${sub.data['referral-code-used'] !== 'NONE' ? 'bg-indigo-900/40 text-indigo-400 border-indigo-400/20' : 'bg-slate-950 text-slate-600 border-slate-800'}`}>
-                                  {sub.data['referral-code-used']}
-                                </span>
-                              </td>
-                              <td className="px-10 py-8">
-                                <p className="text-xs font-bold text-slate-500">{new Date(sub.created_at).toLocaleDateString()}</p>
-                                <p className="text-[10px] font-medium text-slate-600">{new Date(sub.created_at).toLocaleTimeString()}</p>
-                              </td>
-                            </>
-                          ) : (
-                            <>
-                              <td className="px-10 py-8">
-                                <p className="font-black text-lg text-white">{sub.data['marketer-name']}</p>
-                                <p className="text-[10px] font-bold text-emerald-500/40 uppercase tracking-[0.2em]">Verified Partner</p>
-                              </td>
-                              <td className="px-10 py-8">
-                                <p className="font-black text-emerald-400 tracking-wider">{sub.data['phone-number']}</p>
-                              </td>
-                              <td className="px-10 py-8">
-                                <p className="text-sm font-bold text-white uppercase tracking-tight">{sub.data['bank-name']}</p>
-                                <p className="text-xs font-black text-slate-500 tracking-[0.1em]">{sub.data['account-number']}</p>
-                              </td>
-                              <td className="px-10 py-8 text-center">
-                                <button 
-                                  onClick={() => copyToClipboard(`${sub.data['bank-name']} | ${sub.data['account-number']}`)}
-                                  className="p-3 bg-slate-950 hover:bg-emerald-600 hover:text-white rounded-xl text-slate-400 transition-all border border-slate-800 group-hover:border-emerald-500/30"
-                                >
-                                  <Copy size={18} />
-                                </button>
-                              </td>
-                            </>
-                          )}
-                        </tr>
-                      ))}
+                      {filteredData.map((sub) => {
+                        const refCode = sub.data['referral-code-used'];
+                        const referrer = refCode !== 'NONE' 
+                          ? marketerRegistrations.find(m => m.data['phone-number'] === refCode)
+                          : null;
+                        const refCount = marketerReferralMap[sub.data['phone-number'] || ''] || 0;
+
+                        return (
+                          <tr key={sub.id} className="hover:bg-slate-800/30 transition-colors group">
+                            {activeTab === 'shops' ? (
+                              <>
+                                <td className="px-10 py-8">
+                                  <p className="font-black text-lg text-white">{sub.data['shop-name']}</p>
+                                  <p className="text-xs text-emerald-500/60 font-bold uppercase tracking-wide">{sub.data['admin-name']}</p>
+                                </td>
+                                <td className="px-10 py-8">
+                                  {referrer ? (
+                                    <div className="flex items-center gap-2 text-emerald-400">
+                                      <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+                                      <div>
+                                        <p className="font-black text-sm">{referrer.data['marketer-name']}</p>
+                                        <p className="text-[9px] opacity-60 font-mono">({refCode})</p>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <p className="text-xs font-bold text-slate-600 uppercase tracking-widest">Direct Install</p>
+                                  )}
+                                </td>
+                                <td className="px-10 py-8">
+                                  <code className="bg-slate-950 px-3 py-1.5 rounded-lg text-indigo-400 font-mono text-sm border border-indigo-500/10">
+                                    {sub.data['terminal-id']}
+                                  </code>
+                                </td>
+                                <td className="px-10 py-8">
+                                  <p className="text-xs font-bold text-slate-500">{new Date(sub.created_at).toLocaleDateString()}</p>
+                                  <p className="text-[10px] font-medium text-slate-600">{new Date(sub.created_at).toLocaleTimeString()}</p>
+                                </td>
+                              </>
+                            ) : (
+                              <>
+                                <td className="px-10 py-8">
+                                  <div className="flex items-center gap-4">
+                                     <div className="relative">
+                                        <p className="font-black text-lg text-white">{sub.data['marketer-name']}</p>
+                                        <p className="text-xs font-black text-emerald-400 tracking-wider">{sub.data['phone-number']}</p>
+                                     </div>
+                                     {refCount > 5 && (
+                                       <div className="p-2 bg-amber-500/10 text-amber-500 rounded-xl border border-amber-500/20 flex items-center gap-2 animate-in zoom-in" title="Top Performer Badge">
+                                          <Award size={16} />
+                                          <span className="text-[9px] font-black uppercase tracking-widest">Top Performer</span>
+                                       </div>
+                                     )}
+                                  </div>
+                                </td>
+                                <td className="px-10 py-8">
+                                  <div className="flex items-center gap-4">
+                                    <div className="text-center bg-slate-950 px-4 py-2 rounded-xl border border-slate-800">
+                                      <p className="text-2xl font-black text-white">{refCount}</p>
+                                      <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Shops</p>
+                                    </div>
+                                    <button 
+                                      disabled={refCount === 0}
+                                      onClick={() => { setReferralFilter(sub.data['phone-number'] || null); setActiveTab('shops'); }}
+                                      className="p-3 bg-slate-800 hover:bg-emerald-600 text-slate-400 hover:text-white rounded-xl transition-all border border-slate-700 disabled:opacity-20"
+                                      title="View referred shops"
+                                    >
+                                      <ExternalLink size={16} />
+                                    </button>
+                                  </div>
+                                </td>
+                                <td className="px-10 py-8">
+                                  <p className="text-sm font-bold text-white uppercase tracking-tight">{sub.data['bank-name']}</p>
+                                  <p className="text-xs font-black text-slate-500 tracking-[0.1em]">{sub.data['account-number']}</p>
+                                </td>
+                                <td className="px-10 py-8 text-center flex items-center justify-center gap-2">
+                                  <button 
+                                    onClick={() => copyToClipboard(`${sub.data['bank-name']} | ${sub.data['account-number']}`)}
+                                    className="p-3 bg-slate-950 hover:bg-emerald-600 hover:text-white rounded-xl text-slate-400 transition-all border border-slate-800"
+                                    title="Copy Bank Details"
+                                  >
+                                    <Copy size={18} />
+                                  </button>
+                                </td>
+                              </>
+                            )}
+                          </tr>
+                        );
+                      })}
                    </tbody>
                 </table>
              </div>
