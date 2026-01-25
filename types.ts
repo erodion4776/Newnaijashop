@@ -103,6 +103,12 @@ export interface Debt {
   timestamp: number;
 }
 
+export interface UsedReference {
+  id?: number;
+  reference: string;
+  timestamp: number;
+}
+
 export interface Staff {
   id?: number;
   name: string;
@@ -126,8 +132,10 @@ export interface Settings {
   receipt_footer?: string;
   sync_key?: string;
   last_synced_timestamp?: number;
+  license_key?: string;
+  license_expiry?: number;
 }
 
-export type View = 'dashboard' | 'pos' | 'inventory' | 'inventory-ledger' | 'debts' | 'settings' | 'staff-management' | 'activity-log' | 'security-backups' | 'transfer-station' | 'expense-tracker' | 'audit-trail' | 'customer-wallets' | 'business-hub';
+export type View = 'dashboard' | 'pos' | 'inventory' | 'inventory-ledger' | 'debts' | 'settings' | 'staff-management' | 'activity-log' | 'security-backups' | 'transfer-station' | 'expense-tracker' | 'audit-trail' | 'customer-wallets' | 'business-hub' | 'activation';
 
 export type SyncStatus = 'offline' | 'connecting' | 'live' | 'reconnecting' | 'failed';

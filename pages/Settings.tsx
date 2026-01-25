@@ -28,10 +28,12 @@ import {
   FileText,
   Printer,
   Bluetooth,
-  AlertTriangle
+  AlertTriangle,
+  CreditCard
 } from 'lucide-react';
 import { Staff } from '../types';
 import BluetoothPrintService from '../services/BluetoothPrintService';
+import SubscriptionManager from '../components/SubscriptionManager';
 
 const FAQ_DATA = [
   {
@@ -135,6 +137,11 @@ const Settings: React.FC<{ currentUser: Staff | null }> = ({ currentUser }) => {
     }
   };
 
+  const handleSubscriptionSuccess = (ref: string) => {
+    // Navigate to activation screen
+    window.location.href = `/?session=${ref}`;
+  };
+
   if (currentUser?.role !== 'Admin') {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
@@ -159,6 +166,15 @@ const Settings: React.FC<{ currentUser: Staff | null }> = ({ currentUser }) => {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
         <div className="md:col-span-2 space-y-8">
+          
+          {/* Subscription Manager */}
+          {settings && (
+            <SubscriptionManager 
+              settings={settings} 
+              onSuccess={handleSubscriptionSuccess} 
+            />
+          )}
+
           {/* Support & Tutorial Section */}
           <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6 relative overflow-hidden">
             <div className="absolute right-0 top-0 p-8 opacity-5">

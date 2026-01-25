@@ -1,9 +1,8 @@
 
-// Use default import for Dexie to ensure inherited methods like version() are correctly typed on the class instance.
-// This resolves the error where 'version' was not found on the NaijaShopDB type.
-import Dexie from 'dexie';
+// Fix: Use named import for Dexie to ensure inherited methods like version() are correctly typed on the class instance.
+import { Dexie } from 'dexie';
 import type { Table } from 'dexie';
-import { Product, Sale, Debt, Settings, ParkedOrder, InventoryLog, Staff, Expense, AuditEntry, CustomerWallet, WalletTransaction } from '../types';
+import { Product, Sale, Debt, Settings, ParkedOrder, InventoryLog, Staff, Expense, AuditEntry, CustomerWallet, WalletTransaction, UsedReference } from '../types';
 
 export class NaijaShopDB extends Dexie {
   products!: Table<Product>;
@@ -17,12 +16,13 @@ export class NaijaShopDB extends Dexie {
   audit_trail!: Table<AuditEntry>;
   wallets!: Table<CustomerWallet>;
   wallet_transactions!: Table<WalletTransaction>;
+  used_references!: Table<UsedReference>;
 
   constructor() {
     super('NaijaShopDB');
     
     // Define the database schema using the version() method inherited from Dexie.
-    this.version(26).stores({
+    this.version(27).stores({
       products: '++id, name, category, barcode',
       sales: '++id, sale_id, timestamp, payment_method, staff_name',
       debts: '++id, customer_name, status',
@@ -33,7 +33,8 @@ export class NaijaShopDB extends Dexie {
       expenses: '++id, category, timestamp',
       audit_trail: '++id, action, staff_name, timestamp',
       wallets: '++id, phone, balance',
-      wallet_transactions: '++id, phone, type, timestamp'
+      wallet_transactions: '++id, phone, type, timestamp',
+      used_references: '++id, &reference'
     });
   }
 }

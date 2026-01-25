@@ -17,13 +17,16 @@ import SecurityBackups from './pages/SecurityBackups';
 import Settings from './pages/Settings';
 import ExpenseTracker from './pages/ExpenseTracker';
 import AuditTrail from './pages/AuditTrail';
+import ActivationPage from './pages/ActivationPage';
 import InstallModal from './components/InstallModal';
 import SupportChat from './components/SupportChat';
 import { performAutoSnapshot } from './utils/backup';
 import { 
   AlertTriangle,
   Lock,
-  ShieldAlert
+  ShieldAlert,
+  CreditCard,
+  AlertCircle
 } from 'lucide-react';
 
 const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-9987-b4ed4c0e3c36.png";
@@ -78,6 +81,7 @@ const AppContent: React.FC = () => {
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showInstallModal, setShowInstallModal] = useState(false);
   const [isPWA, setIsPWA] = useState(false);
+  const [activationSession, setActivationSession] = useState<string | null>(null);
 
   const [setupData, setSetupData] = useState({ shopName: '', adminName: '', adminPin: '' });
 
@@ -85,6 +89,13 @@ const AppContent: React.FC = () => {
   const staffList = useLiveQuery(() => db.staff.toArray()) || [];
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const session = params.get('session');
+    if (session) {
+      setActivationSession(session);
+      setCurrentView('activation');
+    }
+
     const splashTimer = setTimeout(() => setShowSplash(false), 2000);
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone;
     setIsPWA(isStandalone);
@@ -112,6 +123,8 @@ const AppContent: React.FC = () => {
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, []);
+
+  const isExpired = settings?.license_expiry && settings.license_expiry < Date.now();
 
   const handleSetupComplete = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -209,7 +222,29 @@ const AppContent: React.FC = () => {
     );
   }
 
-  if (!currentUser) {
+  if (isExpired && currentView !== 'activation') {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+        <div className="max-w-md w-full bg-white p-12 rounded-[3.5rem] shadow-2xl border border-rose-100 text-center space-y-8">
+          <div className="w-24 h-24 bg-rose-50 text-rose-600 rounded-full flex items-center justify-center mx-auto shadow-inner animate-pulse">
+            <AlertCircle size={48} />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-3xl font-black text-slate-900 tracking-tight">License Expired</h2>
+            <p className="text-slate-500">Your terminal license has ended. Please renew to continue using NaijaShop.</p>
+          </div>
+          <button 
+            onClick={() => setCurrentView('settings')}
+            className="w-full py-5 bg-emerald-600 text-white rounded-2xl font-black text-lg shadow-xl flex items-center justify-center gap-3"
+          >
+            <CreditCard size={24} /> Renew License Now
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!currentUser && currentView !== 'activation') {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
         <div className="w-full max-w-sm space-y-10">
@@ -266,6 +301,16 @@ const AppContent: React.FC = () => {
         {currentView === 'staff-management' && <StaffManagement />}
         {currentView === 'security-backups' && <SecurityBackups currentUser={currentUser} />}
         {currentView === 'settings' && <Settings currentUser={currentUser} />}
+        {currentView === 'activation' && activationSession && (
+          <ActivationPage 
+            sessionRef={activationSession} 
+            onActivated={() => {
+              setActivationSession(null);
+              window.history.replaceState({}, document.title, "/");
+              setCurrentView('dashboard');
+            }} 
+          />
+        )}
       </Layout>
       <SupportChat />
     </>
