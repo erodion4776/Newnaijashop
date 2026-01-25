@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
 import { 
@@ -27,9 +27,9 @@ import {
   ShoppingBag,
   Clock,
   CheckCircle2,
-  // Fix: Added missing icon imports
   Sparkles,
-  Loader2
+  Loader2,
+  FileUp
 } from 'lucide-react';
 import { Product, View, Staff } from '../types';
 import StockScanner from '../components/StockScanner';
@@ -56,6 +56,7 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
   const [isLocalScannerOpen, setIsLocalScannerOpen] = useState(false);
+  const [pendingImportFile, setPendingImportFile] = useState<File | null>(null);
   
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [restockProduct, setRestockProduct] = useState<Product | null>(null);
@@ -70,12 +71,12 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
   const [bulkDirection, setBulkDirection] = useState<'increase' | 'decrease'>('increase');
   
   const [isProcessing, setIsProcessing] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const allProductsData = useLiveQuery(() => db.products.toArray());
   const allProducts = allProductsData || [];
   const parkedOrders = useLiveQuery(() => db.parked_orders.toArray()) || [];
 
-  // UI Feedback Logic - Map Product IDs to Parked/Reserved Quantities
   const reservedMap = useMemo(() => {
     const map: Record<number, number> = {};
     parkedOrders.forEach(order => {
@@ -102,7 +103,6 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
     );
   }, [allProducts, lowStockItems, searchTerm, stockFilter]);
 
-  // Valuation Logic adjusted to include reserved (parked) stock
   const valuation = useMemo(() => {
     const totals = {
       totalCost: 0,
@@ -142,6 +142,15 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
 
   const [formData, setFormData] = useState<Product>(initialFormState);
 
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setPendingImportFile(file);
+      setIsLocalScannerOpen(true);
+    }
+    e.target.value = '';
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canEdit) return;
@@ -161,7 +170,6 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
         });
 
         if (oldStock !== newStock) {
-          // Log Manual Stock Adjustment to Audit Trail
           await db.audit_trail.add({
             action: 'Stock Manually Adjusted',
             details: `Updated '${formData.name}' stock level from ${oldStock} to ${newStock} via product edit.`,
@@ -245,7 +253,6 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
         return { ...p, price: Math.max(0, newPrice) };
       });
 
-      // Log Bulk Price Update to Audit Trail
       await db.audit_trail.add({
         action: 'Bulk Price Update',
         details: `Bulk adjusted prices for ${targetProducts.length} items in ${bulkTarget === 'all' ? 'All categories' : bulkCategory}. Direction: ${bulkDirection}.`,
@@ -303,7 +310,6 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
           change = 0;
       }
 
-      // Log Quick Stock Adjustment to Audit Trail
       await db.audit_trail.add({
         action: 'Stock Manually Adjusted',
         details: `Quick adjusted '${restockProduct.name}' stock level (${restockType}: ${change}). New total: ${newStock}.`,
@@ -344,9 +350,10 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
       
       await db.products.bulkAdd(productsToAdd);
       setIsLocalScannerOpen(false);
-      alert(`${products.length} items added from ledger!`);
+      setPendingImportFile(null);
+      alert(`${products.length} items added to inventory!`);
     } catch (err) {
-      alert("Error saving scanned items: " + err);
+      alert("Error saving items: " + err);
     }
   };
 
@@ -385,12 +392,26 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
                 <Plus size={20} /> New Item
               </button>
               <button 
-                onClick={() => setIsLocalScannerOpen(true)}
+                onClick={() => { setPendingImportFile(null); setIsLocalScannerOpen(true); }}
                 className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-indigo-600 text-white px-6 py-3 rounded-2xl font-black transition-all shadow-xl shadow-indigo-600/20 hover:bg-indigo-700"
               >
                 <Camera size={20} /> 
-                <span className="hidden sm:inline">Scan Paper Ledger</span>
+                <span className="hidden sm:inline">Scan Ledger</span>
               </button>
+              <button 
+                onClick={() => fileInputRef.current?.click()}
+                className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-2xl font-black transition-all shadow-xl shadow-slate-900/20 hover:bg-black"
+              >
+                <FileUp size={20} /> 
+                <span className="hidden sm:inline">Upload File</span>
+              </button>
+              <input 
+                type="file" 
+                ref={fileInputRef} 
+                className="hidden" 
+                accept=".xlsx,.xls,.csv,.docx,image/*"
+                onChange={handleFileUpload} 
+              />
             </>
           ) : (
             <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 border border-amber-100 rounded-full text-amber-600">
@@ -708,8 +729,9 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
 
       {isLocalScannerOpen && (
         <StockScanner 
+          initialFile={pendingImportFile}
           onConfirm={handleLocalScanConfirm} 
-          onClose={() => setIsLocalScannerOpen(false)} 
+          onClose={() => { setIsLocalScannerOpen(false); setPendingImportFile(null); }} 
         />
       )}
     </div>

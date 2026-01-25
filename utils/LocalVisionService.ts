@@ -80,7 +80,7 @@ class LocalVisionService {
    * Pattern 1: [Name] [Price] (Milo 500g 2500)
    * Pattern 2: [Name] - [Price] - [Qty] (Sugar - 1200 - 5)
    */
-  private naijaLogicParser(rawText: string): ScannedProduct[] {
+  public naijaLogicParser(rawText: string): ScannedProduct[] {
     const lines = rawText.split('\n');
     const products: ScannedProduct[] = [];
 
