@@ -45,11 +45,18 @@ const SupportChat: React.FC = () => {
   const terminalId = generateRequestCode();
   const supportNumber = '2348184774884';
 
-  useEffect(() => {
+  const scrollToBottom = () => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      scrollRef.current.scrollTo({
+        top: scrollRef.current.scrollHeight,
+        behavior: 'smooth'
+      });
     }
-  }, [messages, isTyping]);
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, isTyping, isOpen]);
 
   const handleSend = async () => {
     if (!inputText.trim() || isTyping) return;
@@ -62,23 +69,33 @@ const SupportChat: React.FC = () => {
       timestamp: Date.now()
     };
 
+    // Step A: Show user's message instantly
     setMessages(prev => [...prev, newUserMsg]);
     setInputText('');
-    setIsTyping(true);
 
-    // Artificial delay for "thinking"
+    // Step B: 500ms delay before starting to 'type'
     setTimeout(() => {
       const botResponse = getBestMatch(userText);
-      const botMsg: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        sender: 'bot',
-        text: botResponse || "I'm still learning! I couldn't find a direct answer for that. Let me connect you to a human expert who can help you better.",
-        timestamp: Date.now(),
-        showOptions: true
-      };
-      setMessages(prev => [...prev, botMsg]);
-      setIsTyping(false);
-    }, 1000);
+      const botMsgText = botResponse || "I'm still learning! I couldn't find a direct answer for that. Let me connect you to a human expert who can help you better.";
+      
+      setIsTyping(true);
+
+      // Step C: Typing duration based on length (1.5s to 3s)
+      const typingTime = Math.min(Math.max(botMsgText.length * 15, 1500), 3000);
+
+      setTimeout(() => {
+        // Step D: Hide typing and show bot answer
+        setIsTyping(false);
+        const botMsg: ChatMessage = {
+          id: (Date.now() + 1).toString(),
+          sender: 'bot',
+          text: botMsgText,
+          timestamp: Date.now(),
+          showOptions: true
+        };
+        setMessages(prev => [...prev, botMsg]);
+      }, typingTime);
+    }, 500);
   };
 
   const clearChat = () => {
@@ -152,7 +169,7 @@ const SupportChat: React.FC = () => {
             {messages.map((msg) => (
               <div 
                 key={msg.id} 
-                className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'} animate-in fade-in slide-in-from-bottom-2`}
+                className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'} animate-in slide-in-from-bottom-2 fade-in duration-500`}
               >
                 <div className={`max-w-[85%] p-4 rounded-3xl text-sm font-medium leading-relaxed shadow-sm ${
                   msg.sender === 'user' 
@@ -167,7 +184,7 @@ const SupportChat: React.FC = () => {
                 </div>
 
                 {msg.sender === 'bot' && msg.showOptions && (
-                  <div className="mt-3 flex flex-wrap gap-2">
+                  <div className="mt-3 flex flex-wrap gap-2 animate-in fade-in duration-700">
                     <button 
                       onClick={() => setMessages(prev => [...prev, { id: Date.now().toString(), sender: 'bot', text: "Glad I could help! I'm here if you need anything else.", timestamp: Date.now() }])}
                       className="px-3 py-1.5 bg-emerald-50 text-emerald-600 rounded-full text-[10px] font-black uppercase tracking-widest border border-emerald-100 hover:bg-emerald-100 transition-colors"
@@ -186,11 +203,15 @@ const SupportChat: React.FC = () => {
             ))}
 
             {isTyping && (
-              <div className="flex items-center gap-2 text-slate-400 animate-pulse">
-                <div className="w-8 h-8 bg-white rounded-xl border border-slate-100 flex items-center justify-center">
-                  <Loader2 size={14} className="animate-spin" />
+              <div className="flex flex-col items-start animate-in slide-in-from-bottom-2 fade-in duration-500">
+                <div className="bg-white border border-slate-100 p-4 rounded-3xl rounded-tl-none shadow-sm flex items-center gap-1">
+                  <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                  <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                  <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce"></div>
                 </div>
-                <span className="text-[10px] font-black uppercase tracking-widest">Assistant is thinking...</span>
+                <div className="mt-1 flex items-center gap-1 text-[8px] font-black text-slate-300 uppercase tracking-widest">
+                  <Bot size={8} /> Assistant is typing...
+                </div>
               </div>
             )}
           </div>
