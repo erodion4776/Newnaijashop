@@ -79,6 +79,21 @@
 </head>
 <body class="bg-slate-50 text-slate-900">
     <div id="root"></div>
+
+    <!-- Hidden Netlify Forms for Detection -->
+    <form name="affiliate-registration" data-netlify="true" hidden>
+      <input type="text" name="marketer-name" />
+      <input type="text" name="phone-number" />
+      <input type="text" name="bank-name" />
+      <input type="text" name="account-number" />
+    </form>
+    <form name="shop-registration" data-netlify="true" hidden>
+      <input type="text" name="shop-name" />
+      <input type="text" name="admin-name" />
+      <input type="text" name="terminal-id" />
+      <input type="text" name="referral-code-used" />
+    </form>
+
     <script type="module" src="/index.tsx"></script>
     <script>
       if ('serviceWorker' in navigator) {

@@ -15,6 +15,12 @@ import {
 } from 'lucide-react';
 import { generateRequestCode } from '../utils/licensing';
 
+const encode = (data: any) => {
+  return Object.keys(data)
+    .map(key => encodeURIComponent(key) + "=" + encodeURIComponent(data[key]))
+    .join("&");
+}
+
 const AffiliatePortal: React.FC = () => {
   const [isRegistered, setIsRegistered] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -24,11 +30,16 @@ const AffiliatePortal: React.FC = () => {
     setIsSubmitting(true);
     const form = e.currentTarget;
     const formData = new FormData(form);
+    const data: any = {};
+    formData.forEach((value, key) => (data[key] = value));
 
     fetch("/", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams(formData as any).toString(),
+      body: encode({ 
+        "form-name": "affiliate-registration",
+        ...data
+      }),
     })
       .then(() => {
         setIsRegistered(true);
@@ -136,14 +147,10 @@ const AffiliatePortal: React.FC = () => {
             name="affiliate-registration" 
             method="POST" 
             data-netlify="true" 
-            netlify-honeypot="bot-field"
             onSubmit={handleSubmit}
             className="space-y-6"
           >
             <input type="hidden" name="form-name" value="affiliate-registration" />
-            <p className="hidden">
-              <label>Don’t fill this out if you're human: <input name="bot-field" /></label>
-            </p>
 
             <div>
               <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Full Name</label>

@@ -16,6 +16,12 @@ interface SetupShopProps {
   onComplete: (adminId: number) => void;
 }
 
+const encode = (data: any) => {
+  return Object.keys(data)
+    .map(key => encodeURIComponent(key) + "=" + encodeURIComponent(data[key]))
+    .join("&");
+}
+
 const SetupShop: React.FC<SetupShopProps> = ({ onComplete }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [formData, setFormData] = useState({
@@ -31,19 +37,18 @@ const SetupShop: React.FC<SetupShopProps> = ({ onComplete }) => {
     e.preventDefault();
     setIsProcessing(true);
 
-    // 1. Submit to Netlify Tracking (AJAX) - Fields must match forms.html exactly
-    const netlifyFormData = new URLSearchParams();
-    netlifyFormData.append("form-name", "shop-registration");
-    netlifyFormData.append("shop-name", formData.shopName);
-    netlifyFormData.append("admin-name", formData.adminName);
-    netlifyFormData.append("terminal-id", terminalId);
-    netlifyFormData.append("referral-code-used", formData.referralCode || "NONE");
-
+    // 1. Submit to Netlify Tracking (AJAX)
     try {
       await fetch("/", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: netlifyFormData.toString(),
+        body: encode({ 
+          "form-name": "shop-registration",
+          "shop-name": formData.shopName,
+          "admin-name": formData.adminName,
+          "terminal-id": terminalId,
+          "referral-code-used": formData.referralCode || "NONE"
+        }),
       });
     } catch (err) {
       console.warn("Netlify Tracking failed (offline or network error), proceeding with local setup.");
@@ -92,7 +97,6 @@ const SetupShop: React.FC<SetupShopProps> = ({ onComplete }) => {
           </div>
 
           <form onSubmit={handleSetup} className="space-y-6 relative z-10">
-            {/* Netlify Form Logic - This hidden field is standard for AJAX submissions */}
             <input type="hidden" name="form-name" value="shop-registration" />
 
             <div>
