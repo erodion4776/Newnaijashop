@@ -19,6 +19,7 @@ import AuditTrail from './pages/AuditTrail';
 import ActivationPage from './pages/ActivationPage';
 import AffiliatePortal from './pages/AffiliatePortal';
 import SetupShop from './pages/SetupShop';
+import LandingPage from './pages/LandingPage';
 import MasterAdminHub from './pages/MasterAdminHub';
 import InstallModal from './components/InstallModal';
 import SupportChat from './components/SupportChat';
@@ -90,7 +91,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 }
 
 const AppContent: React.FC = () => {
-  const [currentView, setCurrentView] = useState<View>('dashboard');
+  const [currentView, setCurrentView] = useState<View>('landing');
   const [isInitialized, setIsInitialized] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
   const [currentUser, setCurrentUser] = useState<Staff | null>(null);
@@ -214,13 +215,14 @@ const AppContent: React.FC = () => {
       const admin = staffList.find(s => s.role === 'Admin');
       if (admin) {
         setCurrentUser(admin);
-        setCurrentView('settings');
+        setCurrentView('dashboard');
         return;
       }
     }
     if (staff && staff.password === loginPassword) {
       setCurrentUser(staff);
       if (staff.role === 'Sales') setCurrentView('pos');
+      else setCurrentView('dashboard');
     } else {
       alert("Invalid Password or PIN");
     }
@@ -309,8 +311,12 @@ const AppContent: React.FC = () => {
     );
   }
 
+  // PUBLIC ONBOARDING: Landing Page & Setup
   if (isInitialized && (!settings?.is_setup_complete || staffList.length === 0)) {
-    return <SetupShop onComplete={() => window.location.reload()} />;
+    if (currentView === 'setup') {
+      return <SetupShop onComplete={() => window.location.reload()} />;
+    }
+    return <LandingPage onStartTrial={() => setCurrentView('setup')} />;
   }
 
   if (isLicensed === false && s?.isSubscribed && currentView !== 'activation') {
