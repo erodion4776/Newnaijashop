@@ -1,7 +1,6 @@
 
-
-// Fix: Use default import for Dexie to ensure inherited methods like version() are correctly typed on the class instance.
-import Dexie, { type Table } from 'dexie';
+// Fix: Use named import for Dexie to ensure inherited methods like version() are correctly typed on the class instance.
+import { Dexie, type Table } from 'dexie';
 import { Product, Sale, Debt, Settings, ParkedOrder, InventoryLog, Staff, Expense, AuditEntry, CustomerWallet, WalletTransaction } from '../types';
 
 export class NaijaShopDB extends Dexie {

@@ -43,6 +43,8 @@ import {
 } from 'lucide-react';
 import { Product, View, Staff } from '../types';
 import { processHandwrittenLedger, RateLimitError } from '../services/geminiService';
+import StockScanner from '../components/StockScanner';
+import { ScannedProduct } from '../utils/LocalVisionService';
 
 interface InventoryProps {
   setView?: (view: View) => void;
@@ -94,6 +96,7 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
   const [isRestockModalOpen, setIsRestockModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
+  const [isLocalScannerOpen, setIsLocalScannerOpen] = useState(false);
   
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [restockProduct, setRestockProduct] = useState<Product | null>(null);
@@ -115,7 +118,7 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
   const allProducts = allProductsData || [];
   const parkedOrders = useLiveQuery(() => db.parked_orders.toArray()) || [];
 
-  // Point 5: UI Feedback Logic - Map Product IDs to Parked/Reserved Quantities
+  // UI Feedback Logic - Map Product IDs to Parked/Reserved Quantities
   const reservedMap = useMemo(() => {
     const map: Record<number, number> = {};
     parkedOrders.forEach(order => {
@@ -142,7 +145,7 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
     );
   }, [allProducts, lowStockItems, searchTerm, stockFilter]);
 
-  // Point 6: Valuation Logic adjusted to include reserved (parked) stock
+  // Valuation Logic adjusted to include reserved (parked) stock
   const valuation = useMemo(() => {
     const totals = {
       totalCost: 0,
@@ -201,7 +204,7 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
         });
 
         if (oldStock !== newStock) {
-          // Logic: Log Manual Stock Adjustment to Audit Trail
+          // Log Manual Stock Adjustment to Audit Trail
           await db.audit_trail.add({
             action: 'Stock Manually Adjusted',
             details: `Updated '${formData.name}' stock level from ${oldStock} to ${newStock} via product edit.`,
@@ -285,7 +288,7 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
         return { ...p, price: Math.max(0, newPrice) };
       });
 
-      // Logic: Log Bulk Price Update to Audit Trail
+      // Log Bulk Price Update to Audit Trail
       await db.audit_trail.add({
         action: 'Bulk Price Update',
         details: `Bulk adjusted prices for ${targetProducts.length} items in ${bulkTarget === 'all' ? 'All categories' : bulkCategory}. Direction: ${bulkDirection}.`,
@@ -343,7 +346,7 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
           change = 0;
       }
 
-      // Logic: Log Quick Stock Adjustment to Audit Trail
+      // Log Quick Stock Adjustment to Audit Trail
       await db.audit_trail.add({
         action: 'Stock Manually Adjusted',
         details: `Quick adjusted '${restockProduct.name}' stock level (${restockType}: ${change}). New total: ${newStock}.`,
@@ -424,6 +427,23 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
     }
   };
 
+  const handleLocalScanConfirm = async (products: ScannedProduct[]) => {
+    try {
+      const productsToAdd = products.map(p => ({
+        ...p,
+        cost_price: Math.round((p.price * 0.8) / 50) * 50, // Default 20% margin
+        category: 'General',
+        low_stock_threshold: 5
+      }));
+      
+      await db.products.bulkAdd(productsToAdd);
+      setIsLocalScannerOpen(false);
+      alert(`${products.length} items added from ledger!`);
+    } catch (err) {
+      alert("Error saving scanned items: " + err);
+    }
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -458,9 +478,16 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
               >
                 <Plus size={20} /> New Item
               </button>
+              <button 
+                onClick={() => setIsLocalScannerOpen(true)}
+                className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-indigo-600 text-white px-6 py-3 rounded-2xl font-black transition-all shadow-xl shadow-indigo-600/20 hover:bg-indigo-700"
+              >
+                <Camera size={20} /> 
+                <span className="hidden sm:inline">Scan Ledger</span>
+              </button>
               <label className={`flex-1 md:flex-none flex items-center justify-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-2xl font-black transition-all shadow-xl cursor-pointer ${isProcessingAI ? 'opacity-50 cursor-not-allowed' : 'hover:bg-black'}`}>
                 {isProcessingAI ? <Loader2 className="animate-spin" size={20} /> : <Sparkles size={20} />}
-                <span className="hidden sm:inline">{isProcessingAI ? 'Scanning...' : 'AI Import'}</span>
+                <span className="hidden sm:inline">{isProcessingAI ? 'Scanning...' : 'Cloud AI Import'}</span>
                 <input type="file" accept="image/*" className="hidden" onChange={handleAIMigration} disabled={isProcessingAI} />
               </label>
             </>
@@ -829,6 +856,13 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
             </div>
           </div>
         </div>
+      )}
+
+      {isLocalScannerOpen && (
+        <StockScanner 
+          onConfirm={handleLocalScanConfirm} 
+          onClose={() => setIsLocalScannerOpen(false)} 
+        />
       )}
     </div>
   );
