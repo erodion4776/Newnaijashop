@@ -1,9 +1,9 @@
 
-import { Dexie } from 'dexie';
+import Dexie from 'dexie';
 import type { Table } from 'dexie';
 import { Product, Sale, Debt, Settings, ParkedOrder, InventoryLog, Staff, Expense, AuditEntry, CustomerWallet, WalletTransaction, UsedReference } from '../types';
 
-// Fix: Use named import for Dexie to resolve type issues where the 'version' method was not found on the extended class.
+// Fix: Use default import for Dexie to resolve type issues where the 'version' method was not found on the extended class.
 export class NaijaShopDB extends Dexie {
   products!: Table<Product>;
   sales!: Table<Sale>;
