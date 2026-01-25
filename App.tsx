@@ -10,6 +10,7 @@ import Inventory from './pages/Inventory';
 import InventoryLedger from './pages/InventoryLedger';
 import Debts from './pages/Debts';
 import AIInsights from './pages/AIInsights';
+import BusinessHub from './pages/BusinessHub';
 import TransferStation from './pages/TransferStation';
 import StaffManagement from './pages/StaffManagement';
 import ActivityLog from './pages/ActivityLog';
@@ -264,6 +265,7 @@ const AppContent: React.FC = () => {
         {currentView === 'inventory-ledger' && <InventoryLedger />}
         {currentView === 'debts' && <Debts />}
         {currentView === 'ai-insights' && <AIInsights />}
+        {currentView === 'business-hub' && <BusinessHub />}
         {currentView === 'staff-management' && <StaffManagement />}
         {currentView === 'security-backups' && <SecurityBackups currentUser={currentUser} />}
         {currentView === 'settings' && <Settings currentUser={currentUser} />}

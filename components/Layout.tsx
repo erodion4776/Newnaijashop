@@ -21,7 +21,8 @@ import {
   Lock,
   Download,
   TrendingDown,
-  ShieldAlert as ShieldIcon
+  ShieldAlert as ShieldIcon,
+  Lightbulb
 } from 'lucide-react';
 import { View, Staff } from '../types';
 
@@ -51,6 +52,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, setView, shopName
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, restrict: true },
     { id: 'pos', label: 'Point of Sale', icon: ShoppingCart, restrict: false },
+    { id: 'business-hub', label: 'Business Hub', icon: Lightbulb, restrict: true },
     { id: 'activity-log', label: 'Activity Log', icon: History, restrict: true },
     { id: 'audit-trail', label: 'Security Logs', icon: ShieldIcon, restrict: true },
     { id: 'expense-tracker', label: 'Expense Tracker', icon: TrendingDown, restrict: true },

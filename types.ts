@@ -128,6 +128,6 @@ export interface Settings {
   last_synced_timestamp?: number;
 }
 
-export type View = 'dashboard' | 'pos' | 'inventory' | 'inventory-ledger' | 'debts' | 'settings' | 'ai-insights' | 'staff-management' | 'activity-log' | 'security-backups' | 'transfer-station' | 'expense-tracker' | 'audit-trail' | 'customer-wallets';
+export type View = 'dashboard' | 'pos' | 'inventory' | 'inventory-ledger' | 'debts' | 'settings' | 'ai-insights' | 'staff-management' | 'activity-log' | 'security-backups' | 'transfer-station' | 'expense-tracker' | 'audit-trail' | 'customer-wallets' | 'business-hub';
 
 export type SyncStatus = 'offline' | 'connecting' | 'live' | 'reconnecting' | 'failed';

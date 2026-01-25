@@ -1,7 +1,8 @@
 
-// Fix: Use named import for Dexie to ensure inherited methods like version() are correctly typed on the class instance.
-import { Dexie, type Table } from 'dexie';
-import { Product, Sale, Debt, Settings, ParkedOrder, InventoryLog, Staff, Expense, AuditEntry } from '../types';
+
+// Fix: Use default import for Dexie to ensure inherited methods like version() are correctly typed on the class instance.
+import Dexie, { type Table } from 'dexie';
+import { Product, Sale, Debt, Settings, ParkedOrder, InventoryLog, Staff, Expense, AuditEntry, CustomerWallet, WalletTransaction } from '../types';
 
 export class NaijaShopDB extends Dexie {
   products!: Table<Product>;
@@ -13,12 +14,14 @@ export class NaijaShopDB extends Dexie {
   inventory_logs!: Table<InventoryLog>;
   expenses!: Table<Expense>;
   audit_trail!: Table<AuditEntry>;
+  wallets!: Table<CustomerWallet>;
+  wallet_transactions!: Table<WalletTransaction>;
 
   constructor() {
     super('NaijaShopDB');
     
-    // Version 25: Removed wallet-related tables to clean up system as requested.
-    this.version(25).stores({
+    // Version 26: Added wallet-related tables back to support CustomerWallet view and fixed schema definition.
+    this.version(26).stores({
       products: '++id, name, category, barcode',
       sales: '++id, sale_id, timestamp, payment_method, staff_name',
       debts: '++id, customer_name, status',
@@ -27,7 +30,9 @@ export class NaijaShopDB extends Dexie {
       parked_orders: '++id, customerName, timestamp',
       inventory_logs: '++id, product_id, product_name, type, timestamp',
       expenses: '++id, category, timestamp',
-      audit_trail: '++id, action, staff_name, timestamp'
+      audit_trail: '++id, action, staff_name, timestamp',
+      wallets: '++id, phone, balance',
+      wallet_transactions: '++id, phone, type, timestamp'
     });
   }
 }
