@@ -19,6 +19,7 @@ import AuditTrail from './pages/AuditTrail';
 import ActivationPage from './pages/ActivationPage';
 import AffiliatePortal from './pages/AffiliatePortal';
 import SetupShop from './pages/SetupShop';
+import MasterAdminHub from './pages/MasterAdminHub';
 import InstallModal from './components/InstallModal';
 import SupportChat from './components/SupportChat';
 import { performAutoSnapshot } from './utils/backup';
@@ -80,6 +81,7 @@ const AppContent: React.FC = () => {
   const [selectedStaffId, setSelectedStaffId] = useState<number | ''>('');
   const [isStaffLock, setIsStaffLock] = useState(localStorage.getItem('isStaffLock') === 'true');
   const [isAffiliateView, setIsAffiliateView] = useState(window.location.pathname.includes('affiliate'));
+  const [isMasterView, setIsMasterView] = useState(window.location.pathname.includes('master-control'));
   
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showInstallModal, setShowInstallModal] = useState(false);
@@ -108,6 +110,7 @@ const AppContent: React.FC = () => {
 
     const checkPath = () => {
       setIsAffiliateView(window.location.pathname.includes('affiliate'));
+      setIsMasterView(window.location.pathname.includes('master-control'));
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
@@ -180,6 +183,11 @@ const AppContent: React.FC = () => {
         <h1 className="text-white text-4xl font-black tracking-tighter">NaijaShop POS</h1>
       </div>
     );
+  }
+
+  // 1. PUBLIC ROUTE: Master Control
+  if (isMasterView) {
+    return <MasterAdminHub />;
   }
 
   // 1. PUBLIC ROUTE: Affiliate Portal
