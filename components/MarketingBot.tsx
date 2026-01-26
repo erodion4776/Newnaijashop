@@ -3,6 +3,8 @@ import { MessageCircle, X, Send, Sparkles, MessageSquare, CheckCircle2, ThumbsUp
 import { getResponse } from '../utils/MarketingBotEngine';
 import { initializeCTAHooks } from '../hooks/LandingPageHooks';
 import { useProactiveTriggers } from '../hooks/useProactiveTriggers';
+import { triggerTryOnHighlight } from '../utils/CTAHighlighter';
+import { preprocessNigerianInput } from '../utils/NigerianNLP';
 
 const AVATAR_URL = "https://i.ibb.co/bfCDQ9G/Generated-Image-September-24-2025-3-37-AM.png";
 const WHATSAPP_URL = "https://wa.me/2348184774884";
@@ -25,7 +27,7 @@ interface Message {
 const MarketingBot: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
-  const [isNudging, setIsNudging] = useState(false);
+  const [isWiggling, setIsWiggling] = useState(false);
   const [inputText, setInputText] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [lastBotIntent, setLastBotIntent] = useState<string | null>(null);
@@ -76,33 +78,35 @@ const MarketingBot: React.FC = () => {
     }
   }, []);
 
-  // Proactive Trigger Handler
+  // Proactive Trigger Processing
   const handleProactiveTrigger = (message: string, triggerId: string) => {
-    console.log(`Converted via: ${triggerId}`);
-    
     if (triggerId === 'SCROLL_DEPTH') {
-      setIsNudging(true);
+      setIsWiggling(true);
       playNotif();
+      // Wiggle for 3 seconds then open
       setTimeout(() => {
-        setIsNudging(false);
-        openWithMessage(message, triggerId);
+        setIsWiggling(false);
+        openBotWithMessage(message, triggerId);
       }, 3000);
+    } else if (triggerId === 'EXIT_INTENT') {
+      // Immediate open for exit intent
+      openBotWithMessage(message, triggerId);
     } else {
-      openWithMessage(message, triggerId);
+      openBotWithMessage(message, triggerId);
     }
   };
 
-  const openWithMessage = (text: string, id: string) => {
+  const openBotWithMessage = (text: string, id: string) => {
     setIsOpen(true);
     playPop();
-    const proactiveMsg: Message = {
+    const msg: Message = {
       id: `proactive-${Date.now()}`,
       sender: 'bot',
       text: text,
       timestamp: Date.now(),
       triggerId: id
     };
-    setMessages(prev => [...prev, proactiveMsg]);
+    setMessages(prev => [...prev, msg]);
   };
 
   // Hook Registrations
@@ -215,7 +219,7 @@ const MarketingBot: React.FC = () => {
     const textToSend = textOverride || inputText;
     if (!textToSend.trim() || isTyping) return;
 
-    // Set engagement flag to disable proactive triggers
+    // Engagement tracking
     if (!hasEngaged) {
       setHasEngaged(true);
       sessionStorage.setItem('ns_engaged', 'true');
@@ -239,7 +243,11 @@ const MarketingBot: React.FC = () => {
     setIsTyping(true);
     setTimeout(() => {
       setIsTyping(false);
-      const result = getResponse(textToSend, lastBotIntent, pendingAction);
+      
+      // NLP Preprocessing for better intent matching and tone
+      const nlp = preprocessNigerianInput(textToSend);
+      
+      const result = getResponse(nlp.processed, lastBotIntent, pendingAction);
       
       const botMsg: Message = {
         id: (Date.now() + 1).toString(),
@@ -253,12 +261,14 @@ const MarketingBot: React.FC = () => {
       setMessages(prev => [...prev, botMsg]);
       setLastBotIntent(result.intentName || null);
       setPendingAction(result.suggestedAction || null);
-    }, 1200);
-  };
 
-  const handleManualClose = () => {
-    setIsOpen(false);
-    sessionStorage.setItem('ns_last_close_time', Date.now().toString());
+      // Visual CTA Highlighting based on bot response
+      if (result.intentName === 'PricingDetails' || nlp.keywords.includes('buy') || nlp.keywords.includes('yes')) {
+        triggerTryOnHighlight('strong');
+      } else if (result.intentName?.includes('Trial')) {
+        triggerTryOnHighlight('urgent');
+      }
+    }, 1200);
   };
 
   const handleWhatsAppClick = () => {
@@ -268,8 +278,8 @@ const MarketingBot: React.FC = () => {
   return (
     <>
       <button 
-        onClick={() => isOpen ? handleManualClose() : setIsOpen(true)}
-        className={`fixed bottom-6 right-6 z-[1000] w-16 h-16 bg-emerald-600 rounded-full shadow-2xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all group border-4 border-white overflow-hidden ${isNudging ? 'animate-nudge' : ''}`}
+        onClick={() => setIsOpen(!isOpen)}
+        className={`fixed bottom-6 right-6 z-[1000] w-16 h-16 bg-emerald-600 rounded-full shadow-2xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all group border-4 border-white overflow-hidden ${isWiggling ? 'animate-wiggle' : ''}`}
       >
         {isOpen ? (
           <X className="text-white" size={28} />
@@ -310,7 +320,7 @@ const MarketingBot: React.FC = () => {
               <h3 className="font-black tracking-tight text-lg leading-none">NaijaShop Founder</h3>
               <div className="flex items-center gap-1.5 mt-1 opacity-80">
                 <div className="w-1.5 h-1.5 bg-emerald-300 rounded-full animate-pulse" />
-                <span className="text-[10px] font-bold uppercase tracking-widest">Support Expert</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest">Standard Support</span>
               </div>
             </div>
           </div>
@@ -326,8 +336,8 @@ const MarketingBot: React.FC = () => {
               >
                 <div className={`max-w-[85%] p-4 rounded-3xl text-sm font-medium leading-relaxed shadow-sm ${
                   msg.sender === 'user' 
-                    ? 'bg-slate-200 text-slate-800 rounded-tr-none' 
-                    : 'bg-emerald-600 text-white rounded-tl-none shadow-emerald-900/10'
+                    ? 'bg-emerald-600 text-white rounded-tr-none' 
+                    : 'bg-white border border-slate-100 text-slate-700 rounded-tl-none'
                 }`}>
                   {msg.text}
 
@@ -397,7 +407,7 @@ const MarketingBot: React.FC = () => {
             <div className="relative">
               <input 
                 type="text"
-                placeholder="How can I assist your business?"
+                placeholder="How can I help your shop?"
                 className="w-full p-4 pr-12 bg-slate-50 border border-slate-200 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-emerald-500 font-medium transition-all"
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
@@ -419,15 +429,15 @@ const MarketingBot: React.FC = () => {
       )}
 
       <style>{`
-        @keyframes nudge {
-          0%, 100% { transform: rotate(0deg) scale(1); }
-          20% { transform: rotate(-12deg) scale(1.1); }
-          40% { transform: rotate(12deg) scale(1.1); }
-          60% { transform: rotate(-8deg) scale(1.05); }
-          80% { transform: rotate(8deg) scale(1.05); }
+        @keyframes wiggle {
+          0% { transform: rotate(0deg); }
+          25% { transform: rotate(10deg); }
+          50% { transform: rotate(-10deg); }
+          75% { transform: rotate(10deg); }
+          100% { transform: rotate(0deg); }
         }
-        .animate-nudge {
-          animation: nudge 0.6s ease-in-out infinite;
+        .animate-wiggle {
+          animation: wiggle 0.5s ease-in-out infinite;
         }
       `}</style>
     </>

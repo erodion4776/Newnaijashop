@@ -79,7 +79,8 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
               <div className="flex flex-col sm:flex-row items-center gap-4 justify-center lg:justify-start">
                 <button 
                   onClick={onStartTrial}
-                  className="w-full sm:w-auto bg-emerald-600 text-white px-10 py-6 rounded-[2rem] font-black text-lg shadow-2xl shadow-emerald-900/20 hover:bg-emerald-700 transition-all active:scale-[0.98] flex items-center justify-center gap-3 group"
+                  data-cta="primary"
+                  className="hero-cta w-full sm:w-auto bg-emerald-600 text-white px-10 py-6 rounded-[2rem] font-black text-lg shadow-2xl shadow-emerald-900/20 hover:bg-emerald-700 transition-all active:scale-[0.98] flex items-center justify-center gap-3 group"
                 >
                   Start 30-Day Free Trial
                   <ArrowRight className="group-hover:translate-x-1 transition-transform" />
