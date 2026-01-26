@@ -78,7 +78,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
                 <div className="flex -space-x-3 items-center">
                    {[1,2,3].map(i => (
                      <div key={i} className="w-10 h-10 rounded-full border-4 border-white bg-slate-200 overflow-hidden">
-                        <img src={`https://i.pravatar.cc/100?u=user${i}`} alt="user" />
+                        <img src={`https://i.pravatar.cc/100?u=user${i}`} alt="user" className="w-full h-full object-cover" />
                      </div>
                    ))}
                    <p className="ml-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">+500 Shops Onboarded</p>
@@ -92,7 +92,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
                   <img 
                     src="https://i.ibb.co/W4XQSpqw/IMG-20260125-230934.png" 
                     alt="NaijaShop App Mockup" 
-                    className="w-full max-w-lg mx-auto drop-shadow-[0_40px_80px_rgba(0,0,0,0.2)] rounded-[3rem]"
+                    className="w-full max-w-lg mx-auto drop-shadow-[0_40px_80px_rgba(0,0,0,0.2)] rounded-[3rem] object-contain"
                   />
                </div>
                
@@ -128,9 +128,9 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
             <div className="group space-y-6">
                <div className="aspect-[16/10] bg-indigo-50 rounded-[3rem] overflow-hidden border border-indigo-100 p-8 flex items-center justify-center relative">
                   <img 
-                    src="https://i.ibb.co/My2hF9Sy/IMG-20260125-231246.png" 
+                    src="https://i.ibb.co/4RBY8YpG/IMG-20260126-091840.png" 
                     alt="AI Notebook Scanner" 
-                    className="w-full h-full object-contain transform group-hover:scale-110 transition-transform duration-1000"
+                    className="w-full h-full object-contain rounded-2xl shadow-xl transform group-hover:scale-110 transition-transform duration-1000"
                   />
                   <div className="absolute top-8 left-8 bg-white/80 backdrop-blur-md px-4 py-2 rounded-full border border-indigo-100 shadow-xl flex items-center gap-2">
                      <Zap size={14} className="text-indigo-600 fill-indigo-600" />
@@ -149,9 +149,9 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
             <div className="group space-y-6">
                <div className="aspect-[16/10] bg-rose-50 rounded-[3rem] overflow-hidden border border-rose-100 p-8 flex items-center justify-center relative">
                   <img 
-                    src="https://i.ibb.co/JWxHN3jM/IMG-20260125-231456.png" 
+                    src="https://i.ibb.co/dF24xCd/IMG-20260126-091902.png" 
                     alt="Audit Trail Logs" 
-                    className="w-full h-full object-contain transform group-hover:scale-110 transition-transform duration-1000"
+                    className="w-full h-full object-contain rounded-2xl shadow-xl transform group-hover:scale-110 transition-transform duration-1000"
                   />
                   <div className="absolute top-8 left-8 bg-white/80 backdrop-blur-md px-4 py-2 rounded-full border border-rose-100 shadow-xl flex items-center gap-2">
                      <ShieldCheck size={14} className="text-rose-600" />
@@ -210,7 +210,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
                <img 
                  src="https://i.ibb.co/5gkwgcFj/IMG-20260125-231701.png" 
                  alt="Inventory Screen" 
-                 className="w-full max-w-md mx-auto transform lg:translate-x-10 rounded-[3rem] shadow-[0_0_100px_rgba(16,185,129,0.15)]"
+                 className="w-full max-w-md mx-auto transform lg:translate-x-10 rounded-2xl shadow-2xl object-contain shadow-[0_0_100px_rgba(16,185,129,0.15)]"
                />
             </div>
           </div>
@@ -243,21 +243,21 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
            <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
               <div className="text-center space-y-6">
                  <div className="aspect-[4/3] rounded-[3rem] bg-slate-50 border border-slate-100 overflow-hidden p-6 flex items-center justify-center shadow-inner relative group">
-                    <img src="https://i.ibb.co/CKvkDCGN/IMG-20260125-232116.png" alt="Step 1" className="w-full h-full object-contain transform group-hover:scale-105 transition-transform" />
+                    <img src="https://i.ibb.co/dsT5CKqR/IMG-20260126-084914.png" alt="Step 1" className="w-full h-full object-contain rounded-2xl shadow-xl transform group-hover:scale-105 transition-transform" />
                     <div className="absolute top-4 left-4 w-10 h-10 bg-emerald-600 text-white rounded-full flex items-center justify-center font-black">1</div>
                  </div>
                  <p className="text-lg font-black text-slate-800">Install the app and launch your secure terminal.</p>
               </div>
               <div className="text-center space-y-6">
-                 <div className="aspect-[4/3] rounded-[3rem] bg-slate-50 border border-slate-100 flex flex-col items-center justify-center shadow-inner relative">
-                    <div className="w-20 h-20 bg-white rounded-3xl shadow-xl flex items-center justify-center text-emerald-600 mb-4 animate-bounce-soft"><Smartphone size={40} /></div>
+                 <div className="aspect-[4/3] rounded-[3rem] bg-slate-50 border border-slate-100 overflow-hidden p-6 flex items-center justify-center shadow-inner relative group">
+                    <img src="https://i.ibb.co/5gR2G9jp/IMG-20260126-084953.png" alt="Step 2" className="w-full h-full object-contain rounded-2xl shadow-xl transform group-hover:scale-105 transition-transform" />
                     <div className="absolute top-4 left-4 w-10 h-10 bg-emerald-600 text-white rounded-full flex items-center justify-center font-black">2</div>
                  </div>
                  <p className="text-lg font-black text-slate-800">Setup your shop name and Admin PIN.</p>
               </div>
               <div className="text-center space-y-6">
-                 <div className="aspect-[4/3] rounded-[3rem] bg-emerald-600 flex flex-col items-center justify-center shadow-2xl relative">
-                    <CheckCircle2 size={80} className="text-white animate-pulse" />
+                 <div className="aspect-[4/3] rounded-[3rem] bg-emerald-600 border border-emerald-500 overflow-hidden p-6 flex items-center justify-center shadow-2xl relative group">
+                    <img src="https://i.ibb.co/kstpyhwp/IMG-20260126-084931.png" alt="Step 3" className="w-full h-full object-contain rounded-2xl shadow-xl transform group-hover:scale-105 transition-transform" />
                     <div className="absolute top-4 left-4 w-10 h-10 bg-white text-emerald-600 rounded-full flex items-center justify-center font-black">3</div>
                  </div>
                  <p className="text-lg font-black text-slate-800">Start selling and tracking your interest!</p>
