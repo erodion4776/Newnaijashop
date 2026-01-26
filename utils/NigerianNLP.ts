@@ -6,77 +6,63 @@ export interface ProcessedInput {
 }
 
 /**
- * Section 1: Pidgin-to-English Mapping
- * Maps common Nigerian local phrases to canonical intent keywords
+ * Section 1: Expanded Pidgin-to-English Mapping (50+ entries)
  */
 export const PIDGIN_MAP: Record<string, string[]> = {
-  "how much": ["how much", "hm", "hm be that", "wetin be price", "give me bill", "bill am", "price am", "e cost how much", "how much be"],
-  "yes": ["yes", "yea", "yh", "yeah", "sure", "ok", "okay", "ehen", "na so", "correct", "true", "sha", "abeg", "make we", "oya"],
-  "no": ["no", "nah", "nope", "i no wan", "forget", "leave am", "no need", "e no concern me", "abeg no"],
-  "cement": ["cement", "dangote", "bua cement", "lafarge", "simenti", "block cement"],
-  "provisions": ["provisions", "provision", "provi", "supermarket", "grocery", "shop things", "daily needs"],
+  "how much": ["how much", "hm", "hm be that", "wetin be price", "give me bill", "bill am", "price am", "e cost how much", "how much be", "money reach how much"],
+  "yes": ["yes", "yea", "yh", "yeah", "sure", "ok", "okay", "ehen", "na so", "correct", "true", "sha", "abeg", "make we", "oya", "confirm", "sharp sharp"],
+  "no": ["no", "nah", "nope", "i no wan", "forget", "leave am", "no need", "e no concern me", "abeg no", "no go do", "mbah"],
+  "cement": ["cement", "dangote", "bua cement", "lafarge", "simenti", "block cement", "bag of cement"],
+  "provisions": ["provisions", "provision", "provi", "supermarket", "grocery", "shop things", "daily needs", "items"],
   "sugar": ["sugar", "dangote sugar", "st louis", "sweet", "sugar cube"],
-  "buy": ["buy", "cop", "collect", "take", "get", "purchase", "order"],
-  "sell": ["sell", "sale", "push", "market", "move", "supply"],
-  "business": ["business", "trade", "hustle", "work", "shop", "store", "enterprise"],
-  "customer": ["customer", "buyer", "oga", "madam", "patron", "client"],
-  "money": ["money", "cash", "funds", "ego", "owo", "kudi", "moni"],
-  "help me": ["help me", "help", "abeg help", "assist me", "i need"],
-  "show me": ["show me", "show", "let me see", "make i see", "display"],
-  "tell me": ["tell me", "tell", "gist me", "inform me", "let me know", "make i know"],
-  "now": ["now", "sharp sharp", "immediately", "asap", "quick", "fast fast"],
-  "later": ["later", "after", "soon", "next time", "tomorrow", "another day"],
-  "small": ["small", "pikin", "little", "smol", "not much", "few"],
-  "big": ["big", "large", "plenty", "much", "many", "bulk", "wholesale"],
-  "theft": ["steal", "thief", "cheat", "cut", "missing", "security", "monitor"]
+  "buy": ["buy", "cop", "collect", "take", "get", "purchase", "order", "want am"],
+  "sell": ["sell", "sale", "push", "market", "move", "supply", "trade"],
+  "business": ["business", "trade", "hustle", "work", "shop", "store", "enterprise", "hustle"],
+  "customer": ["customer", "buyer", "oga", "madam", "patron", "client", "person wey wan buy"],
+  "money": ["money", "cash", "funds", "ego", "owo", "kudi", "moni", "naira", "kobo"],
+  "help me": ["help me", "help", "abeg help", "assist me", "i need", "show me road", "carry me reach"],
+  "show me": ["show me", "show", "let me see", "make i see", "display", "bring am out"],
+  "tell me": ["tell me", "tell", "gist me", "inform me", "let me know", "make i know", "explain"],
+  "now": ["now", "sharp sharp", "immediately", "asap", "quick", "fast fast", "fast"],
+  "later": ["later", "after", "soon", "next time", "tomorrow", "another day", "wait"],
+  "small": ["small", "pikin", "little", "smol", "not much", "few", "half"],
+  "big": ["big", "large", "plenty", "much", "many", "bulk", "wholesale", "heavy"],
+  "theft": ["steal", "thief", "cheat", "cut", "missing", "security", "monitor", "magomago", "fraud", "staff"],
+  "printer": ["printer", "receipt", "paper", "print", "thermal", "bluetooth printer"],
+  "license": ["license", "pay", "subscribe", "activation", "key", "access", "code"],
+  "trial": ["trial", "free", "try", "testing", "check am", "30 days"],
+  "data": ["data", "internet", "online", "offline", "network", "connection", "wifi", "megabyte"],
+  "reports": ["report", "profit", "calculation", "math", "account", "balance", "total"],
+  "setup": ["setup", "start", "begin", "create", "register", "install"]
 };
 
 /**
- * Section 2: Common Nigerian Typos and Shorthand
+ * Section 2: Nigerian Typos and Shorthand (30+ entries)
  */
 export const TYPO_CORRECTIONS: Record<string, string> = {
-  "pls": "please",
-  "plz": "please",
-  "hw": "how",
-  "wt": "what",
-  "abt": "about",
-  "ur": "your",
-  "u": "you",
-  "d": "the",
-  "ds": "this",
-  "dat": "that",
-  "nt": "not",
-  "dnt": "don't",
-  "cnt": "can't",
-  "shd": "should",
-  "wd": "would",
-  "wld": "would",
-  "prais": "price",
-  "prise": "price",
-  "busness": "business",
-  "bussiness": "business",
-  "customar": "customer",
-  "receit": "receipt",
-  "inventori": "inventory",
-  "sement": "cement",
-  "provition": "provisions",
-  "suger": "sugar",
-  "mony": "money"
+  "pls": "please", "plz": "please", "hw": "how", "wt": "what", "abt": "about",
+  "ur": "your", "u": "you", "d": "the", "ds": "this", "dat": "that",
+  "nt": "not", "dnt": "don't", "cnt": "can't", "shd": "should", "wd": "would",
+  "wld": "would", "prais": "price", "prise": "price", "busness": "business", "bussiness": "business",
+  "customar": "customer", "receit": "receipt", "inventori": "inventory", "sement": "cement", "provition": "provisions",
+  "suger": "sugar", "mony": "money", "expence": "expense", "expences": "expenses", "manager": "manager",
+  "manageer": "manager", "staffe": "staff", "subcription": "subscription", "liscence": "license", "licence": "license",
+  "shope": "shop", "securiti": "security", "thiefs": "thieves", "profitability": "profit", "accout": "account"
 };
 
 /**
  * Section 3: Number & Currency Normalization
- * Converts '2k' to '2000', '1.5m' to '1500000', and standardizes currency symbols
+ * Correctly handles '2k', '10k', '25k' inputs
  */
 export function normalizeNigerianNumbers(input: string): string {
-  let normalized = input;
+  let normalized = input.toLowerCase();
   
-  // Handle K (thousands) notation e.g. 2k, 1.5k
+  // Handle K (thousands) notation e.g. 2k, 10k, 25k
   normalized = normalized.replace(/(\d+(?:\.\d+)?)\s*k\b/gi, (match, num) => {
     return String(parseFloat(num) * 1000);
   });
   
-  // Handle M (millions) notation e.g. 5m, 1.2m
+  // Handle M (millions) notation e.g. 1.5m
   normalized = normalized.replace(/(\d+(?:\.\d+)?)\s*m\b/gi, (match, num) => {
     return String(parseFloat(num) * 1000000);
   });
@@ -87,38 +73,32 @@ export function normalizeNigerianNumbers(input: string): string {
   return normalized;
 }
 
-/**
- * Detects if the user is using Pidgin based on specific indicators
- */
 const PIDGIN_INDICATORS = [
   "wetin", "how far", "abeg", "oya", "na so", "ehen", "sha", "hustle", "jara", "wahala", 
-  "fit", "dey", "un", "am", "wan", "cho", "pikin", "ego", "owo", "kudi", "moni", "hm"
+  "fit", "dey", "un", "am", "wan", "cho", "pikin", "ego", "owo", "kudi", "moni", "hm", "sharp sharp"
 ];
 
 function detectLanguage(input: string): 'pidgin' | 'formal' | 'mixed' {
   const words = input.toLowerCase().split(/\s+/);
   const pidginMatches = words.filter(word => PIDGIN_INDICATORS.includes(word)).length;
   
-  if (pidginMatches > 1) return 'pidgin';
+  if (pidginMatches >= 2) return 'pidgin';
   if (pidginMatches === 1) return 'mixed';
   return 'formal';
 }
 
-/**
- * Section 4: Preprocessing Pipeline
- */
 export function preprocessNigerianInput(rawInput: string): ProcessedInput {
   let processed = rawInput.toLowerCase().trim();
   
-  // Step 1: Fix typos and shorthand
+  // Step 1: Typos
   Object.entries(TYPO_CORRECTIONS).forEach(([typo, correct]) => {
     processed = processed.replace(new RegExp(`\\b${typo}\\b`, 'gi'), correct);
   });
   
-  // Step 2: Normalize numbers and currency
+  // Step 2: Numbers
   processed = normalizeNigerianNumbers(processed);
   
-  // Step 3: Extract canonical keywords
+  // Step 3: Keywords
   let detectedKeywords: string[] = [];
   Object.entries(PIDGIN_MAP).forEach(([canonical, variants]) => {
     if (variants.some(variant => processed.includes(variant))) {
@@ -134,9 +114,6 @@ export function preprocessNigerianInput(rawInput: string): ProcessedInput {
   };
 }
 
-/**
- * Section 5: Response Language Matching
- */
 export const RESPONSE_VARIANTS = {
   greeting: {
     pidgin: "How far! Wetin I fit help you with today? I ready to gist you about how NaijaShop go help your business.",

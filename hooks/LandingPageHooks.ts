@@ -32,7 +32,6 @@ export const initializeCTAHooks = (openBotWithContext: (ctaType: string, target:
   const attachHooks = () => {
     const elements = document.querySelectorAll(ctaSelectors.join(','));
     elements.forEach(el => {
-      // Avoid re-attaching
       if (el.hasAttribute('data-ns-hooked')) return;
       
       const text = el.textContent || '';
@@ -47,10 +46,7 @@ export const initializeCTAHooks = (openBotWithContext: (ctaType: string, target:
     });
   };
 
-  // Initial run
   attachHooks();
-
-  // Observer for dynamic content (though landing page is mostly static)
   const observer = new MutationObserver(attachHooks);
   observer.observe(document.body, { childList: true, subtree: true });
 

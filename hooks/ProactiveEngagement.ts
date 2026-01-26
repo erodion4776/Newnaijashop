@@ -1,91 +1,105 @@
 import { useEffect, useRef } from 'react';
 
-/**
- * Hook to manage proactive marketing triggers for the Landing Page
- */
-export const useProactiveTriggers = (
-  openBotWithMessage: (msg: string, triggerId: string) => void,
-  isBotOpen: boolean
-) => {
-  const engagementRef = useRef({
-    hasTriggered: false,
-    lastTriggerTime: 0,
-    scrollTimer: null as any,
-    pricingTimer: null as any,
-  });
+interface ProactiveHooksProps {
+  onTrigger: (message: string, triggerId: string) => void;
+  isBotOpen: boolean;
+  hasEngaged: boolean;
+}
 
-  const canTrigger = () => {
-    const now = Date.now();
-    const hasEngaged = sessionStorage.getItem('hasEngaged') === 'true';
-    const cooldown = now - engagementRef.current.lastTriggerTime > 60000; // 60s cooldown
-    return !isBotOpen && !hasEngaged && cooldown;
+/**
+ * Hook to manage proactive engagement triggers for the Landing Page
+ */
+export const useProactiveTriggers = ({ onTrigger, isBotOpen, hasEngaged }: ProactiveHooksProps) => {
+  const sessionStartTime = useRef(Date.now());
+  const timers = useRef<Record<string, any>>({});
+
+  const isMobile = () => /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+  const canTrigger = (id: string) => {
+    // 1. Don't trigger if already talking or engaged
+    if (isBotOpen || hasEngaged) return false;
+    
+    // 2. 60-second cooldown after manual close
+    const lastClose = parseInt(sessionStorage.getItem('ns_last_close_time') || '0');
+    if (Date.now() - lastClose < 60000) return false;
+
+    // 3. Fire only once per session per trigger type
+    const alreadyFired = sessionStorage.getItem(`ns_fired_${id}`) === 'true';
+    return !alreadyFired;
+  };
+
+  const markAsFired = (id: string) => {
+    sessionStorage.setItem(`ns_fired_${id}`, 'true');
   };
 
   useEffect(() => {
-    // 1. Return Visitor Check
-    const visitCount = parseInt(localStorage.getItem('naijaShopVisitCount') || '0');
-    localStorage.setItem('naijaShopVisitCount', (visitCount + 1).toString());
+    // We only care about triggers on the landing page
+    if (window.location.pathname !== '/' && window.location.pathname !== '/index.html') return;
+    if (hasEngaged) return;
 
-    if (visitCount > 0 && canTrigger()) {
-      setTimeout(() => {
-        if (canTrigger()) {
-          openBotWithMessage(
+    // Trigger 4: Return Visitor
+    const visitCount = parseInt(localStorage.getItem('naijaShopVisitCount') || '0');
+    if (visitCount > 1 && canTrigger('RETURN_VISITOR')) {
+      timers.current.returnVisitor = setTimeout(() => {
+        if (canTrigger('RETURN_VISITOR')) {
+          onTrigger(
             'Welcome back! 👋 Are you ready to start your 30-day free trial today and secure your shop records?',
             'RETURN_VISITOR'
           );
-          engagementRef.current.lastTriggerTime = Date.now();
+          markAsFired('RETURN_VISITOR');
         }
       }, 3000);
     }
 
-    // 2. Scroll Depth Trigger (> 40% depth for 8s)
+    // Trigger 1: Scroll Depth (>40% and 8s delay)
     const handleScroll = () => {
       const scrollPct = (window.scrollY + window.innerHeight) / document.documentElement.scrollHeight;
-      if (scrollPct > 0.4) {
-        if (!engagementRef.current.scrollTimer && canTrigger()) {
-          engagementRef.current.scrollTimer = setTimeout(() => {
-            if (canTrigger()) {
-              openBotWithMessage(
+      
+      if (scrollPct > 0.4 && canTrigger('SCROLL_DEPTH')) {
+        if (!timers.current.scrollTimer) {
+          timers.current.scrollTimer = setTimeout(() => {
+            if (canTrigger('SCROLL_DEPTH')) {
+              onTrigger(
                 'I see you are checking us out! 👀 Do you have any questions about how NaijaShop can help your business?',
                 'SCROLL_DEPTH'
               );
-              engagementRef.current.lastTriggerTime = Date.now();
+              markAsFired('SCROLL_DEPTH');
             }
           }, 8000);
         }
-      } else {
-        clearTimeout(engagementRef.current.scrollTimer);
-        engagementRef.current.scrollTimer = null;
+      } else if (scrollPct <= 0.4) {
+        clearTimeout(timers.current.scrollTimer);
+        timers.current.scrollTimer = null;
       }
     };
 
-    // 3. Exit Intent (Mouse leaves top)
+    // Trigger 2: Exit Intent (Mouse moves to top of screen)
     const handleExitIntent = (e: MouseEvent) => {
-      if (e.clientY <= 0 && canTrigger()) {
-        openBotWithMessage(
+      if (e.clientY <= 0 && canTrigger('EXIT_INTENT')) {
+        onTrigger(
           'Wait a moment! Before you go... would you like me to show you how traders like you save 3 hours daily with NaijaShop? No commitment, just a quick chat.',
           'EXIT_INTENT'
         );
-        engagementRef.current.lastTriggerTime = Date.now();
+        markAsFired('EXIT_INTENT');
       }
     };
 
-    // 4. Idle on Pricing Section (Intersection Observer)
+    // Trigger 3: Pricing Idle (15s idle while section is visible)
     const pricingObserver = new IntersectionObserver(
       (entries) => {
         const entry = entries[0];
         if (entry.isIntersecting) {
-          engagementRef.current.pricingTimer = setTimeout(() => {
-            if (canTrigger()) {
-              openBotWithMessage(
+          timers.current.pricingTimer = setTimeout(() => {
+            if (canTrigger('PRICING_IDLE')) {
+              onTrigger(
                 'Pricing can be confusing sometimes 😅 Would you like me to help you pick the right plan for your budget?',
                 'PRICING_IDLE'
               );
-              engagementRef.current.lastTriggerTime = Date.now();
+              markAsFired('PRICING_IDLE');
             }
           }, 15000);
         } else {
-          clearTimeout(engagementRef.current.pricingTimer);
+          clearTimeout(timers.current.pricingTimer);
         }
       },
       { threshold: 0.5 }
@@ -95,9 +109,7 @@ export const useProactiveTriggers = (
     if (pricingSection) pricingObserver.observe(pricingSection);
 
     window.addEventListener('scroll', handleScroll);
-    // Disable exit intent on mobile
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-    if (!isMobile) {
+    if (!isMobile()) {
       document.addEventListener('mouseleave', handleExitIntent);
     }
 
@@ -105,8 +117,7 @@ export const useProactiveTriggers = (
       window.removeEventListener('scroll', handleScroll);
       document.removeEventListener('mouseleave', handleExitIntent);
       pricingObserver.disconnect();
-      clearTimeout(engagementRef.current.scrollTimer);
-      clearTimeout(engagementRef.current.pricingTimer);
+      Object.values(timers.current).forEach(clearTimeout);
     };
-  }, [isBotOpen]);
+  }, [isBotOpen, hasEngaged]);
 };

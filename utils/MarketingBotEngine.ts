@@ -1,10 +1,24 @@
 import { preprocessNigerianInput, RESPONSE_VARIANTS } from './NigerianNLP';
 
+export interface UserProfile {
+  name?: string;
+  businessType?: string;
+  painPoints: string[];
+  engagementScore: number;
+}
+
+export interface ChatTurn {
+  sender: 'user' | 'bot';
+  text: string;
+  intentName?: string;
+}
+
 export interface BotResult {
   text: string;
   isFallback: boolean;
   intentName?: string;
   suggestedAction?: string;
+  updatedProfile: UserProfile;
 }
 
 interface Intent {
@@ -22,24 +36,45 @@ const BUSINESS_TYPES = [
   'sand', 'quarry', 'yard'
 ];
 
+const NAME_INTRO_MARKERS = ["my name is", "i am", "i'm", "call me", "name na", "na me be"];
+
 /**
- * Helper: Simple Fuzzy Match logic using NLP extracted keywords
+ * Extraction logic to pull user info from the text
  */
-const isMatch = (input: string, keyword: string, extractedKeywords: string[]): boolean => {
-  if (extractedKeywords.includes(keyword)) return true;
-  
-  const normalizedInput = input.toLowerCase().trim();
-  const normalizedKeyword = keyword.toLowerCase().trim();
-  
-  if (normalizedInput.includes(normalizedKeyword)) return true;
-  
-  if (normalizedKeyword.length >= 5) {
-    const prefix = normalizedKeyword.substring(0, 4);
-    const inputWords = normalizedInput.split(/\s+/);
-    return inputWords.some(word => word.startsWith(prefix));
+const updateProfile = (input: string, currentProfile: UserProfile, keywords: string[]): UserProfile => {
+  const newProfile = { ...currentProfile };
+  const lowerInput = input.toLowerCase();
+
+  // 1. Name Extraction
+  for (const marker of NAME_INTRO_MARKERS) {
+    if (lowerInput.includes(marker)) {
+      const parts = lowerInput.split(marker);
+      if (parts.length > 1) {
+        const potentialName = parts[1].trim().split(/\s+/)[0];
+        if (potentialName && potentialName.length > 2 && !BUSINESS_TYPES.includes(potentialName)) {
+          newProfile.name = potentialName.charAt(0).toUpperCase() + potentialName.slice(1);
+        }
+      }
+    }
   }
+
+  // 2. Business Type Extraction
+  const foundBiz = BUSINESS_TYPES.find(biz => lowerInput.includes(biz) || keywords.includes(biz));
+  if (foundBiz) {
+    newProfile.businessType = foundBiz;
+  }
+
+  // 3. Pain Point Extraction
+  if (keywords.includes('theft') || lowerInput.includes('steal')) newProfile.painPoints.push('theft');
+  if (keywords.includes('data') || lowerInput.includes('internet')) newProfile.painPoints.push('data_cost');
+  if (lowerInput.includes('math') || lowerInput.includes('calc')) newProfile.painPoints.push('accounting');
   
-  return false;
+  newProfile.painPoints = [...new Set(newProfile.painPoints)];
+
+  // 4. Engagement Score (Cap at 100)
+  newProfile.engagementScore = Math.min(100, newProfile.engagementScore + 10);
+
+  return newProfile;
 };
 
 const INTENTS: Intent[] = [
@@ -52,160 +87,121 @@ const INTENTS: Intent[] = [
   {
     name: 'PricingDetails',
     keywords: ['price', 'cost', 'pay', 'money', 'subscription', 'license', 'buy', 'naira', '₦', 'amount', 'fees', 'charges', 'how much'],
-    response: 'Great! We have 3 plans: 1. 30-Day Free Trial (₦0), 2. Annual License (₦10,000/year), and 3. Lifetime Access (₦25,000). No hidden charges! Which one would you like to start with?',
+    response: 'We have 3 plans: 1. 30-Day Free Trial (₦0), 2. Annual License (₦10,000/year), and 3. Lifetime Access (₦25,000). Which one works best for your budget?',
     priority: 'specific'
   },
   {
     name: 'Theft',
     keywords: ['steal', 'theft', 'staff', 'security', 'monitor', 'delete', 'change', 'fraud', 'cheat', 'audit log'],
-    response: "Our Fortress system stops staff theft. They can't see your profits, and if they delete a sale or change a price, the app records it in a secret Audit Log. Even if they uninstall, your WhatsApp backups keep your records safe!",
+    response: "Our Fortress system stops staff theft. They can't see your profits, and if they delete a sale, the app records it in a secret Audit Log.",
     priority: 'specific'
   },
   {
     name: 'Data',
     keywords: ['data', 'internet', 'offline', 'network', 'connection', 'wifi', 'data cost'],
-    response: 'Oga, you need ZERO data to sell! It works 100% offline. You only need internet for 1 minute for setup and your nightly WhatsApp backup.',
-    priority: 'specific'
-  },
-  {
-    name: 'Scanner',
-    keywords: ['scan', 'notebook', 'paper', 'photo', 'camera', 'ledger', 'handwriting', 'digitize'],
-    response: 'Just snap a photo of your old shop notebook! Our local AI reads the handwriting and adds the products to your digital inventory instantly. No manual typing needed.',
-    priority: 'specific'
-  },
-  {
-    name: 'Cement_Blocks',
-    keywords: ['cement', 'blocks', 'sand', 'quarry', 'yard', 'construction'],
-    response: 'For a Cement or Block industry, NaijaShop is a lifesaver. You can track stock by the bag and see your total warehouse valuation without data. It stops the boys at the yard from selling behind your back! Want to see how we track Drivers?',
-    priority: 'specific',
-    suggests: 'show_driver_tracking'
-  },
-  {
-    name: 'WhoIsThisFor',
-    keywords: ['business', 'shop', 'store', 'who', 'use', 'type', 'kind', 'retail', 'trader'],
-    response: 'NaijaShop is for EVERY retail business in Nigeria! Whether you run a Pharmacy, Boutique, Supermarket, or Cement yard, we have features for you. Which kind of business do you run?',
+    response: 'Oga, you need ZERO data to sell! It works 100% offline. You only need internet for 1 minute for your nightly WhatsApp backup.',
     priority: 'specific'
   }
 ];
 
-export const getResponse = (userInput: string, lastIntent: string | null, pendingAction: string | null): BotResult => {
-  // Integrate Nigerian NLP Layer
+export const getResponse = (
+  userInput: string, 
+  history: ChatTurn[], 
+  currentProfile: UserProfile,
+  lastIntent: string | null, 
+  pendingAction: string | null
+): BotResult => {
   const nlp = preprocessNigerianInput(userInput);
   const input = nlp.processed;
   const keywords = nlp.keywords;
   const lang = nlp.language;
   
-  // 1. Handle Affirmative Context (The "Yes" Fix)
+  const updatedProfile = updateProfile(userInput, currentProfile, keywords);
+
+  // Pronoun Resolution & Multi-Turn context
+  // If user says "how much is it?" or "how do i get it?"
+  const isGenericQuestion = input.includes('it') || input.includes('that one') || input.includes('am');
+  let contextIntent = lastIntent;
+  
+  if (isGenericQuestion && history.length > 0) {
+    const lastBotTurn = [...history].reverse().find(t => t.sender === 'bot');
+    if (lastBotTurn?.intentName) contextIntent = lastBotTurn.intentName;
+  }
+
+  // 1. Handle Affirmative Context
   if (pendingAction && keywords.includes('yes')) {
     if (pendingAction === 'show_pricing') {
       return {
         text: lang === 'pidgin' ? RESPONSE_VARIANTS.pricing.pidgin : INTENTS.find(i => i.name === 'PricingDetails')!.response,
         isFallback: false,
-        intentName: 'PricingDetails'
-      };
-    }
-    if (pendingAction === 'show_driver_tracking') {
-      return {
-        text: lang === 'pidgin' 
-          ? 'For the yard, terminal dey record which driver carry load and how many bag. E go stop "side sales" sharp sharp. You wan see the price list now?' 
-          : 'For driver tracking, the terminal records which driver took which load and how many bags. This stops "side sales" at the yard. Ready to see the price list now?',
-        isFallback: false,
-        intentName: 'Driver_Tracking_Details',
-        suggestedAction: 'show_pricing'
+        intentName: 'PricingDetails',
+        updatedProfile
       };
     }
   }
 
-  // 2. Handle Negative/Dismissive context
-  if (keywords.includes('no')) {
-    return {
-      text: lang === 'pidgin' ? "No wahala, Oga. Any other thing you wan know about our POS?" : 'No problem, Oga. What else would you like to know about our Offline POS?',
-      isFallback: false,
-      intentName: 'NEGATIVE_ACK'
-    };
-  }
+  // 2. Personalization logic
+  const getName = () => updatedProfile.name ? `${updatedProfile.name}, ` : "";
+  const getBizNote = () => updatedProfile.businessType ? `Since you manage a ${updatedProfile.businessType}, ` : "";
 
-  // 3. Contextual Business Detection
-  if (lastIntent === 'WhoIsThisFor' || lastIntent === 'CLARIFICATION') {
-    const mentionedBusiness = BUSINESS_TYPES.find(b => input.includes(b) || keywords.includes(b));
-    if (mentionedBusiness) {
-      if (['cement', 'block', 'construction', 'building', 'sand', 'quarry', 'yard'].includes(mentionedBusiness)) {
-        return {
-          text: lang === 'pidgin' 
-            ? 'For Cement or Block work, NaijaShop na life-saver. You fit track stock by bag and see how much your yard worth without using any data. You wan see how we track Drivers and Loaders?' 
-            : 'For a Cement or Block industry, NaijaShop is a lifesaver. You can track stock by the bag and see your total warehouse valuation without using any data. Want to see how we track Drivers and Loaders?',
-          isFallback: false,
-          intentName: 'BusinessContext_Cement',
-          suggestedAction: 'show_driver_tracking'
-        };
-      }
-      return {
-        text: lang === 'pidgin' 
-          ? `Correct! ${mentionedBusiness} fit use NaijaShop well well. You go fit track your stock and see your gain every day. You wan see the price?` 
-          : `Excellent! A ${mentionedBusiness} is a perfect fit for NaijaShop. You can track your stock and see your profit daily. Want to see our simple pricing?`,
-        isFallback: false,
-        intentName: 'BusinessContext_Generic',
-        suggestedAction: 'show_pricing'
-      };
-    }
-  }
-
-  // 4. General Intent Matching
+  // 3. Match Intents
   let winner: Intent | null = null;
   let maxScore = 0;
 
-  for (const intent of INTENTS) {
-    let currentScore = 0;
+  // If we resolved a context intent from "it", give that intent a boost
+  const intentList = INTENTS.map(i => {
+    if (i.name === contextIntent && isGenericQuestion) {
+      return { ...i, currentBoost: 10 };
+    }
+    return { ...i, currentBoost: 0 };
+  });
+
+  for (const intent of intentList) {
+    let currentScore = intent.currentBoost;
     for (const keyword of intent.keywords) {
-      if (isMatch(input, keyword, keywords)) {
-        currentScore += intent.priority === 'specific' ? 5 : 1;
+      if (input.includes(keyword) || keywords.includes(keyword)) {
+        currentScore += intent.priority === 'specific' ? 5 : 2;
       }
     }
-    
     if (currentScore > maxScore) {
       maxScore = currentScore;
       winner = intent;
     }
   }
 
-  if (maxScore >= 1 && winner) {
-    let finalResponse = winner.response;
+  if (maxScore >= 2 && winner) {
+    let responseText = winner.response;
     
-    // Map specific high-value intents to variants
+    // Map variants and add personalization
     if (winner.name === 'Greeting') {
-      finalResponse = lang === 'pidgin' ? RESPONSE_VARIANTS.greeting.pidgin : RESPONSE_VARIANTS.greeting.formal;
+      responseText = lang === 'pidgin' ? RESPONSE_VARIANTS.greeting.pidgin : RESPONSE_VARIANTS.greeting.formal;
     } else if (winner.name === 'PricingDetails') {
-      finalResponse = lang === 'pidgin' ? RESPONSE_VARIANTS.pricing.pidgin : winner.response;
+      responseText = lang === 'pidgin' ? RESPONSE_VARIANTS.pricing.pidgin : responseText;
     } else if (winner.name === 'Theft') {
-      finalResponse = lang === 'pidgin' ? RESPONSE_VARIANTS.theft.pidgin : winner.response;
-    } else if (winner.name === 'Data') {
-      finalResponse = lang === 'pidgin' ? RESPONSE_VARIANTS.data.pidgin : winner.response;
+      responseText = lang === 'pidgin' ? RESPONSE_VARIANTS.theft.pidgin : responseText;
     }
+
+    // Wrap with personalization
+    const finalResponse = `${getName()}${getBizNote()}${responseText}`;
 
     return {
       text: finalResponse,
       isFallback: false,
       intentName: winner.name,
-      suggestedAction: winner.suggests
+      suggestedAction: winner.suggests,
+      updatedProfile
     };
   }
 
-  // 5. Intelligent Fallback Loop Guard
-  if (lastIntent === 'CLARIFICATION') {
-    return {
-      text: lang === 'pidgin' 
-        ? "Oga, I still no get am well. You wan talk to our founder for WhatsApp (08184774884) make he help you sharp sharp?"
-        : "I still didn't quite catch that. Would you like to chat with our founder on WhatsApp (08184774884) for faster help?",
-      isFallback: true,
-      intentName: 'SECOND_FALLBACK'
-    };
-  }
+  // Fallback
+  const fallbackResponse = lang === 'pidgin' 
+    ? `${getName()}Abeg, tell me more about your shop so I fit help you well.`
+    : `${getName()}I want to make sure I give you the right info. Are you asking about prices or how to stop theft in your shop?`;
 
   return {
-    text: lang === 'pidgin'
-      ? "I wan make sure say I give you correct info, Oga. You dey ask about how e work for your shop, or na the price you wan see?"
-      : "I want to make sure I give you the right info, Oga. Are you asking about how it works for your specific shop, or about our prices?",
+    text: fallbackResponse,
     isFallback: true,
-    intentName: 'CLARIFICATION'
+    intentName: 'CLARIFICATION',
+    updatedProfile
   };
 };
