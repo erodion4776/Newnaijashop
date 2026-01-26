@@ -172,7 +172,8 @@ const AppContent: React.FC = () => {
   const isLicensed = settings?.license_expiry && settings.license_expiry > now;
   
   // Real-time Expiry Calculation
-  const trial = s?.installationDate ? getTrialRemainingTime(s.installationDate) : { totalMs: 9999999999, days: 30 };
+  // Fix: Added missing 'hours' and 'minutes' properties to the fallback trial object to satisfy the type requirements of Layout and Dashboard components.
+  const trial = s?.installationDate ? getTrialRemainingTime(s.installationDate) : { totalMs: 9999999999, days: 30, hours: 0, minutes: 0 };
   const isTrialExpired = s?.installationDate && (trial.totalMs <= 0) && !s.isSubscribed && !isLicensed;
   
   const isTampered = s?.last_used_timestamp && (now < s.last_used_timestamp - 300000);

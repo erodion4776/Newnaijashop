@@ -71,10 +71,10 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
                 <WifiOff size={14} /> 100% Offline POS
               </div>
               <h1 className="text-5xl lg:text-7xl font-black tracking-tighter text-slate-900 leading-[0.95]">
-                The POS That Doesn't Ask for Data.
+                The POS That Operates Without Data.
               </h1>
               <p className="text-xl text-slate-500 font-medium leading-relaxed">
-                Stop staff theft, track your interest, and manage your shop from your phone—even without internet. Built specifically for Nigerian SMEs.
+                Prevent staff theft, track your profit margins, and manage your inventory from your mobile device—even without an internet connection. Professional software for Nigerian SMEs.
               </p>
               <div className="flex flex-col sm:flex-row items-center gap-4 justify-center lg:justify-start">
                 <button 
@@ -95,7 +95,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
                         />
                      </div>
                    ))}
-                   <p className="ml-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">+500 Shops Onboarded</p>
+                   <p className="ml-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">+500 Active Terminals</p>
                 </div>
               </div>
             </div>
@@ -116,15 +116,15 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
                
                {/* Floating Badges */}
                <div className="absolute -top-10 -right-4 lg:-right-10 bg-white p-6 rounded-[2rem] shadow-2xl animate-bounce-soft z-30 border border-slate-100 hidden sm:block">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Stock Value</p>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Inventory Value</p>
                   <p className="text-2xl font-black text-emerald-600">₦4,250,000</p>
                </div>
                <div className="absolute bottom-10 -left-4 lg:-left-10 bg-slate-900 p-6 rounded-[2rem] shadow-2xl z-30 animate-pulse hidden sm:block">
                   <div className="flex items-center gap-3">
-                     <div className="w-10 h-10 bg-rose-500 rounded-xl flex items-center justify-center text-white"><ShieldAlert size={20} /></div>
+                     <div className="w-10 h-10 bg-rose-50 rounded-xl flex items-center justify-center text-white"><ShieldAlert size={20} /></div>
                      <div>
-                        <p className="text-[10px] font-black text-white/50 uppercase tracking-widest">Alert</p>
-                        <p className="text-sm font-black text-white">Stock Level Low!</p>
+                        <p className="text-[10px] font-black text-white/50 uppercase tracking-widest">Security</p>
+                        <p className="text-sm font-black text-white">Audit Log Alert!</p>
                      </div>
                   </div>
                </div>
@@ -137,8 +137,8 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
       <section className="py-24 bg-white">
         <div className="max-w-7xl mx-auto px-6">
           <div className="text-center max-w-3xl mx-auto mb-20 space-y-4">
-             <h2 className="text-4xl font-black tracking-tighter text-slate-900">The 'Naija-Proof' System</h2>
-             <p className="text-lg text-slate-500 font-medium">Everything you need to grow your business, built to survive the Alaba and Onitsha market reality.</p>
+             <h2 className="text-4xl font-black tracking-tighter text-slate-900">Enterprise-Grade Security</h2>
+             <p className="text-lg text-slate-500 font-medium">Professional tools designed to empower local businesses and secure their daily revenue.</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
@@ -154,13 +154,13 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
                   />
                   <div className="absolute top-8 left-8 bg-white/80 backdrop-blur-md px-4 py-2 rounded-full border border-indigo-100 shadow-xl flex items-center gap-2">
                      <Zap size={14} className="text-indigo-600 fill-indigo-600" />
-                     <span className="text-[10px] font-black uppercase tracking-widest text-indigo-900">Local AI Core</span>
+                     <span className="text-[10px] font-black uppercase tracking-widest text-indigo-900">On-Device AI</span>
                   </div>
                </div>
                <div className="px-4">
-                  <h3 className="text-2xl font-black text-slate-900 mb-2">Digitize Your Notebook</h3>
+                  <h3 className="text-2xl font-black text-slate-900 mb-2">Automated Inventory Import</h3>
                   <p className="text-slate-500 font-medium leading-relaxed">
-                    Snap your old paper records and turn them into digital stock instantly with our local scanner. No typing needed, just click and stock!
+                    Convert your handwritten ledger into a digital inventory instantly using our advanced on-device scanner. No manual data entry required.
                   </p>
                </div>
             </div>
@@ -177,13 +177,13 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
                   />
                   <div className="absolute top-8 left-8 bg-white/80 backdrop-blur-md px-4 py-2 rounded-full border border-rose-100 shadow-xl flex items-center gap-2">
                      <ShieldCheck size={14} className="text-rose-600" />
-                     <span className="text-[10px] font-black uppercase tracking-widest text-rose-900">Security Guard</span>
+                     <span className="text-[10px] font-black uppercase tracking-widest text-rose-900">Fortress Security</span>
                   </div>
                </div>
                <div className="px-4">
-                  <h3 className="text-2xl font-black text-slate-900 mb-2">Stop Staff Theft</h3>
+                  <h3 className="text-2xl font-black text-slate-900 mb-2">Advanced Staff Monitoring</h3>
                   <p className="text-slate-500 font-medium leading-relaxed">
-                    Track every kobo with a detailed activity log that matches your physical records. If money is missing, the terminal will tell you who and when.
+                    Account for every transaction with comprehensive activity logs. Our system provides real-time transparency into terminal operations and overrides.
                   </p>
                </div>
             </div>
@@ -197,9 +197,9 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
           <div className="flex flex-col lg:flex-row items-center gap-20">
             <div className="flex-1 space-y-10">
                <div className="space-y-6">
-                  <h2 className="text-4xl lg:text-5xl font-black tracking-tighter leading-tight">Manage 1,000+ Products <br className="hidden lg:block"/> Fully Offline.</h2>
+                  <h2 className="text-4xl lg:text-5xl font-black tracking-tighter leading-tight">Scale Your Inventory <br className="hidden lg:block"/> Fully Offline.</h2>
                   <p className="text-xl text-slate-400 font-medium leading-relaxed">
-                    Check stock levels, update prices across your entire shop, and see your total shop value without spending 1kb on data. NaijaShop runs locally on your device storage.
+                    Monitor stock levels, execute bulk price updates, and access real-time valuation reports without external connectivity. NaijaShop is engineered for local device performance.
                   </p>
                </div>
                
@@ -208,15 +208,15 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
                      <div className="w-12 h-12 bg-emerald-50/20 rounded-2xl flex items-center justify-center text-emerald-400 shadow-inner">
                         <CheckCircle2 size={24} />
                      </div>
-                     <h4 className="font-black text-sm uppercase tracking-widest">Low Stock Alerts</h4>
-                     <p className="text-xs text-slate-500 font-medium">Automatic red labels when products finish.</p>
+                     <h4 className="font-black text-sm uppercase tracking-widest">Threshold Alerts</h4>
+                     <p className="text-xs text-slate-500 font-medium">Automatic visual warnings for low inventory.</p>
                   </div>
                   <div className="space-y-2">
                      <div className="w-12 h-12 bg-emerald-50/20 rounded-2xl flex items-center justify-center text-emerald-400 shadow-inner">
                         <CheckCircle2 size={24} />
                      </div>
-                     <h4 className="font-black text-sm uppercase tracking-widest">Bulk Price Update</h4>
-                     <p className="text-xs text-slate-500 font-medium">Increase prices for inflation in one click.</p>
+                     <h4 className="font-black text-sm uppercase tracking-widest">Inflation Adjuster</h4>
+                     <p className="text-xs text-slate-500 font-medium">Adjust prices by percentage in seconds.</p>
                   </div>
                </div>
 
@@ -224,7 +224,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
                   onClick={onStartTrial}
                   className="bg-white text-slate-900 px-10 py-6 rounded-[2rem] font-black text-lg hover:bg-emerald-50 transition-all flex items-center justify-center gap-3"
                >
-                 Try it Now <ArrowRight />
+                 Try the Terminal <ArrowRight />
                </button>
             </div>
             
@@ -249,18 +249,18 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
            <div className="w-24 h-24 rounded-full overflow-hidden mx-auto border-4 border-white shadow-2xl">
               <img 
                 src="https://i.ibb.co/Z6rXhfGv/IMG-20260125-231857.png" 
-                alt="Amaka Customer Testimonial" 
+                alt="Professional Business Owner" 
                 className="w-full h-full object-cover" 
                 loading="lazy"
                 referrerPolicy="no-referrer"
               />
            </div>
            <blockquote className="text-3xl lg:text-4xl font-black italic text-slate-900 tracking-tight leading-tight">
-             "NaijaShop changed my business. I can finally see my real profit every day without arguing with my sales girl!"
+             "NaijaShop has revolutionized our operations. I can finally access accurate financial data and manage my retail location with complete confidence."
            </blockquote>
            <div>
               <p className="text-xl font-black text-emerald-700">Amaka O.</p>
-              <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Boutique Owner, Lagos</p>
+              <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Retail Consultant, Lagos</p>
            </div>
         </div>
       </section>
@@ -269,7 +269,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
       <section className="py-24 bg-white">
         <div className="max-w-7xl mx-auto px-6">
            <div className="text-center mb-20 space-y-4">
-              <h2 className="text-4xl font-black tracking-tighter">Start Selling in 2 Minutes</h2>
+              <h2 className="text-4xl font-black tracking-tighter">Fast Implementation</h2>
            </div>
 
            <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
@@ -284,7 +284,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
                     />
                     <div className="absolute top-4 left-4 w-10 h-10 bg-emerald-600 text-white rounded-full flex items-center justify-center font-black">1</div>
                  </div>
-                 <p className="text-lg font-black text-slate-800">Install the app and launch your secure terminal.</p>
+                 <p className="text-lg font-black text-slate-800">Install the PWA and initialize your terminal.</p>
               </div>
               <div className="text-center space-y-6">
                  <div className="aspect-[4/3] rounded-[2rem] bg-slate-50 border border-slate-100 overflow-hidden relative shadow-inner group">
@@ -297,7 +297,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
                     />
                     <div className="absolute top-4 left-4 w-10 h-10 bg-emerald-600 text-white rounded-full flex items-center justify-center font-black">2</div>
                  </div>
-                 <p className="text-lg font-black text-slate-800">Setup your shop name and Admin PIN.</p>
+                 <p className="text-lg font-black text-slate-800">Configure your store profile and Admin PIN.</p>
               </div>
               <div className="text-center space-y-6">
                  <div className="aspect-[4/3] rounded-[2rem] bg-emerald-600 border border-emerald-500 overflow-hidden relative shadow-2xl group">
@@ -310,31 +310,31 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
                     />
                     <div className="absolute top-4 left-4 w-10 h-10 bg-white text-emerald-600 rounded-full flex items-center justify-center font-black">3</div>
                  </div>
-                 <p className="text-lg font-black text-slate-800">Start selling and tracking your interest!</p>
+                 <p className="text-lg font-black text-slate-800">Begin processing sales and tracking growth.</p>
               </div>
            </div>
         </div>
       </section>
 
       {/* Pricing Section */}
-      <section className="py-24 bg-slate-50">
+      <section id="pricing-section" className="py-24 bg-slate-50">
         <div className="max-w-7xl mx-auto px-6">
           <div className="text-center mb-16">
-            <h2 className="text-4xl font-black tracking-tighter">Choose Your Access</h2>
+            <h2 className="text-4xl font-black tracking-tighter">Choose Your License</h2>
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
             {/* Card 1 */}
             <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm flex flex-col hover:border-emerald-500 transition-all group">
               <div className="flex-1">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Kickstart</p>
-                <h3 className="text-2xl font-black text-slate-900 mb-6">Free Trial</h3>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Introduction</p>
+                <h3 className="text-2xl font-black text-slate-900 mb-6">Standard Trial</h3>
                 <div className="mb-8">
                    <span className="text-5xl font-black text-slate-900">₦0</span>
                    <span className="text-slate-400 font-bold ml-2">/ 30 Days</span>
                 </div>
                 <ul className="space-y-4">
-                  {[ "All Pro Features included", "Offline Inventory", "AI Scanner (Limit 5)", "Detailed Sales History" ].map((f, i) => (
+                  {[ "Professional Core Features", "Offline Inventory Engine", "On-Device AI Scanner", "Financial Reporting" ].map((f, i) => (
                     <li key={i} className="flex items-center gap-3 text-sm font-medium text-slate-500">
                       <CheckCircle2 size={16} className="text-emerald-500" /> {f}
                     </li>
@@ -346,16 +346,16 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
 
             {/* Card 2 */}
             <div className="bg-white p-10 rounded-[3rem] border-4 border-emerald-600 shadow-2xl flex flex-col relative scale-105 z-10">
-              <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-emerald-600 text-white px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest">Most Popular</div>
+              <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-emerald-600 text-white px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest">Recommended</div>
               <div className="flex-1">
-                <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-2">Sustainable</p>
+                <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-2">Business Growth</p>
                 <h3 className="text-2xl font-black text-slate-900 mb-6">Annual License</h3>
                 <div className="mb-8">
                    <span className="text-5xl font-black text-slate-900">₦10,000</span>
                    <span className="text-slate-400 font-bold ml-2">/ Year</span>
                 </div>
                 <ul className="space-y-4">
-                  {[ "Priority WhatsApp Support", "Unlimited AI Scans", "Advanced Local Insights", "Unlimited Inventory items" ].map((f, i) => (
+                  {[ "Priority Technical Support", "Unlimited AI Operations", "Advanced Business Analytics", "Scalable Product Registry" ].map((f, i) => (
                     <li key={i} className="flex items-center gap-3 text-sm font-black text-slate-700">
                       <CheckCircle2 size={16} className="text-emerald-500" /> {f}
                     </li>
@@ -368,14 +368,14 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
             {/* Card 3 */}
             <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm flex flex-col hover:border-indigo-500 transition-all group">
               <div className="flex-1">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Permanent</p>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Enterprise</p>
                 <h3 className="text-2xl font-black text-slate-900 mb-6">Lifetime Access</h3>
                 <div className="mb-8">
                    <span className="text-5xl font-black text-slate-900">₦25,000</span>
                    <span className="text-slate-400 font-bold ml-2">One-time</span>
                 </div>
                 <ul className="space-y-4">
-                  {[ "Never pay for license again", "All future updates free", "Transfer to new phone", "Custom Shop Branding" ].map((f, i) => (
+                  {[ "Perpetual License Access", "Future Infrastructure Updates", "Mobile Device Portability", "Custom Terminal Branding" ].map((f, i) => (
                     <li key={i} className="flex items-center gap-3 text-sm font-medium text-slate-500">
                       <CheckCircle2 size={16} className="text-indigo-500" /> {f}
                     </li>
@@ -404,27 +404,27 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
                 </div>
                 <div>
                    <h3 className="text-xl font-black tracking-tighter text-emerald-600 uppercase">NaijaShop</h3>
-                   <p className="text-slate-400 font-bold text-[10px] uppercase tracking-[0.2em] mt-1">Proudly Built for Nigeria</p>
+                   <p className="text-slate-400 font-bold text-[10px] uppercase tracking-[0.2em] mt-1">Enterprise Solutions for Nigeria</p>
                 </div>
-                <p className="text-slate-500 font-medium max-w-sm leading-relaxed">Empowering Nigerian retailers with offline intelligence. The market standard for inventory and sales tracking.</p>
+                <p className="text-slate-500 font-medium max-w-sm leading-relaxed">Empowering African retailers with offline business intelligence. The industry standard for digital inventory management.</p>
              </div>
              <div>
-                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6">Company</h4>
+                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6">Resources</h4>
                 <ul className="space-y-4">
-                   <li><button onClick={() => window.location.href = '/affiliate'} className="text-sm font-bold text-slate-700 hover:text-emerald-600 flex items-center gap-2"><Users size={16}/> Become a Marketer</button></li>
-                   <li><button className="text-sm font-bold text-slate-700 hover:text-emerald-600 flex items-center gap-2"><Globe size={16}/> Terms of Service</button></li>
+                   <li><button onClick={() => window.location.href = '/affiliate'} className="text-sm font-bold text-slate-700 hover:text-emerald-600 flex items-center gap-2"><Users size={16}/> Partner Program</button></li>
+                   <li><button className="text-sm font-bold text-slate-700 hover:text-emerald-600 flex items-center gap-2"><Globe size={16}/> Documentation</button></li>
                 </ul>
              </div>
              <div>
-                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6">Contact Oga</h4>
+                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6">Contact</h4>
                 <ul className="space-y-4">
-                   <li><button className="text-sm font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-2"><MessageCircle size={16}/> WhatsApp: 08184774884</button></li>
-                   <li className="text-xs text-slate-400 font-medium">Lagos, Nigeria</li>
+                   <li><button className="text-sm font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-2"><MessageCircle size={16}/> Professional Support</button></li>
+                   <li className="text-xs text-slate-400 font-medium">Lagos HQ, Nigeria</li>
                 </ul>
              </div>
           </div>
           <div className="pt-8 border-t border-slate-50 text-center">
-             <p className="text-[9px] font-black text-slate-300 uppercase tracking-[0.3em]">&copy; {new Date().getFullYear()} NaijaShop Logistics Hub. All Rights Reserved.</p>
+             <p className="text-[9px] font-black text-slate-300 uppercase tracking-[0.3em]">&copy; {new Date().getFullYear()} NaijaShop Infrastructure. All Rights Reserved.</p>
           </div>
         </div>
       </footer>

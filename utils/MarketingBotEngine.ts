@@ -1,3 +1,5 @@
+import { preprocessNigerianInput, RESPONSE_VARIANTS } from './NigerianNLP';
+
 export interface BotResult {
   text: string;
   isFallback: boolean;
@@ -20,13 +22,12 @@ const BUSINESS_TYPES = [
   'sand', 'quarry', 'yard'
 ];
 
-const AFFIRMATIVE = ['yes', 'yeah', 'sure', 'ok', 'okay', 'yep', 'show me', 'abeg', 'tell me'];
-const NEGATIVE = ['no', 'nah', 'later', 'stop', 'don\'t'];
-
 /**
- * Helper: Simple Fuzzy Match logic
+ * Helper: Simple Fuzzy Match logic using NLP extracted keywords
  */
-const isMatch = (input: string, keyword: string): boolean => {
+const isMatch = (input: string, keyword: string, extractedKeywords: string[]): boolean => {
+  if (extractedKeywords.includes(keyword)) return true;
+  
   const normalizedInput = input.toLowerCase().trim();
   const normalizedKeyword = keyword.toLowerCase().trim();
   
@@ -43,8 +44,14 @@ const isMatch = (input: string, keyword: string): boolean => {
 
 const INTENTS: Intent[] = [
   {
+    name: 'Greeting',
+    keywords: ['hi', 'hello', 'hey', 'morning', 'afternoon', 'evening', 'how far', 'howdy'],
+    response: '', // Handled by variants
+    priority: 'general'
+  },
+  {
     name: 'PricingDetails',
-    keywords: ['price', 'cost', 'pay', 'money', 'subscription', 'license', 'buy', 'naira', '₦', 'amount', 'fees', 'charges'],
+    keywords: ['price', 'cost', 'pay', 'money', 'subscription', 'license', 'buy', 'naira', '₦', 'amount', 'fees', 'charges', 'how much'],
     response: 'Great! We have 3 plans: 1. 30-Day Free Trial (₦0), 2. Annual License (₦10,000/year), and 3. Lifetime Access (₦25,000). No hidden charges! Which one would you like to start with?',
     priority: 'specific'
   },
@@ -82,21 +89,26 @@ const INTENTS: Intent[] = [
 ];
 
 export const getResponse = (userInput: string, lastIntent: string | null, pendingAction: string | null): BotResult => {
-  const input = userInput.toLowerCase().trim();
+  // Integrate Nigerian NLP Layer
+  const nlp = preprocessNigerianInput(userInput);
+  const input = nlp.processed;
+  const keywords = nlp.keywords;
+  const lang = nlp.language;
   
   // 1. Handle Affirmative Context (The "Yes" Fix)
-  if (pendingAction && AFFIRMATIVE.some(kw => input.includes(kw))) {
+  if (pendingAction && keywords.includes('yes')) {
     if (pendingAction === 'show_pricing') {
-      const pricing = INTENTS.find(i => i.name === 'PricingDetails')!;
       return {
-        text: pricing.response,
+        text: lang === 'pidgin' ? RESPONSE_VARIANTS.pricing.pidgin : INTENTS.find(i => i.name === 'PricingDetails')!.response,
         isFallback: false,
-        intentName: pricing.name
+        intentName: 'PricingDetails'
       };
     }
     if (pendingAction === 'show_driver_tracking') {
       return {
-        text: 'For driver tracking, the terminal records which driver took which load and how many bags. This stops "side sales" at the yard. Ready to see the price list now?',
+        text: lang === 'pidgin' 
+          ? 'For the yard, terminal dey record which driver carry load and how many bag. E go stop "side sales" sharp sharp. You wan see the price list now?' 
+          : 'For driver tracking, the terminal records which driver took which load and how many bags. This stops "side sales" at the yard. Ready to see the price list now?',
         isFallback: false,
         intentName: 'Driver_Tracking_Details',
         suggestedAction: 'show_pricing'
@@ -105,9 +117,9 @@ export const getResponse = (userInput: string, lastIntent: string | null, pendin
   }
 
   // 2. Handle Negative/Dismissive context
-  if (NEGATIVE.some(kw => input.includes(kw))) {
+  if (keywords.includes('no')) {
     return {
-      text: 'No problem, Oga. What else would you like to know about our Offline POS?',
+      text: lang === 'pidgin' ? "No wahala, Oga. Any other thing you wan know about our POS?" : 'No problem, Oga. What else would you like to know about our Offline POS?',
       isFallback: false,
       intentName: 'NEGATIVE_ACK'
     };
@@ -115,18 +127,22 @@ export const getResponse = (userInput: string, lastIntent: string | null, pendin
 
   // 3. Contextual Business Detection
   if (lastIntent === 'WhoIsThisFor' || lastIntent === 'CLARIFICATION') {
-    const mentionedBusiness = BUSINESS_TYPES.find(b => input.includes(b));
+    const mentionedBusiness = BUSINESS_TYPES.find(b => input.includes(b) || keywords.includes(b));
     if (mentionedBusiness) {
       if (['cement', 'block', 'construction', 'building', 'sand', 'quarry', 'yard'].includes(mentionedBusiness)) {
         return {
-          text: 'For a Cement or Block industry, NaijaShop is a lifesaver. You can track stock by the bag and see your total warehouse valuation without using any data. Want to see how we track Drivers and Loaders?',
+          text: lang === 'pidgin' 
+            ? 'For Cement or Block work, NaijaShop na life-saver. You fit track stock by bag and see how much your yard worth without using any data. You wan see how we track Drivers and Loaders?' 
+            : 'For a Cement or Block industry, NaijaShop is a lifesaver. You can track stock by the bag and see your total warehouse valuation without using any data. Want to see how we track Drivers and Loaders?',
           isFallback: false,
           intentName: 'BusinessContext_Cement',
           suggestedAction: 'show_driver_tracking'
         };
       }
       return {
-        text: `Excellent! A ${mentionedBusiness} is a perfect fit for NaijaShop. You can track your stock and see your profit daily. Want to see our simple pricing?`,
+        text: lang === 'pidgin' 
+          ? `Correct! ${mentionedBusiness} fit use NaijaShop well well. You go fit track your stock and see your gain every day. You wan see the price?` 
+          : `Excellent! A ${mentionedBusiness} is a perfect fit for NaijaShop. You can track your stock and see your profit daily. Want to see our simple pricing?`,
         isFallback: false,
         intentName: 'BusinessContext_Generic',
         suggestedAction: 'show_pricing'
@@ -141,7 +157,7 @@ export const getResponse = (userInput: string, lastIntent: string | null, pendin
   for (const intent of INTENTS) {
     let currentScore = 0;
     for (const keyword of intent.keywords) {
-      if (isMatch(input, keyword)) {
+      if (isMatch(input, keyword, keywords)) {
         currentScore += intent.priority === 'specific' ? 5 : 1;
       }
     }
@@ -152,9 +168,22 @@ export const getResponse = (userInput: string, lastIntent: string | null, pendin
     }
   }
 
-  if (maxScore >= 2 && winner) {
+  if (maxScore >= 1 && winner) {
+    let finalResponse = winner.response;
+    
+    // Map specific high-value intents to variants
+    if (winner.name === 'Greeting') {
+      finalResponse = lang === 'pidgin' ? RESPONSE_VARIANTS.greeting.pidgin : RESPONSE_VARIANTS.greeting.formal;
+    } else if (winner.name === 'PricingDetails') {
+      finalResponse = lang === 'pidgin' ? RESPONSE_VARIANTS.pricing.pidgin : winner.response;
+    } else if (winner.name === 'Theft') {
+      finalResponse = lang === 'pidgin' ? RESPONSE_VARIANTS.theft.pidgin : winner.response;
+    } else if (winner.name === 'Data') {
+      finalResponse = lang === 'pidgin' ? RESPONSE_VARIANTS.data.pidgin : winner.response;
+    }
+
     return {
-      text: winner.response,
+      text: finalResponse,
       isFallback: false,
       intentName: winner.name,
       suggestedAction: winner.suggests
@@ -164,14 +193,18 @@ export const getResponse = (userInput: string, lastIntent: string | null, pendin
   // 5. Intelligent Fallback Loop Guard
   if (lastIntent === 'CLARIFICATION') {
     return {
-      text: "I still didn't quite catch that. Would you like to chat with our founder on WhatsApp (08184774884) for faster help?",
+      text: lang === 'pidgin' 
+        ? "Oga, I still no get am well. You wan talk to our founder for WhatsApp (08184774884) make he help you sharp sharp?"
+        : "I still didn't quite catch that. Would you like to chat with our founder on WhatsApp (08184774884) for faster help?",
       isFallback: true,
       intentName: 'SECOND_FALLBACK'
     };
   }
 
   return {
-    text: "I want to make sure I give you the right info, Oga. Are you asking about how it works for your specific shop, or about our prices?",
+    text: lang === 'pidgin'
+      ? "I wan make sure say I give you correct info, Oga. You dey ask about how e work for your shop, or na the price you wan see?"
+      : "I want to make sure I give you the right info, Oga. Are you asking about how it works for your specific shop, or about our prices?",
     isFallback: true,
     intentName: 'CLARIFICATION'
   };

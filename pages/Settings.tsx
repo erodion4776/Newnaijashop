@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
@@ -514,7 +513,8 @@ const TutorialStep: React.FC<{num: string, title: string, icon: any, color: stri
     </div>
     <div className="space-y-3 pb-4">
       <div className="flex items-center gap-3">
-        {React.cloneElement(icon as React.ReactElement, { size: 24 })}
+        {/* Fix: Cast icon to React.ReactElement<any> to resolve the 'size' property type error when using cloneElement. */}
+        {React.cloneElement(icon as React.ReactElement<any>, { size: 24 })}
         <h4 className="text-2xl font-black text-slate-900 tracking-tight">{title}</h4>
       </div>
       <p className="text-slate-500 leading-relaxed font-medium text-lg">
