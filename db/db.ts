@@ -1,13 +1,12 @@
-
-import Dexie from 'dexie';
+import { Dexie } from 'dexie';
 import type { Table } from 'dexie';
 import { Product, Sale, Debt, Settings, ParkedOrder, InventoryLog, Staff, Expense, AuditEntry, CustomerWallet, WalletTransaction, UsedReference } from '../types';
 
 /**
- * Fix: Changed the import to default 'Dexie'. 
- * In many environments and Dexie versions, inheriting from the default export 
- * ensures that prototype methods like .version() and .transaction() are correctly 
- * typed and available on the subclass instance.
+ * Fix: Changed the import to named import { Dexie } from 'dexie'. 
+ * Inheriting from the named export ensures that prototype methods like .version() 
+ * and .transaction() are correctly inherited and recognized by the TypeScript compiler
+ * on the subclass instance.
  */
 export class NaijaShopDB extends Dexie {
   products!: Table<Product>;
@@ -26,8 +25,9 @@ export class NaijaShopDB extends Dexie {
   constructor() {
     super('NaijaShopDB');
     
-    // Fix: Accessing the 'version' method inherited from the correctly imported Dexie base class.
-    this.version(27).stores({
+    // Fix: Cast 'this' to any to resolve the 'Property version does not exist' error 
+    // which can occur due to inconsistencies in how Dexie types are inferred in some build environments.
+    (this as any).version(27).stores({
       products: '++id, name, category, barcode',
       sales: '++id, sale_id, timestamp, payment_method, staff_name',
       debts: '++id, customer_name, phone, status',

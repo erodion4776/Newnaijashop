@@ -11,6 +11,7 @@ import {
   Users,
   ShieldAlert
 } from 'lucide-react';
+import MarketingBot from '../components/MarketingBot';
 
 const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-9987-b4ed4c0e3c36.png";
 
@@ -26,10 +27,16 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
       <nav className="fixed top-0 left-0 right-0 z-[100] bg-white/80 backdrop-blur-xl border-b border-slate-100">
         <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-emerald-600 rounded-xl p-1.5 flex items-center justify-center shadow-lg shadow-emerald-600/20">
-              <img src={LOGO_URL} alt="Logo" className="w-full h-full object-contain brightness-0 invert" />
+            <div className="w-10 h-10 bg-white border border-slate-100 rounded-lg p-1 flex items-center justify-center shadow-sm overflow-hidden">
+              <img 
+                src={LOGO_URL} 
+                alt="NaijaShop Logo" 
+                className="w-full h-full object-contain" 
+                loading="lazy"
+                referrerPolicy="no-referrer"
+              />
             </div>
-            <span className="text-xl font-black tracking-tighter text-slate-900 uppercase">NaijaShop</span>
+            <span className="text-xl font-black tracking-tighter text-emerald-600 uppercase">NaijaShop</span>
           </div>
           <div className="flex items-center gap-6">
             <button onClick={onStartTrial} className="hidden md:block text-sm font-black text-slate-500 uppercase tracking-widest hover:text-emerald-600 transition-colors">Login</button>
@@ -51,6 +58,8 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
             src="https://i.ibb.co/qFD5Jyn9/IMG-20260125-230827.png" 
             className="w-full h-full object-cover opacity-[0.07] scale-110 blur-sm"
             alt="Market Background"
+            loading="lazy"
+            referrerPolicy="no-referrer"
           />
           <div className="absolute inset-0 bg-gradient-to-b from-slate-50 via-transparent to-slate-50" />
         </div>
@@ -78,7 +87,12 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
                 <div className="flex -space-x-3 items-center">
                    {[1,2,3].map(i => (
                      <div key={i} className="w-10 h-10 rounded-full border-4 border-white bg-slate-200 overflow-hidden">
-                        <img src={`https://i.pravatar.cc/100?u=user${i}`} alt="user" className="w-full h-full object-cover" />
+                        <img 
+                          src={`https://i.pravatar.cc/100?u=user${i}`} 
+                          alt="user" 
+                          className="w-full h-full object-cover" 
+                          loading="lazy"
+                        />
                      </div>
                    ))}
                    <p className="ml-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">+500 Shops Onboarded</p>
@@ -89,11 +103,15 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
             <div className="flex-1 relative animate-in fade-in zoom-in duration-1000">
                <div className="relative z-20 transform hover:scale-105 transition-transform duration-700">
                   <div className="absolute -inset-4 bg-emerald-500/20 blur-[100px] rounded-full" />
-                  <img 
-                    src="https://i.ibb.co/W4XQSpqw/IMG-20260125-230934.png" 
-                    alt="NaijaShop App Mockup" 
-                    className="w-full max-w-lg mx-auto drop-shadow-[0_40px_80px_rgba(0,0,0,0.2)] rounded-[3rem] object-contain"
-                  />
+                  <div className="overflow-hidden rounded-[3rem] shadow-2xl bg-white">
+                    <img 
+                      src="https://i.ibb.co/W4XQSpqw/IMG-20260125-230934.png" 
+                      alt="NaijaShop App Mockup" 
+                      className="w-full max-w-lg mx-auto object-cover"
+                      loading="lazy"
+                      referrerPolicy="no-referrer"
+                    />
+                  </div>
                </div>
                
                {/* Floating Badges */}
@@ -126,11 +144,13 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
             {/* Feature 1: AI Scanner */}
             <div className="group space-y-6">
-               <div className="aspect-[16/10] bg-indigo-50 rounded-[3rem] overflow-hidden border border-indigo-100 p-8 flex items-center justify-center relative">
+               <div className="aspect-[16/10] bg-indigo-50 rounded-[3rem] overflow-hidden border border-indigo-100 relative shadow-xl">
                   <img 
                     src="https://i.ibb.co/4RBY8YpG/IMG-20260126-091840.png" 
                     alt="AI Notebook Scanner" 
-                    className="w-full h-full object-contain rounded-2xl shadow-xl transform group-hover:scale-110 transition-transform duration-1000"
+                    className="w-full h-full object-cover transform group-hover:scale-110 transition-transform duration-1000"
+                    loading="lazy"
+                    referrerPolicy="no-referrer"
                   />
                   <div className="absolute top-8 left-8 bg-white/80 backdrop-blur-md px-4 py-2 rounded-full border border-indigo-100 shadow-xl flex items-center gap-2">
                      <Zap size={14} className="text-indigo-600 fill-indigo-600" />
@@ -147,11 +167,13 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
 
             {/* Feature 2: Audit Trail */}
             <div className="group space-y-6">
-               <div className="aspect-[16/10] bg-rose-50 rounded-[3rem] overflow-hidden border border-rose-100 p-8 flex items-center justify-center relative">
+               <div className="aspect-[16/10] bg-rose-50 rounded-[3rem] overflow-hidden border border-rose-100 relative shadow-xl">
                   <img 
                     src="https://i.ibb.co/dF24xCd/IMG-20260126-091902.png" 
                     alt="Audit Trail Logs" 
-                    className="w-full h-full object-contain rounded-2xl shadow-xl transform group-hover:scale-110 transition-transform duration-1000"
+                    className="w-full h-full object-cover transform group-hover:scale-110 transition-transform duration-1000"
+                    loading="lazy"
+                    referrerPolicy="no-referrer"
                   />
                   <div className="absolute top-8 left-8 bg-white/80 backdrop-blur-md px-4 py-2 rounded-full border border-rose-100 shadow-xl flex items-center gap-2">
                      <ShieldCheck size={14} className="text-rose-600" />
@@ -183,14 +205,14 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
                
                <div className="grid grid-cols-2 gap-8">
                   <div className="space-y-2">
-                     <div className="w-12 h-12 bg-emerald-500/20 rounded-2xl flex items-center justify-center text-emerald-400 shadow-inner">
+                     <div className="w-12 h-12 bg-emerald-50/20 rounded-2xl flex items-center justify-center text-emerald-400 shadow-inner">
                         <CheckCircle2 size={24} />
                      </div>
                      <h4 className="font-black text-sm uppercase tracking-widest">Low Stock Alerts</h4>
                      <p className="text-xs text-slate-500 font-medium">Automatic red labels when products finish.</p>
                   </div>
                   <div className="space-y-2">
-                     <div className="w-12 h-12 bg-emerald-500/20 rounded-2xl flex items-center justify-center text-emerald-400 shadow-inner">
+                     <div className="w-12 h-12 bg-emerald-50/20 rounded-2xl flex items-center justify-center text-emerald-400 shadow-inner">
                         <CheckCircle2 size={24} />
                      </div>
                      <h4 className="font-black text-sm uppercase tracking-widest">Bulk Price Update</h4>
@@ -207,11 +229,15 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
             </div>
             
             <div className="flex-1 relative">
-               <img 
-                 src="https://i.ibb.co/5gkwgcFj/IMG-20260125-231701.png" 
-                 alt="Inventory Screen" 
-                 className="w-full max-w-md mx-auto transform lg:translate-x-10 rounded-2xl shadow-2xl object-contain shadow-[0_0_100px_rgba(16,185,129,0.15)]"
-               />
+               <div className="overflow-hidden rounded-[2.5rem] shadow-2xl border-4 border-slate-800 bg-white">
+                <img 
+                  src="https://i.ibb.co/5gkwgcFj/IMG-20260125-231701.png" 
+                  alt="Inventory Screen" 
+                  className="w-full max-w-md mx-auto transform lg:translate-x-10 object-cover"
+                  loading="lazy"
+                  referrerPolicy="no-referrer"
+                />
+               </div>
             </div>
           </div>
         </div>
@@ -221,7 +247,13 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
       <section className="py-24 bg-emerald-50">
         <div className="max-w-4xl mx-auto px-6 text-center space-y-12">
            <div className="w-24 h-24 rounded-full overflow-hidden mx-auto border-4 border-white shadow-2xl">
-              <img src="https://i.ibb.co/Z6rXhfGv/IMG-20260125-231857.png" alt="Amaka" className="w-full h-full object-cover" />
+              <img 
+                src="https://i.ibb.co/Z6rXhfGv/IMG-20260125-231857.png" 
+                alt="Amaka Customer Testimonial" 
+                className="w-full h-full object-cover" 
+                loading="lazy"
+                referrerPolicy="no-referrer"
+              />
            </div>
            <blockquote className="text-3xl lg:text-4xl font-black italic text-slate-900 tracking-tight leading-tight">
              "NaijaShop changed my business. I can finally see my real profit every day without arguing with my sales girl!"
@@ -242,22 +274,40 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
 
            <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
               <div className="text-center space-y-6">
-                 <div className="aspect-[4/3] rounded-[3rem] bg-slate-50 border border-slate-100 overflow-hidden p-6 flex items-center justify-center shadow-inner relative group">
-                    <img src="https://i.ibb.co/dsT5CKqR/IMG-20260126-084914.png" alt="Step 1" className="w-full h-full object-contain rounded-2xl shadow-xl transform group-hover:scale-105 transition-transform" />
+                 <div className="aspect-[4/3] rounded-[2rem] bg-slate-50 border border-slate-100 overflow-hidden relative shadow-inner group">
+                    <img 
+                      src="https://i.ibb.co/dsT5CKqR/IMG-20260126-084914.png" 
+                      alt="Secure Launch" 
+                      className="w-full h-full object-cover transform group-hover:scale-105 transition-transform" 
+                      loading="lazy"
+                      referrerPolicy="no-referrer"
+                    />
                     <div className="absolute top-4 left-4 w-10 h-10 bg-emerald-600 text-white rounded-full flex items-center justify-center font-black">1</div>
                  </div>
                  <p className="text-lg font-black text-slate-800">Install the app and launch your secure terminal.</p>
               </div>
               <div className="text-center space-y-6">
-                 <div className="aspect-[4/3] rounded-[3rem] bg-slate-50 border border-slate-100 overflow-hidden p-6 flex items-center justify-center shadow-inner relative group">
-                    <img src="https://i.ibb.co/5gR2G9jp/IMG-20260126-084953.png" alt="Step 2" className="w-full h-full object-contain rounded-2xl shadow-xl transform group-hover:scale-105 transition-transform" />
+                 <div className="aspect-[4/3] rounded-[2rem] bg-slate-50 border border-slate-100 overflow-hidden relative shadow-inner group">
+                    <img 
+                      src="https://i.ibb.co/5gR2G9jp/IMG-20260126-084953.png" 
+                      alt="Shop Setup" 
+                      className="w-full h-full object-cover transform group-hover:scale-105 transition-transform" 
+                      loading="lazy"
+                      referrerPolicy="no-referrer"
+                    />
                     <div className="absolute top-4 left-4 w-10 h-10 bg-emerald-600 text-white rounded-full flex items-center justify-center font-black">2</div>
                  </div>
                  <p className="text-lg font-black text-slate-800">Setup your shop name and Admin PIN.</p>
               </div>
               <div className="text-center space-y-6">
-                 <div className="aspect-[4/3] rounded-[3rem] bg-emerald-600 border border-emerald-500 overflow-hidden p-6 flex items-center justify-center shadow-2xl relative group">
-                    <img src="https://i.ibb.co/kstpyhwp/IMG-20260126-084931.png" alt="Step 3" className="w-full h-full object-contain rounded-2xl shadow-xl transform group-hover:scale-105 transition-transform" />
+                 <div className="aspect-[4/3] rounded-[2rem] bg-emerald-600 border border-emerald-500 overflow-hidden relative shadow-2xl group">
+                    <img 
+                      src="https://i.ibb.co/kstpyhwp/IMG-20260126-084931.png" 
+                      alt="Start Selling" 
+                      className="w-full h-full object-cover transform group-hover:scale-105 transition-transform" 
+                      loading="lazy"
+                      referrerPolicy="no-referrer"
+                    />
                     <div className="absolute top-4 left-4 w-10 h-10 bg-white text-emerald-600 rounded-full flex items-center justify-center font-black">3</div>
                  </div>
                  <p className="text-lg font-black text-slate-800">Start selling and tracking your interest!</p>
@@ -343,13 +393,20 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
         <div className="max-w-7xl mx-auto px-6">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-12 mb-16">
              <div className="col-span-2 space-y-6">
-                <div className="flex items-center gap-3">
-                   <div className="w-10 h-10 bg-emerald-600 rounded-xl p-1.5 flex items-center justify-center">
-                      <img src={LOGO_URL} alt="Logo" className="w-full h-full object-contain brightness-0 invert" />
-                   </div>
-                   <span className="text-xl font-black tracking-tighter text-slate-900 uppercase">NaijaShop</span>
+                <div className="w-16 h-16 bg-white border border-slate-100 rounded-xl p-2 flex items-center justify-center shadow-md overflow-hidden">
+                   <img 
+                    src={LOGO_URL} 
+                    alt="NaijaShop Logo" 
+                    className="w-full h-full object-contain" 
+                    loading="lazy"
+                    referrerPolicy="no-referrer"
+                   />
                 </div>
-                <p className="text-slate-500 font-medium max-w-sm">Empowering Nigerian retailers with offline intelligence. The market standard for inventory and sales tracking.</p>
+                <div>
+                   <h3 className="text-xl font-black tracking-tighter text-emerald-600 uppercase">NaijaShop</h3>
+                   <p className="text-slate-400 font-bold text-[10px] uppercase tracking-[0.2em] mt-1">Proudly Built for Nigeria</p>
+                </div>
+                <p className="text-slate-500 font-medium max-w-sm leading-relaxed">Empowering Nigerian retailers with offline intelligence. The market standard for inventory and sales tracking.</p>
              </div>
              <div>
                 <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6">Company</h4>
@@ -371,6 +428,9 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
           </div>
         </div>
       </footer>
+
+      {/* Floating Marketing Bot */}
+      <MarketingBot />
     </div>
   );
 };
