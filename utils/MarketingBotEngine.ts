@@ -2,20 +2,26 @@ export interface BotResult {
   text: string;
   isFallback: boolean;
   intentName?: string;
+  suggestedAction?: string;
 }
 
 interface Intent {
   name: string;
   keywords: string[];
   response: string;
-  priority: 'specific' | 'general';
+  priority: 'specific' | 'general' | 'conversational';
+  suggests?: string;
 }
 
 const BUSINESS_TYPES = [
   'cement', 'block', 'construction', 'building', 'water', 'factory', 'pharmacy', 
   'chemist', 'boutique', 'shop', 'store', 'supermarket', 'mart', 'provision', 
-  'laundry', 'salon', 'barbing', 'poultry', 'farm', 'spare parts', 'gadget', 'phone'
+  'laundry', 'salon', 'barbing', 'poultry', 'farm', 'spare parts', 'gadget', 'phone',
+  'sand', 'quarry', 'yard'
 ];
+
+const AFFIRMATIVE = ['yes', 'yeah', 'sure', 'ok', 'okay', 'yep', 'show me', 'abeg', 'tell me'];
+const NEGATIVE = ['no', 'nah', 'later', 'stop', 'don\'t'];
 
 /**
  * Helper: Simple Fuzzy Match logic
@@ -37,15 +43,9 @@ const isMatch = (input: string, keyword: string): boolean => {
 
 const INTENTS: Intent[] = [
   {
-    name: 'WhoIsThisFor',
-    keywords: ['business', 'shop', 'store', 'who', 'use', 'type', 'kind', 'retail', 'trader', 'boutique', 'pharmacy', 'provision', 'cement', 'construction', 'blocks', 'building'],
-    response: 'NaijaShop is for EVERY retail business in Nigeria! Whether you run a Pharmacy, Boutique, Supermarket, Provision Store, or Spare Parts shop, we have features for you. Which kind of business do you run?',
-    priority: 'specific'
-  },
-  {
-    name: 'Price',
-    keywords: ['price', 'cost', 'pay', 'money', 'subscription', 'license', 'buy', 'naira', '₦', 'amount', 'fees', 'charges', 'monthly', 'installment', 'prais'],
-    response: 'We have 3 plans: 1. 30-Day Free Trial (₦0), 2. Annual License (₦10,000/year), 3. Lifetime Access (₦25,000 once). No hidden charges! We don\'t offer monthly payments to keep things simple and cheap for you.',
+    name: 'PricingDetails',
+    keywords: ['price', 'cost', 'pay', 'money', 'subscription', 'license', 'buy', 'naira', '₦', 'amount', 'fees', 'charges'],
+    response: 'Great! We have 3 plans: 1. 30-Day Free Trial (₦0), 2. Annual License (₦10,000/year), and 3. Lifetime Access (₦25,000). No hidden charges! Which one would you like to start with?',
     priority: 'specific'
   },
   {
@@ -67,53 +67,74 @@ const INTENTS: Intent[] = [
     priority: 'specific'
   },
   {
-    name: 'PhysicalScanner',
-    keywords: ['physical scanner', 'usb', 'bluetooth scanner', 'barcode'],
-    response: 'Yes, Oga! You can connect any USB or Bluetooth barcode scanner to your phone or tablet, and NaijaShop will recognize it instantly for super-fast sales.',
-    priority: 'specific'
+    name: 'Cement_Blocks',
+    keywords: ['cement', 'blocks', 'sand', 'quarry', 'yard', 'construction'],
+    response: 'For a Cement or Block industry, NaijaShop is a lifesaver. You can track stock by the bag and see your total warehouse valuation without data. It stops the boys at the yard from selling behind your back! Want to see how we track Drivers?',
+    priority: 'specific',
+    suggests: 'show_driver_tracking'
   },
   {
-    name: 'PrintingA4',
-    keywords: ['a4', 'big printer', 'office printer'],
-    response: 'Yes! While we recommend small thermal printers for speed, you can also use the "Download PDF" feature to print full-size receipts on any office printer.',
-    priority: 'specific'
-  },
-  {
-    name: 'LaptopVsPhone',
-    keywords: ['laptop', 'computer', 'desktop', 'pc'],
-    response: 'A laptop is heavy, needs constant light, and is easy to steal. Your phone is always with you, works in the dark, and fits in your pocket!',
-    priority: 'specific'
-  },
-  {
-    name: 'BankLoan',
-    keywords: ['loan', 'bank', 'statement', 'grant', 'growth', 'excel'],
-    response: 'Yes! You can export your Sales and Profit reports to Excel. This serves as a professional "Business Statement" that you can show to banks or investors to prove your shop is making money.',
+    name: 'WhoIsThisFor',
+    keywords: ['business', 'shop', 'store', 'who', 'use', 'type', 'kind', 'retail', 'trader'],
+    response: 'NaijaShop is for EVERY retail business in Nigeria! Whether you run a Pharmacy, Boutique, Supermarket, or Cement yard, we have features for you. Which kind of business do you run?',
     priority: 'specific'
   }
 ];
 
-export const getResponse = (userInput: string, lastIntent: string | null): BotResult => {
-  const input = userInput.toLowerCase();
+export const getResponse = (userInput: string, lastIntent: string | null, pendingAction: string | null): BotResult => {
+  const input = userInput.toLowerCase().trim();
   
-  // 1. Contextual Fix: If user previously asked "Who is this for" or "Type of business"
-  if (lastIntent === 'WhoIsThisFor') {
-    const mentionedBusiness = BUSINESS_TYPES.find(b => input.includes(b));
-    if (mentionedBusiness) {
-      if (['cement', 'block', 'construction', 'building'].includes(mentionedBusiness)) {
-        return {
-          text: 'For a Cement or Block industry, NaijaShop is a lifesaver. You can track every bag of cement and see your total warehouse value without using any data. It stops the boys at the yard from selling behind your back!',
-          isFallback: false,
-          intentName: 'BusinessContext_Cement'
-        };
-      }
+  // 1. Handle Affirmative Context (The "Yes" Fix)
+  if (pendingAction && AFFIRMATIVE.some(kw => input.includes(kw))) {
+    if (pendingAction === 'show_pricing') {
+      const pricing = INTENTS.find(i => i.name === 'PricingDetails')!;
       return {
-        text: `Excellent! A ${mentionedBusiness} is a perfect fit for NaijaShop. You can track your ${mentionedBusiness} stock and see your profit daily. Would you like to see how our AI scanner handles your invoices?`,
+        text: pricing.response,
         isFallback: false,
-        intentName: 'BusinessContext_Generic'
+        intentName: pricing.name
+      };
+    }
+    if (pendingAction === 'show_driver_tracking') {
+      return {
+        text: 'For driver tracking, the terminal records which driver took which load and how many bags. This stops "side sales" at the yard. Ready to see the price list now?',
+        isFallback: false,
+        intentName: 'Driver_Tracking_Details',
+        suggestedAction: 'show_pricing'
       };
     }
   }
 
+  // 2. Handle Negative/Dismissive context
+  if (NEGATIVE.some(kw => input.includes(kw))) {
+    return {
+      text: 'No problem, Oga. What else would you like to know about our Offline POS?',
+      isFallback: false,
+      intentName: 'NEGATIVE_ACK'
+    };
+  }
+
+  // 3. Contextual Business Detection
+  if (lastIntent === 'WhoIsThisFor' || lastIntent === 'CLARIFICATION') {
+    const mentionedBusiness = BUSINESS_TYPES.find(b => input.includes(b));
+    if (mentionedBusiness) {
+      if (['cement', 'block', 'construction', 'building', 'sand', 'quarry', 'yard'].includes(mentionedBusiness)) {
+        return {
+          text: 'For a Cement or Block industry, NaijaShop is a lifesaver. You can track stock by the bag and see your total warehouse valuation without using any data. Want to see how we track Drivers and Loaders?',
+          isFallback: false,
+          intentName: 'BusinessContext_Cement',
+          suggestedAction: 'show_driver_tracking'
+        };
+      }
+      return {
+        text: `Excellent! A ${mentionedBusiness} is a perfect fit for NaijaShop. You can track your stock and see your profit daily. Want to see our simple pricing?`,
+        isFallback: false,
+        intentName: 'BusinessContext_Generic',
+        suggestedAction: 'show_pricing'
+      };
+    }
+  }
+
+  // 4. General Intent Matching
   let winner: Intent | null = null;
   let maxScore = 0;
 
@@ -131,21 +152,27 @@ export const getResponse = (userInput: string, lastIntent: string | null): BotRe
     }
   }
 
-  // Debugging "Thinking" in console
-  console.log('User Input:', userInput, 'Matched Intent:', winner?.name || 'NONE', 'Score:', maxScore, 'Last Intent:', lastIntent);
-
-  // 2. The "I Don't Know" Guard (Threshold of 2)
   if (maxScore >= 2 && winner) {
     return {
       text: winner.response,
       isFallback: false,
-      intentName: winner.name
+      intentName: winner.name,
+      suggestedAction: winner.suggests
     };
   }
 
-  // 3. Fallback / Clarification
+  // 5. Intelligent Fallback Loop Guard
+  if (lastIntent === 'CLARIFICATION') {
+    return {
+      text: "I still didn't quite catch that. Would you like to chat with our founder on WhatsApp (08184774884) for faster help?",
+      isFallback: true,
+      intentName: 'SECOND_FALLBACK'
+    };
+  }
+
   return {
-    text: "I want to make sure I give you the right info about that. Are you asking about how it works for your specific shop, or about our prices?",
-    isFallback: true
+    text: "I want to make sure I give you the right info, Oga. Are you asking about how it works for your specific shop, or about our prices?",
+    isFallback: true,
+    intentName: 'CLARIFICATION'
   };
 };

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { MessageCircle, X, Send, Sparkles, MessageSquare, Bot, User, CheckCircle2 } from 'lucide-react';
+import { MessageCircle, X, Send, Sparkles, MessageSquare, CheckCircle2, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { getResponse } from '../utils/MarketingBotEngine';
 
 const AVATAR_URL = "https://i.ibb.co/bfCDQ9G/Generated-Image-September-24-2025-3-37-AM.png";
@@ -11,6 +11,7 @@ interface Message {
   text: string;
   timestamp: number;
   isFallback?: boolean;
+  suggestedAction?: string | null;
 }
 
 const MarketingBot: React.FC = () => {
@@ -19,6 +20,7 @@ const MarketingBot: React.FC = () => {
   const [inputText, setInputText] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [lastBotIntent, setLastBotIntent] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const hasInitialized = useRef(false);
 
@@ -60,25 +62,28 @@ const MarketingBot: React.FC = () => {
     setMessages(prev => [...prev, userMsg]);
     if (!textOverride) setInputText('');
     
-    // 1.5 seconds typing simulation
+    // Typing simulation
     setIsTyping(true);
 
     setTimeout(() => {
       setIsTyping(false);
-      const result = getResponse(textToSend, lastBotIntent);
+      const result = getResponse(textToSend, lastBotIntent, pendingAction);
       
       const botMsg: Message = {
         id: (Date.now() + 1).toString(),
         sender: 'bot',
         text: result.text,
         timestamp: Date.now(),
-        isFallback: result.isFallback
+        isFallback: result.isFallback,
+        suggestedAction: result.suggestedAction || null
       };
       
       setMessages(prev => [...prev, botMsg]);
+      
       // Track context for next turn
       setLastBotIntent(result.intentName || null);
-    }, 1500);
+      setPendingAction(result.suggestedAction || null);
+    }, 1200);
   };
 
   const handleWhatsAppClick = () => {
@@ -101,6 +106,7 @@ const MarketingBot: React.FC = () => {
               className="w-full h-full object-cover" 
               alt="Founder" 
               loading="lazy"
+              crossOrigin="anonymous"
               referrerPolicy="no-referrer"
             />
             <div className="absolute -top-1 -right-1 w-4 h-4 bg-emerald-400 border-2 border-white rounded-full animate-pulse" />
@@ -123,6 +129,7 @@ const MarketingBot: React.FC = () => {
                 className="w-12 h-12 rounded-full border-2 border-white/30 object-cover bg-white" 
                 alt="Founder" 
                 loading="lazy"
+                crossOrigin="anonymous"
                 referrerPolicy="no-referrer"
               />
               <div className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-400 border-2 border-emerald-600 rounded-full" />
@@ -141,7 +148,7 @@ const MarketingBot: React.FC = () => {
             ref={scrollRef}
             className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50/50 scrollbar-hide"
           >
-            {messages.map((msg) => (
+            {messages.map((msg, index) => (
               <div 
                 key={msg.id} 
                 className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'} animate-in fade-in slide-in-from-bottom-2 duration-500`}
@@ -152,7 +159,26 @@ const MarketingBot: React.FC = () => {
                     : 'bg-emerald-600 text-white rounded-tl-none shadow-emerald-900/10'
                 }`}>
                   {msg.text}
+
+                  {/* Quick Action Buttons - Only for the very last bot message if it has a suggestion */}
+                  {msg.sender === 'bot' && msg.suggestedAction && index === messages.length - 1 && (
+                    <div className="mt-4 flex gap-2 animate-in slide-in-from-top-2 duration-500">
+                      <button 
+                        onClick={() => handleSend("Yes")}
+                        className="flex-1 py-2 bg-white/20 hover:bg-white/40 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all border border-white/20"
+                      >
+                        <ThumbsUp size={12} /> Yes
+                      </button>
+                      <button 
+                        onClick={() => handleSend("No")}
+                        className="flex-1 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all border border-white/10"
+                      >
+                        <ThumbsDown size={12} /> No
+                      </button>
+                    </div>
+                  )}
                 </div>
+                
                 <div className="mt-1.5 flex items-center gap-1 px-1">
                   <span className="text-[8px] font-black text-slate-300 uppercase tracking-widest">
                     {msg.sender === 'user' ? 'You' : 'Founder'} • {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -163,9 +189,9 @@ const MarketingBot: React.FC = () => {
                 {msg.sender === 'bot' && msg.isFallback && (
                   <button 
                     onClick={handleWhatsAppClick}
-                    className="mt-3 flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-600 border border-emerald-100 rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-emerald-100 transition-all shadow-sm animate-in slide-in-from-left-4 duration-700"
+                    className="mt-3 flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-600 border border-emerald-100 rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-emerald-100 transition-all shadow-sm"
                   >
-                    <MessageSquare size={14} /> Talk to Founder on WhatsApp
+                    <MessageSquare size={14} /> Talk on WhatsApp
                   </button>
                 )}
               </div>
@@ -179,7 +205,6 @@ const MarketingBot: React.FC = () => {
                   <div className="w-1.5 h-1.5 bg-emerald-600 rounded-full animate-bounce [animation-delay:-0.15s]" />
                   <div className="w-1.5 h-1.5 bg-emerald-600 rounded-full animate-bounce" />
                 </div>
-                <span className="text-[8px] font-black text-slate-300 uppercase tracking-widest mt-1.5 ml-1">Founder is thinking...</span>
               </div>
             )}
           </div>
