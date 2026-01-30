@@ -1,4 +1,3 @@
-
 class SemanticEngine {
   private static instance: SemanticEngine;
 

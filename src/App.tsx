@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, ErrorInfo, ReactNode, Component } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, initSettings } from './db/db';
@@ -20,17 +19,19 @@ import AuditTrail from './pages/AuditTrail';
 import ActivationPage from './pages/ActivationPage';
 import AffiliatePortal from './pages/AffiliatePortal';
 import SetupShop from './pages/SetupShop';
+import LandingPage from './pages/LandingPage';
 import MasterAdminHub from './pages/MasterAdminHub';
 import InstallModal from './components/InstallModal';
+import SupportChat from './components/SupportChat';
 import { performAutoSnapshot } from './utils/backup';
 import { 
   AlertTriangle,
   ShieldAlert,
   CreditCard,
   AlertCircle,
-  ChevronLeft,
   Clock,
-  Loader2
+  Loader2,
+  ChevronLeft
 } from 'lucide-react';
 
 const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-9987-b4ed4c0e3c36.png";
@@ -88,7 +89,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 }
 
 const AppContent: React.FC = () => {
-  const [currentView, setCurrentView] = useState<View>('dashboard');
+  const [currentView, setCurrentView] = useState<View>('landing');
   const [isInitialized, setIsInitialized] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
   const [currentUser, setCurrentUser] = useState<Staff | null>(null);
@@ -103,6 +104,7 @@ const AppContent: React.FC = () => {
   const [isPWA, setIsPWA] = useState(false);
   const [activationSession, setActivationSession] = useState<string | null>(null);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [showLanding, setShowLanding] = useState(true);
 
   const [now, setNow] = useState(Date.now());
 
@@ -303,8 +305,11 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // FORCE REDIRECT: If initialized but no shop, go to setup. No Landing Page.
+  // PUBLIC ONBOARDING: Landing Page & Setup
   if (isInitialized && (!settings?.is_setup_complete || staffList.length === 0)) {
+    if (showLanding) {
+      return <LandingPage onStartTrial={() => setShowLanding(false)} />;
+    }
     return <SetupShop onComplete={() => window.location.reload()} />;
   }
 
@@ -330,7 +335,6 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // LOGIN SCREEN (If not logged in)
   if (!currentUser && currentView !== 'activation') {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
@@ -360,7 +364,6 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // MAIN APP LAYOUT
   return (
     <>
       <Layout 
@@ -403,6 +406,7 @@ const AppContent: React.FC = () => {
           />
         )}
       </Layout>
+      <SupportChat />
     </>
   );
 };

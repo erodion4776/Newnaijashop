@@ -1,10 +1,10 @@
 
-const CACHE_NAME = 'naijashop-v4';
+const CACHE_NAME = 'naijashop-v5';
 const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-9987-b4ed4c0e3c36.png";
 const ASSETS = [
-  '/',
-  '/index.html',
-  '/manifest.json',
+  './',
+  './index.html',
+  './manifest.json',
   'https://cdn.tailwindcss.com',
   LOGO_URL
 ];
@@ -59,7 +59,7 @@ self.addEventListener('fetch', (event) => {
         return networkResponse;
       }).catch(() => {
         if (event.request.mode === 'navigate') {
-          return caches.match('/');
+          return caches.match('./index.html');
         }
       });
     })
