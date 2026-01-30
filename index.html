@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -80,14 +81,13 @@
 {
   "imports": {
     "react": "https://esm.sh/react@^19.2.3",
+    "react-dom": "https://esm.sh/react-dom@^19.2.3",
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
     "react/": "https://esm.sh/react@^19.2.3/",
     "dexie": "https://esm.sh/dexie@^4.2.1",
     "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
     "dexie-react-hooks": "https://esm.sh/dexie-react-hooks@^4.2.0",
     "recharts": "https://esm.sh/recharts@^3.6.0",
-    "vite": "https://esm.sh/vite@^7.3.1",
-    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
     "qrcode": "https://esm.sh/qrcode@^1.5.4",
     "tesseract.js": "https://esm.sh/tesseract.js@^7.0.0",
     "pako": "https://esm.sh/pako@^2.1.0",
@@ -95,9 +95,22 @@
     "simple-peer": "https://esm.sh/simple-peer@^9.11.1",
     "xlsx": "https://esm.sh/xlsx@0.18.5",
     "mammoth": "https://esm.sh/mammoth@1.8.0",
-    "@google/genai": "https://esm.sh/@google/genai@^1.38.0"
+    "@google/genai": "https://esm.sh/@google/genai@^1.38.0",
+    "@xenova/transformers": "https://esm.sh/@xenova/transformers@^2.17.2",
+    "vite": "https://esm.sh/vite@^7.3.1",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
+    "buffer": "https://esm.sh/buffer@^6.0.3",
+    "long": "https://esm.sh/long@^5.2.3",
+    "process": "https://esm.sh/process@^0.11.10",
+    "vite-plugin-node-polyfills": "https://esm.sh/vite-plugin-node-polyfills@^0.25.0"
   }
 }
+</script>
+<script type="module">
+  import { Buffer } from 'buffer';
+  import process from 'process';
+  window.Buffer = Buffer;
+  window.process = process;
 </script>
 </head>
 <body class="bg-slate-50 text-slate-900">

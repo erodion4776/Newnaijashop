@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'naijashop-v3';
+const CACHE_NAME = 'naijashop-v4';
 const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-9987-b4ed4c0e3c36.png";
 const ASSETS = [
   '/',
@@ -31,7 +31,7 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Fetch Event - Cache-First Strategy
+// Fetch Event - Cache-First Strategy with Transformers.js model caching
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
 
@@ -42,11 +42,15 @@ self.addEventListener('fetch', (event) => {
       }
 
       return fetch(event.request).then((networkResponse) => {
-        if (
-          networkResponse.ok || 
-          event.request.url.includes('esm.sh') || 
-          event.request.url.includes('googleapis.com')
-        ) {
+        const url = event.request.url;
+        const shouldCache = networkResponse.ok || 
+                            url.includes('esm.sh') || 
+                            url.includes('googleapis.com') ||
+                            url.includes('.onnx') ||
+                            url.includes('.json') ||
+                            url.includes('huggingface.co');
+
+        if (shouldCache) {
           const responseToCache = networkResponse.clone();
           caches.open(CACHE_NAME).then((cache) => {
             cache.put(event.request, responseToCache);
@@ -62,7 +66,7 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
-// Handle Push Notifications (External)
+// Handle Push Notifications
 self.addEventListener('push', (event) => {
   const data = event.data ? event.data.json() : {};
   const title = data.title || 'NaijaShop Alert';
@@ -82,7 +86,6 @@ self.addEventListener('push', (event) => {
   );
 });
 
-// Handle Notification Clicks
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const urlToOpen = event.notification.data || '/';
