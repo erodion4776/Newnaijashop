@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, ErrorInfo, ReactNode, Component } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, initSettings } from './db/db';
@@ -19,14 +20,11 @@ import AuditTrail from './pages/AuditTrail';
 import ActivationPage from './pages/ActivationPage';
 import AffiliatePortal from './pages/AffiliatePortal';
 import SetupShop from './pages/SetupShop';
-import LandingPage from './pages/LandingPage';
 import MasterAdminHub from './pages/MasterAdminHub';
 import InstallModal from './components/InstallModal';
-import SupportChat from './components/SupportChat';
 import { performAutoSnapshot } from './utils/backup';
 import { 
   AlertTriangle,
-  Lock,
   ShieldAlert,
   CreditCard,
   AlertCircle,
@@ -38,7 +36,6 @@ import {
 const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-9987-b4ed4c0e3c36.png";
 const MASTER_RECOVERY_PIN = "9999";
 
-// Trial Logic Helper
 export const getTrialRemainingTime = (installationDate: number) => {
   const trialPeriod = 30 * 24 * 60 * 60 * 1000;
   const expiry = installationDate + trialPeriod;
@@ -91,7 +88,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 }
 
 const AppContent: React.FC = () => {
-  const [currentView, setCurrentView] = useState<View>('landing');
+  const [currentView, setCurrentView] = useState<View>('dashboard');
   const [isInitialized, setIsInitialized] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
   const [currentUser, setCurrentUser] = useState<Staff | null>(null);
@@ -107,14 +104,13 @@ const AppContent: React.FC = () => {
   const [activationSession, setActivationSession] = useState<string | null>(null);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
 
-  // Real-time trial tick
   const [now, setNow] = useState(Date.now());
 
   const settings = useLiveQuery(() => db.settings.get('app_settings'));
   const staffList = useLiveQuery(() => db.staff.toArray()) || [];
 
   useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 60000); // Tick every minute
+    const timer = setInterval(() => setNow(Date.now()), 60000); 
     return () => clearInterval(timer);
   }, []);
 
@@ -167,14 +163,10 @@ const AppContent: React.FC = () => {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, []);
 
-  // Trial & Security Logic
   const s = settings as any;
   const isLicensed = settings?.license_expiry && settings.license_expiry > now;
-  
-  // Real-time Expiry Calculation
   const trial = s?.installationDate ? getTrialRemainingTime(s.installationDate) : { totalMs: 9999999999, days: 30, hours: 0, minutes: 0 };
   const isTrialExpired = s?.installationDate && (trial.totalMs <= 0) && !s.isSubscribed && !isLicensed;
-  
   const isTampered = s?.last_used_timestamp && (now < s.last_used_timestamp - 300000);
 
   const handlePaystackPayment = () => {
@@ -182,7 +174,7 @@ const AppContent: React.FC = () => {
     const handler = (window as any).PaystackPop.setup({
       key: 'pk_test_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx', 
       email: 'customer@naijashop.pos',
-      amount: 1000000, // ₦10,000.00
+      amount: 1000000, 
       currency: 'NGN',
       ref: 'NS-' + Math.floor((Math.random() * 1000000000) + 1),
       callback: (response: any) => {
@@ -311,12 +303,9 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // PUBLIC ONBOARDING: Landing Page & Setup
+  // FORCE REDIRECT: If initialized but no shop, go to setup. No Landing Page.
   if (isInitialized && (!settings?.is_setup_complete || staffList.length === 0)) {
-    if (currentView === 'setup') {
-      return <SetupShop onComplete={() => window.location.reload()} />;
-    }
-    return <LandingPage onStartTrial={() => setCurrentView('setup')} />;
+    return <SetupShop onComplete={() => window.location.reload()} />;
   }
 
   if (isLicensed === false && s?.isSubscribed && currentView !== 'activation') {
@@ -341,6 +330,7 @@ const AppContent: React.FC = () => {
     );
   }
 
+  // LOGIN SCREEN (If not logged in)
   if (!currentUser && currentView !== 'activation') {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
@@ -370,6 +360,7 @@ const AppContent: React.FC = () => {
     );
   }
 
+  // MAIN APP LAYOUT
   return (
     <>
       <Layout 
@@ -412,7 +403,6 @@ const AppContent: React.FC = () => {
           />
         )}
       </Layout>
-      <SupportChat />
     </>
   );
 };

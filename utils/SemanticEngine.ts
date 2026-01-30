@@ -1,9 +1,6 @@
 
 import { pipeline, Pipeline, env } from '@xenova/transformers';
 
-/**
- * Configure Transformers.js environment
- */
 env.allowLocalModels = false;
 env.useBrowserCache = true;
 env.remoteHost = 'https://huggingface.co';

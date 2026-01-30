@@ -1,0 +1,1 @@
+export const preprocessNigerianInput = (s: string) => ({ original: s, processed: s, keywords: [], language: 'formal' });
