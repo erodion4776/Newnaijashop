@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
@@ -485,19 +486,47 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
       )}
       {showParkedOrders && (
         <div className="fixed inset-0 z-[200] bg-white flex flex-col animate-in slide-in-from-right">
-          <div className="p-6 border-b flex items-center justify-between"><div><h3 className="text-2xl font-black">Parked Orders</h3></div><button onClick={() => setShowParkedOrders(false)}><X size={24} /></button></div>
+          <div className="p-6 border-b border-slate-100 flex items-center justify-between"><div><h3 className="text-2xl font-black">Parked Orders</h3></div><button onClick={() => setShowParkedOrders(false)}><X size={24} /></button></div>
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
             {parkedOrders.length === 0 ? <p className="text-center text-slate-400 py-20">No parked orders</p> : parkedOrders.map(order => (
               <div key={order.id} className="bg-white border-2 border-slate-200 rounded-2xl p-4">
-                <div className="flex justify-between items-start mb-3"><div><h4 className="font-black text-lg">{order.customerName}</h4><p className="text-xs text-slate-400">{new Date(order.timestamp).toLocaleString()}</p></div><span className="text-xl font-black text-amber-600">₦{order.total.toLocaleString()}</span></div>
-                <div className="grid grid-cols-3 gap-2"><button onClick={() => loadParkedOrder(order)} className="py-2 bg-emerald-600 text-white rounded-xl font-bold text-xs">Load</button><button onClick={() => editParkedOrder(order)} className="py-2 bg-indigo-50 text-indigo-700 rounded-xl font-bold text-xs">Edit</button><button onClick={() => deleteParkedOrder(order.id!)} className="py-2 bg-rose-50 text-rose-700 rounded-xl font-bold text-xs">Delete</button></div>
+                <div className="flex justify-between items-start mb-3">
+                  <div>
+                    <h4 className="font-black text-lg">{order.customerName}</h4>
+                    <p className="text-xs text-slate-400">{new Date(order.timestamp).toLocaleString()}</p>
+                  </div>
+                  <span className="font-black text-amber-600">₦{order.total.toLocaleString()}</span>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => loadParkedOrder(order)} className="flex-1 py-2 bg-emerald-600 text-white rounded-xl font-bold text-xs">Load</button>
+                  <button onClick={() => editParkedOrder(order)} className="flex-1 py-2 bg-slate-100 text-slate-600 rounded-xl font-bold text-xs">Edit</button>
+                  <button onClick={() => deleteParkedOrder(order.id!)} className="p-2 text-rose-600"><Trash2 size={18} /></button>
+                </div>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* SMART CHATBOT */}
+      {editingParkedOrder && (
+        <div className="fixed inset-0 z-[250] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-white rounded-[3rem] w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[85vh] animate-in zoom-in">
+            <div className="p-8 border-b border-slate-100 flex items-center justify-between"><div><h3 className="text-2xl font-black">Edit Saved Order</h3><p className="text-xs text-amber-600 font-bold uppercase">{editingParkedOrder.customerName}</p></div><button onClick={() => { setEditingParkedOrder(null); setEditingCart([]); }}><X size={24} /></button></div>
+            <div className="flex-1 overflow-y-auto p-8 space-y-4">
+              {editingCart.map((item, idx) => (
+                <div key={idx} className="bg-slate-50 rounded-2xl p-4 flex items-center gap-4">
+                  <div className="flex-1 min-w-0"><h4 className="font-bold truncate">{item.name}</h4><p className="text-xs text-slate-500">₦{item.price.toLocaleString()}</p></div>
+                  <div className="flex items-center gap-2"><button onClick={() => { const u = [...editingCart]; if(u[idx].quantity > 1) u[idx].quantity--; else u.splice(idx,1); setEditingCart(u); }} className="w-8 h-8 bg-white rounded-lg flex items-center justify-center"><Minus size={14}/></button><span className="w-8 text-center font-bold">{item.quantity}</span><button onClick={() => { const u = [...editingCart]; u[idx].quantity++; setEditingCart(u); }} className="w-8 h-8 bg-white rounded-lg flex items-center justify-center"><Plus size={14}/></button></div>
+                </div>
+              ))}
+              {editingCart.length === 0 && <p className="text-center text-slate-400 py-10">Order is empty</p>}
+            </div>
+            <div className="p-8 border-t"><button onClick={async () => { if(editingCart.length === 0) await db.parked_orders.delete(editingParkedOrder.id!); else await saveEditedParkedOrder(); setEditingParkedOrder(null); }} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black">Update Saved Order</button></div>
+          </div>
+        </div>
+      )}
+
+      {/* GLOBAL CHATBOT OVERLAY */}
       <SmartSupportChat 
         currentUser={currentUser}
         cart={cart}
