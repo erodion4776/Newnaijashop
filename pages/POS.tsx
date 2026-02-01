@@ -63,6 +63,9 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
   const [editingParkedOrder, setEditingParkedOrder] = useState<ParkedOrder | null>(null);
   const [editingCart, setEditingCart] = useState<SaleItem[]>([]);
   
+  // Track if the current cart is a resumed order for safety warnings
+  const [isResumedOrder, setIsResumedOrder] = useState(false);
+  
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // ==================== DATA FETCHING ====================
@@ -74,7 +77,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
     if (parkTrigger && parkTrigger > 0 && cart.length > 0) {
       setShowParkModal(true);
     }
-  }, [parkTrigger, cart.length]);
+  }, [parkTrigger]);
 
   // ==================== COMPUTED VALUES ====================
   const categories = useMemo(() => {
@@ -179,9 +182,16 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
 
   const clearCart = () => {
     if (cart.length === 0) return;
-    if (confirm('Clear all items from cart?')) {
+    
+    // Safety check for resumed orders
+    const message = isResumedOrder 
+      ? 'This order was resumed. Clearing it will not return it to the parked list. Continue?' 
+      : 'Clear all items from cart?';
+
+    if (confirm(message)) {
       setCart([]);
       setDiscountValue(0);
+      setIsResumedOrder(false);
     }
   };
 
@@ -210,6 +220,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
       
       setCart([]);
       setDiscountValue(0);
+      setIsResumedOrder(false);
       setParkingCustomerName('');
       setShowParkModal(false);
       setShowMobileCart(false);
@@ -219,13 +230,28 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
     }
   };
 
-  const loadParkedOrder = (order: ParkedOrder) => {
+  /**
+   * Resume & Delete Logic
+   * Loads a parked order into the cart and immediately removes it from the database.
+   */
+  const loadParkedOrder = async (order: ParkedOrder) => {
     if (cart.length > 0) {
       if (!confirm('Current cart will be replaced. Continue?')) return;
     }
+    
     setCart([...order.items]);
+    setIsResumedOrder(true);
     setShowParkedOrders(false);
     setShowMobileCart(true);
+
+    // Immediately delete from DB so it's removed from the parked list
+    if (order.id) {
+      try {
+        await db.parked_orders.delete(order.id);
+      } catch (err) {
+        console.error("Failed to delete resumed order from database", err);
+      }
+    }
   };
 
   const editParkedOrder = (order: ParkedOrder) => {
@@ -271,6 +297,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
   const handleCheckoutComplete = (sale: any, lowItems: string[]) => {
     setCart([]);
     setDiscountValue(0);
+    setIsResumedOrder(false);
     setShowCheckout(false);
     setShowMobileCart(false);
     if (lowItems.length > 0) {
@@ -339,8 +366,8 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
 
       {/* MAIN CONTENT */}
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-        {/* PRODUCT GRID (Full screen on mobile) */}
-        <div className="flex-1 overflow-y-auto p-4 pb-32 lg:pb-4">
+        {/* PRODUCT LIST (Full width on mobile) */}
+        <div className="flex-1 overflow-y-auto p-4 pb-24 lg:pb-4">
           {filteredProducts.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center py-20">
               <Package size={64} className="text-slate-200 mb-4" />
@@ -378,8 +405,8 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
           )}
         </div>
 
-        {/* CART (Mobile Drawer / Desktop Sidebar) */}
-        <div className={`lg:w-[400px] bg-white lg:border-l border-slate-200 flex flex-col h-full lg:h-auto ${showMobileCart ? 'fixed inset-0 z-[150] w-full animate-in slide-in-from-bottom duration-300' : 'hidden lg:flex'}`}>
+        {/* CART (Desktop Sidebar & Mobile Drawer) */}
+        <div className={`lg:w-[400px] bg-white border-l border-slate-200 flex flex-col h-full lg:h-auto ${showMobileCart ? 'fixed inset-0 z-[150] w-full animate-in slide-in-from-bottom duration-300' : 'hidden lg:flex'}`}>
           <div className="p-4 border-b border-slate-100 shrink-0">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
@@ -387,18 +414,13 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
                 <h3 className="font-black text-lg">Current Sale</h3>
               </div>
               <div className="flex gap-2 items-center">
-                {/* Parked Icon (Preserved) */}
                 <button onClick={() => setShowParkedOrders(true)} className="relative p-2 text-amber-600 hover:bg-amber-50 rounded-lg transition-all">
                   <ParkingCircle size={20} />
                   {parkedOrders.length > 0 && <span className="absolute -top-1 -right-1 w-5 h-5 bg-amber-500 text-white text-[10px] font-black rounded-full flex items-center justify-center">{parkedOrders.length}</span>}
                 </button>
-                {/* Trash Icon (Preserved) */}
                 <button onClick={clearCart} className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg transition-all"><Trash2 size={20} /></button>
-                {/* Mobile Drawer Close Button */}
-                <button 
-                  onClick={() => setShowMobileCart(false)} 
-                  className="lg:hidden p-2 text-slate-400 hover:bg-slate-100 rounded-full transition-all ml-2"
-                >
+                {/* Mobile Close Button */}
+                <button onClick={() => setShowMobileCart(false)} className="lg:hidden p-2 text-slate-400 hover:bg-slate-100 rounded-full transition-all ml-2">
                   <X size={28} />
                 </button>
               </div>
@@ -462,15 +484,15 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
         </div>
       </div>
 
-      {/* MOBILE FLOATING 'VIEW CART' BUTTON */}
+      {/* MOBILE FLOATING CART BUTTON */}
       {cart.length > 0 && !showMobileCart && (
         <div className="lg:hidden fixed bottom-24 left-1/2 -translate-x-1/2 z-[140] w-[90%] max-w-sm">
           <button 
             onClick={() => setShowMobileCart(true)}
-            className="w-full bg-emerald-600 text-white py-5 rounded-full font-black text-lg shadow-2xl flex items-center justify-center gap-3 active:scale-95 transition-all border-4 border-white/20"
+            className="w-full bg-emerald-600 text-white py-5 rounded-[2rem] font-black text-lg shadow-2xl flex items-center justify-center gap-3 active:scale-95 transition-all border-4 border-white/20"
           >
             <ShoppingCart size={24} />
-            View Cart ({cartSummary.itemCount} items) - ₦{cartSummary.total.toLocaleString()}
+            View Cart ({cartSummary.itemCount}) - ₦{cartSummary.total.toLocaleString()}
           </button>
         </div>
       )}
@@ -489,7 +511,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
         </div>
       )}
       {showParkedOrders && (
-        <div className="fixed inset-0 z-[200] bg-white flex flex-col animate-in slide-in-from-right duration-300">
+        <div className="fixed inset-0 z-[200] bg-white flex flex-col animate-in slide-in-from-right">
           <div className="p-6 border-b border-slate-100 flex items-center justify-between"><div><h3 className="text-2xl font-black">Parked Orders</h3></div><button onClick={() => setShowParkedOrders(false)}><X size={24} /></button></div>
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
             {parkedOrders.length === 0 ? <p className="text-center text-slate-400 py-20">No parked orders</p> : parkedOrders.map(order => (
