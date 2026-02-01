@@ -52,6 +52,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
   const [showCheckout, setShowCheckout] = useState(false);
   const [showParkedOrders, setShowParkedOrders] = useState(false);
   const [showDiscount, setShowDiscount] = useState(false);
+  const [showMobileCart, setShowMobileCart] = useState(false);
   
   const [discountType, setDiscountType] = useState<'percent' | 'fixed'>('percent');
   const [discountValue, setDiscountValue] = useState<number>(0);
@@ -211,6 +212,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
       setDiscountValue(0);
       setParkingCustomerName('');
       setShowParkModal(false);
+      setShowMobileCart(false);
       alert('Order parked successfully!');
     } catch (err) {
       alert('Failed to park order');
@@ -223,6 +225,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
     }
     setCart([...order.items]);
     setShowParkedOrders(false);
+    setShowMobileCart(true);
   };
 
   const editParkedOrder = (order: ParkedOrder) => {
@@ -269,6 +272,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
     setCart([]);
     setDiscountValue(0);
     setShowCheckout(false);
+    setShowMobileCart(false);
     if (lowItems.length > 0) {
       alert(`Sale completed! ⚠️ Low stock: ${lowItems.join(', ')}`);
     } else {
@@ -277,7 +281,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
   };
 
   return (
-    <div className="h-full flex flex-col bg-slate-50 overflow-hidden">
+    <div className="h-full flex flex-col bg-slate-50 overflow-hidden relative">
       {/* TOP BAR */}
       <div className="bg-white border-b border-slate-200 px-4 py-3 shrink-0">
         <div className="flex items-center gap-3">
@@ -335,7 +339,8 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
 
       {/* MAIN CONTENT */}
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-        <div className="flex-1 overflow-y-auto p-4">
+        {/* PRODUCT LIST (Full width on mobile) */}
+        <div className="flex-1 overflow-y-auto p-4 pb-24 lg:pb-4">
           {filteredProducts.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center py-20">
               <Package size={64} className="text-slate-200 mb-4" />
@@ -373,20 +378,24 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
           )}
         </div>
 
-        {/* CART */}
-        <div className="lg:w-[400px] bg-white border-l border-slate-200 flex flex-col h-full lg:h-auto">
+        {/* CART (Desktop Sidebar & Mobile Drawer) */}
+        <div className={`lg:w-[400px] bg-white border-l border-slate-200 flex flex-col h-full lg:h-auto ${showMobileCart ? 'fixed inset-0 z-[150] w-full animate-in slide-in-from-bottom duration-300' : 'hidden lg:flex'}`}>
           <div className="p-4 border-b border-slate-100 shrink-0">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
                 <ShoppingCart size={20} className="text-slate-600" />
                 <h3 className="font-black text-lg">Current Sale</h3>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 items-center">
                 <button onClick={() => setShowParkedOrders(true)} className="relative p-2 text-amber-600 hover:bg-amber-50 rounded-lg transition-all">
                   <ParkingCircle size={20} />
                   {parkedOrders.length > 0 && <span className="absolute -top-1 -right-1 w-5 h-5 bg-amber-500 text-white text-[10px] font-black rounded-full flex items-center justify-center">{parkedOrders.length}</span>}
                 </button>
                 <button onClick={clearCart} className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg transition-all"><Trash2 size={20} /></button>
+                {/* Mobile Close Button */}
+                <button onClick={() => setShowMobileCart(false)} className="lg:hidden p-2 text-slate-400 hover:bg-slate-100 rounded-full transition-all ml-2">
+                  <X size={28} />
+                </button>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -413,14 +422,14 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
                     <span className="w-8 text-center font-bold text-sm">{item.quantity}</span>
                     <button onClick={() => updateQuantity(item.productId, item.quantity + 1)} className="w-8 h-8 bg-white border border-slate-200 rounded-lg flex items-center justify-center"><Plus size={14} /></button>
                   </div>
-                  <button onClick={() => removeFromCart(item.productId)} className="p-2 text-slate-400 hover:text-rose-600 opacity-0 group-hover:opacity-100"><Trash2 size={16} /></button>
+                  <button onClick={() => removeFromCart(item.productId)} className="p-2 text-slate-400 hover:text-rose-600 lg:opacity-0 group-hover:opacity-100"><Trash2 size={16} /></button>
                 </div>
               ))
             )}
           </div>
 
           {cart.length > 0 && (
-            <div className="p-4 border-t border-slate-100 space-y-3 shrink-0">
+            <div className="p-4 border-t border-slate-100 space-y-3 shrink-0 bg-white">
               <button onClick={() => setShowDiscount(!showDiscount)} className="w-full flex items-center justify-between p-3 bg-slate-50 rounded-xl">
                 <div className="flex items-center gap-2"><TrendingDown size={16} className="text-amber-600" /><span className="text-sm font-bold">Apply Discount</span></div>
                 <ChevronRight size={16} className={showDiscount ? 'rotate-90' : ''} />
@@ -440,13 +449,26 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
                 <div className="flex justify-between items-center pt-2 border-t border-slate-200"><span className="text-slate-700 font-bold text-lg">Total</span><span className="text-2xl font-black text-emerald-600">₦{cartSummary.total.toLocaleString()}</span></div>
               </div>
               <div className="grid grid-cols-2 gap-3 pt-3">
-                <button onClick={handleParkOrder} className="py-4 bg-amber-50 text-amber-700 rounded-2xl font-black text-sm">Park</button>
-                <button onClick={() => setShowCheckout(true)} className="py-4 bg-emerald-600 text-white rounded-2xl font-black text-sm shadow-xl shadow-emerald-600/20">Checkout</button>
+                <button onClick={handleParkOrder} className="py-4 bg-amber-50 text-amber-700 rounded-2xl font-black text-sm active:scale-95 transition-all">Park</button>
+                <button onClick={() => setShowCheckout(true)} className="py-4 bg-emerald-600 text-white rounded-2xl font-black text-sm shadow-xl shadow-emerald-600/20 active:scale-95 transition-all">Checkout</button>
               </div>
             </div>
           )}
         </div>
       </div>
+
+      {/* MOBILE FLOATING CART BUTTON */}
+      {cart.length > 0 && !showMobileCart && (
+        <div className="lg:hidden fixed bottom-24 left-1/2 -translate-x-1/2 z-[140] w-[90%] max-w-sm">
+          <button 
+            onClick={() => setShowMobileCart(true)}
+            className="w-full bg-emerald-600 text-white py-5 rounded-[2rem] font-black text-lg shadow-2xl flex items-center justify-center gap-3 active:scale-95 transition-all border-4 border-white/20"
+          >
+            <ShoppingCart size={24} />
+            View Cart ({cartSummary.itemCount}) - ₦{cartSummary.total.toLocaleString()}
+          </button>
+        </div>
+      )}
 
       {/* MODALS */}
       {showScanner && <BarcodeScanner onScan={handleBarcodeScan} onClose={() => setShowScanner(false)} />}
