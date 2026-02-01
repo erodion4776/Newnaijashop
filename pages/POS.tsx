@@ -1,149 +1,602 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
 import { 
-  ShoppingCart, Search, Trash2, Plus, Minus, CheckCircle, Package, X, Camera, Loader2, Pause, FolderOpen, History, ChevronRight, Printer, Bluetooth, Edit3, MessageSquare
+  Search, 
+  Plus, 
+  Minus, 
+  Trash2, 
+  ShoppingCart, 
+  Package,
+  Camera,
+  Grid3x3,
+  List,
+  X,
+  CheckCircle2,
+  Clock,
+  Edit2,
+  Save,
+  ChevronRight,
+  Calculator,
+  Wallet,
+  CreditCard,
+  Building2,
+  User,
+  AlertCircle,
+  Loader2,
+  ParkingCircle,
+  RotateCcw,
+  Percent,
+  TrendingDown
 } from 'lucide-react';
-import { Product, SaleItem, View, Staff, Sale, Settings } from '../types';
+import { Product, SaleItem, Staff, View, ParkedOrder } from '../types';
 import BarcodeScanner from '../components/BarcodeScanner';
-import BluetoothPrintService from '../services/BluetoothPrintService';
 import CheckoutModal from '../components/CheckoutModal';
-import VoiceAssistant from '../components/VoiceAssistant';
+import SmartSupportChat from '../components/SupportChat';
 
 interface POSProps {
   setView: (view: View) => void;
-  currentUser?: Staff | null;
+  currentUser: Staff | null;
   cart: SaleItem[];
   setCart: React.Dispatch<React.SetStateAction<SaleItem[]>>;
   parkTrigger?: number;
 }
 
 const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrigger }) => {
+  // ==================== STATE MANAGEMENT ====================
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeCategory, setActiveCategory] = useState('All');
-  const [showCheckoutModal, setShowCheckoutModal] = useState(false);
-  const [showSuccessModal, setShowSuccessModal] = useState(false);
-  const [lastCompletedSale, setLastCompletedSale] = useState<Sale | null>(null);
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [showScanner, setShowScanner] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [showMobileCart, setShowMobileCart] = useState(false);
-  const [isBTPrinting, setIsBTPrinting] = useState(false);
-
-  // Parked Orders States
+  const [showCheckout, setShowCheckout] = useState(false);
+  const [showParkedOrders, setShowParkedOrders] = useState(false);
+  const [showDiscount, setShowDiscount] = useState(false);
+  
+  const [discountType, setDiscountType] = useState<'percent' | 'fixed'>('percent');
+  const [discountValue, setDiscountValue] = useState<number>(0);
+  
+  const [parkingCustomerName, setParkingCustomerName] = useState('');
   const [showParkModal, setShowParkModal] = useState(false);
-  const [tempName, setTempName] = useState('');
+  
+  const [editingParkedOrder, setEditingParkedOrder] = useState<ParkedOrder | null>(null);
+  const [editingCart, setEditingCart] = useState<SaleItem[]>([]);
+  
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const products = useLiveQuery(() => db.products.toArray(), []) || [];
-  const parkedOrders = useLiveQuery(() => db.parked_orders.toArray(), []) || [];
-  const settings = useLiveQuery(() => db.settings.get('app_settings')) as Settings | undefined;
+  // ==================== DATA FETCHING ====================
+  const products = useLiveQuery(() => db.products.toArray()) || [];
+  const parkedOrders = useLiveQuery(() => db.parked_orders.toArray()) || [];
 
-  // Sync with AI Trigger
+  // ==================== SYNC WITH EXTERNAL TRIGGERS ====================
   useEffect(() => {
     if (parkTrigger && parkTrigger > 0 && cart.length > 0) {
       setShowParkModal(true);
     }
-  }, [parkTrigger]);
+  }, [parkTrigger, cart.length]);
+
+  // ==================== COMPUTED VALUES ====================
+  const categories = useMemo<string[]>(() => {
+    const cats = new Set<string>(products.map(p => p.category));
+    return ['All', ...(Array.from(cats) as string[])];
+  }, [products]);
 
   const filteredProducts = useMemo(() => {
-    return products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.barcode?.includes(searchTerm));
-  }, [products, searchTerm]);
+    let filtered = products;
+    
+    if (selectedCategory !== 'All') {
+      filtered = filtered.filter(p => p.category === selectedCategory);
+    }
+    
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase();
+      filtered = filtered.filter(p => 
+        p.name.toLowerCase().includes(term) ||
+        p.barcode?.includes(term) ||
+        p.category?.toLowerCase().includes(term)
+      );
+    }
+    
+    return filtered.filter(p => p.stock_qty > 0);
+  }, [products, selectedCategory, searchTerm]);
 
-  const addToCart = (product: Product) => {
-    const inCart = cart.find(item => item.productId === product.id)?.quantity || 0;
-    if (inCart + 1 > product.stock_qty) { alert(`Only ${product.stock_qty} left!`); return; }
-    setCart(prev => {
-      const existing = prev.find(item => item.productId === product.id);
-      if (existing) return prev.map(item => item.productId === product.id ? { ...item, quantity: item.quantity + 1 } : item);
-      return [...prev, { productId: product.id!, name: product.name, price: product.price, quantity: 1 }];
-    });
+  const cartSummary = useMemo(() => {
+    const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    let discount = 0;
+    
+    if (discountValue > 0) {
+      discount = discountType === 'percent' 
+        ? (subtotal * discountValue / 100) 
+        : discountValue;
+    }
+    
+    const total = subtotal - discount;
+    
+    return {
+      subtotal,
+      discount,
+      total: Math.max(0, total),
+      itemCount: cart.reduce((sum, item) => sum + item.quantity, 0)
+    };
+  }, [cart, discountType, discountValue]);
+
+  // ==================== CART ACTIONS ====================
+  const addToCart = (product: Product, quantity: number = 1) => {
+    const existing = cart.find(item => item.productId === product.id);
+    
+    if (existing) {
+      const newQty = existing.quantity + quantity;
+      if (newQty > product.stock_qty) {
+        alert(`Only ${product.stock_qty} units available in stock`);
+        return;
+      }
+      
+      setCart(cart.map(item =>
+        item.productId === product.id
+          ? { ...item, quantity: newQty }
+          : item
+      ));
+    } else {
+      if (quantity > product.stock_qty) {
+        alert(`Only ${product.stock_qty} units available in stock`);
+        return;
+      }
+      
+      setCart([...cart, {
+        productId: product.id!,
+        name: product.name,
+        price: product.price,
+        quantity: quantity
+      }]);
+    }
+    
+    if (navigator.vibrate) navigator.vibrate(50);
   };
 
-  const updateQuantity = (id: number, delta: number) => {
-    setCart(prev => prev.map(item => {
-      if (item.productId === id) return { ...item, quantity: Math.max(0, item.quantity + delta) };
-      return item;
-    }).filter(item => item.quantity > 0));
+  const updateQuantity = (productId: number, newQuantity: number) => {
+    if (newQuantity <= 0) {
+      removeFromCart(productId);
+      return;
+    }
+    
+    const product = products.find(p => p.id === productId);
+    if (product && newQuantity > product.stock_qty) {
+      alert(`Only ${product.stock_qty} units available`);
+      return;
+    }
+    
+    setCart(cart.map(item =>
+      item.productId === productId
+        ? { ...item, quantity: newQuantity }
+        : item
+    ));
   };
 
-  const total = cart.reduce((acc, curr) => acc + (curr.price * curr.quantity), 0);
+  const removeFromCart = (productId: number) => {
+    setCart(cart.filter(item => item.productId !== productId));
+  };
 
-  const handleParkSale = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!cart.length || isProcessing) return;
-    setIsProcessing(true);
+  const clearCart = () => {
+    if (cart.length === 0) return;
+    if (confirm('Clear all items from cart?')) {
+      setCart([]);
+      setDiscountValue(0);
+    }
+  };
+
+  const handleParkOrder = () => {
+    if (cart.length === 0) {
+      alert('Cart is empty');
+      return;
+    }
+    setShowParkModal(true);
+  };
+
+  const confirmParkOrder = async () => {
+    if (!parkingCustomerName.trim()) {
+      alert('Please enter customer name');
+      return;
+    }
+    
     try {
       await db.parked_orders.add({
-        customerName: tempName || 'Quick Order',
-        items: cart, total, staffId: currentUser?.id?.toString() || '0', timestamp: Date.now()
+        customerName: parkingCustomerName,
+        items: [...cart],
+        total: cartSummary.total,
+        staffId: currentUser?.id?.toString() || '0',
+        timestamp: Date.now()
       });
+      
       setCart([]);
+      setDiscountValue(0);
+      setParkingCustomerName('');
       setShowParkModal(false);
-      setTempName('');
-    } finally { setIsProcessing(false); }
+      alert('Order parked successfully!');
+    } catch (err) {
+      alert('Failed to park order');
+    }
+  };
+
+  const loadParkedOrder = (order: ParkedOrder) => {
+    if (cart.length > 0) {
+      if (!confirm('Current cart will be replaced. Continue?')) return;
+    }
+    setCart([...order.items]);
+    setShowParkedOrders(false);
+  };
+
+  const editParkedOrder = (order: ParkedOrder) => {
+    setEditingParkedOrder(order);
+    setEditingCart([...order.items]);
+  };
+
+  const saveEditedParkedOrder = async () => {
+    if (!editingParkedOrder?.id) return;
+    try {
+      const newTotal = editingCart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+      await db.parked_orders.update(editingParkedOrder.id, {
+        items: editingCart,
+        total: newTotal
+      });
+      setEditingParkedOrder(null);
+      setEditingCart([]);
+      alert('Parked order updated!');
+    } catch (err) {
+      alert('Failed to update order');
+    }
+  };
+
+  const deleteParkedOrder = async (orderId: number) => {
+    if (!confirm('Delete this parked order?')) return;
+    try {
+      await db.parked_orders.delete(orderId);
+      alert('Order deleted');
+    } catch (err) {
+      alert('Failed to delete order');
+    }
+  };
+
+  const handleBarcodeScan = (barcode: string) => {
+    const product = products.find(p => p.barcode === barcode);
+    if (product) {
+      addToCart(product, 1);
+    } else {
+      alert('Product not found');
+    }
+  };
+
+  const handleCheckoutComplete = (sale: any, lowItems: string[]) => {
+    setCart([]);
+    setDiscountValue(0);
+    setShowCheckout(false);
+    if (lowItems.length > 0) {
+      alert(`Sale completed! ⚠️ Low stock: ${lowItems.join(', ')}`);
+    } else {
+      alert('Sale completed successfully! ✅');
+    }
   };
 
   return (
-    <div className="h-full flex flex-col lg:flex-row gap-4">
-      <div className="flex-1 overflow-y-auto space-y-4">
-        <div className="sticky top-0 z-30 bg-slate-50 py-2 flex gap-4">
-          <div className="relative flex-1">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-            <input type="text" placeholder="Search product..." className="w-full h-14 pl-12 pr-4 bg-white border rounded-2xl outline-none shadow-sm" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+    <div className="h-full flex flex-col bg-slate-50 overflow-hidden">
+      {/* TOP BAR */}
+      <div className="bg-white border-b border-slate-200 px-4 py-3 shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="flex-1 relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+            <input
+              ref={searchInputRef}
+              type="text"
+              placeholder="Search products..."
+              className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500 font-medium transition-all"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
           </div>
-          <button onClick={() => setShowScanner(true)} className="h-14 w-14 bg-emerald-600 text-white rounded-2xl flex items-center justify-center"><Camera /></button>
+          <button
+            onClick={() => setShowScanner(true)}
+            className="p-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all shadow-lg active:scale-95"
+          >
+            <Camera size={20} />
+          </button>
+          <div className="hidden sm:flex bg-slate-100 rounded-xl p-1">
+            <button onClick={() => setViewMode('grid')} className={`p-2 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-white shadow-sm' : 'text-slate-400'}`}>
+              <Grid3x3 size={18} />
+            </button>
+            <button onClick={() => setViewMode('list')} className={`p-2 rounded-lg transition-all ${viewMode === 'list' ? 'bg-white shadow-sm' : 'text-slate-400'}`}>
+              <List size={18} />
+            </button>
+          </div>
         </div>
-        
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-          {filteredProducts.map(p => (
-            <button key={p.id} disabled={p.stock_qty <= 0} onClick={() => addToCart(p)} className="bg-white p-5 rounded-[2rem] border text-left h-44 flex flex-col justify-between hover:border-emerald-500 transition-all shadow-sm">
-              <h4 className="font-bold text-slate-800 text-sm">{p.name}</h4>
-              <div className="flex justify-between items-end">
-                <p className="font-black text-emerald-600">₦{p.price.toLocaleString()}</p>
-                <div className="w-8 h-8 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center"><Plus size={16} /></div>
-              </div>
+        <div className="flex gap-2 mt-3 overflow-x-auto scrollbar-hide pb-2">
+          {categories.map((cat: string) => (
+            <button key={cat} onClick={() => setSelectedCategory(cat)} className={`px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest whitespace-nowrap transition-all ${selectedCategory === cat ? 'bg-emerald-600 text-white shadow-lg' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>
+              {cat}
             </button>
           ))}
         </div>
       </div>
 
-      <div className="w-full lg:w-[350px] bg-white rounded-[2.5rem] flex flex-col p-6 shadow-xl">
-        <h3 className="font-black text-slate-800 flex items-center gap-2 mb-4"><ShoppingCart size={20} /> Cart</h3>
-        <div className="flex-1 overflow-y-auto space-y-4">
-          {cart.map((item, idx) => (
-            <div key={idx} className="flex justify-between items-center bg-slate-50 p-3 rounded-2xl">
-              <div className="flex-1"><p className="font-bold text-sm truncate">{item.name}</p><p className="text-[10px] font-black text-emerald-600">₦{item.price.toLocaleString()}</p></div>
-              <div className="flex items-center gap-3">
-                <button onClick={() => updateQuantity(item.productId, -1)} className="p-1.5 bg-white rounded-lg text-rose-500"><Minus size={12} /></button>
-                <span className="font-black text-sm">{item.quantity}</span>
-                <button onClick={() => updateQuantity(item.productId, 1)} className="p-1.5 bg-white rounded-lg text-emerald-500"><Plus size={12} /></button>
+      {/* MAIN CONTENT */}
+      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+        <div className="flex-1 overflow-y-auto p-4">
+          {filteredProducts.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center text-center py-20">
+              <Package size={64} className="text-slate-200 mb-4" />
+              <p className="text-slate-400 font-bold">No products found</p>
+              <button onClick={() => setSearchTerm('')} className="mt-4 text-emerald-600 font-bold text-sm">Clear Search</button>
+            </div>
+          ) : (
+            <div className={viewMode === 'grid' ? 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3' : 'space-y-2'}>
+              {filteredProducts.map(product => (
+                <button key={product.id} onClick={() => addToCart(product, 1)} className={`group bg-white border border-slate-200 rounded-2xl hover:border-emerald-500 hover:shadow-lg transition-all active:scale-95 ${viewMode === 'grid' ? 'p-4 text-left' : 'p-3 flex items-center gap-3'}`}>
+                  {viewMode === 'grid' ? (
+                    <>
+                      <div className="flex items-start justify-between mb-3">
+                        <span className="text-[10px] font-black px-2 py-1 bg-slate-100 rounded-lg text-slate-500 uppercase">{product.category}</span>
+                        <div className="w-8 h-8 bg-emerald-50 text-emerald-600 rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><Plus size={16} /></div>
+                      </div>
+                      <h4 className="font-bold text-sm text-slate-800 line-clamp-2 mb-2 min-h-[2.5rem]">{product.name}</h4>
+                      <div className="flex items-center justify-between">
+                        <span className="text-lg font-black text-emerald-600">₦{product.price.toLocaleString()}</span>
+                        <span className="text-xs text-slate-400 font-bold">{product.stock_qty} units</span>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex-1 text-left">
+                        <h4 className="font-bold text-sm text-slate-800">{product.name}</h4>
+                        <p className="text-xs text-slate-400 font-medium">{product.category} • {product.stock_qty} units</p>
+                      </div>
+                      <span className="text-lg font-black text-emerald-600 shrink-0">₦{product.price.toLocaleString()}</span>
+                    </>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* CART */}
+        <div className="lg:w-[400px] bg-white border-l border-slate-200 flex flex-col h-full lg:h-auto">
+          <div className="p-4 border-b border-slate-100 shrink-0">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <ShoppingCart size={20} className="text-slate-600" />
+                <h3 className="font-black text-lg">Current Sale</h3>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setShowParkedOrders(true)} className="relative p-2 text-amber-600 hover:bg-amber-50 rounded-lg transition-all">
+                  <ParkingCircle size={20} />
+                  {parkedOrders.length > 0 && <span className="absolute -top-1 -right-1 w-5 h-5 bg-amber-500 text-white text-[10px] font-black rounded-full flex items-center justify-center">{parkedOrders.length}</span>}
+                </button>
+                <button onClick={clearCart} className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg transition-all"><Trash2 size={20} /></button>
               </div>
             </div>
-          ))}
-        </div>
-        <div className="mt-6 pt-6 border-t space-y-4">
-          <div className="flex justify-between items-center"><span className="text-xs font-black uppercase text-slate-400">Total</span><span className="text-3xl font-black text-emerald-600">₦{total.toLocaleString()}</span></div>
-          <div className="grid grid-cols-2 gap-2">
-            <button onClick={() => setShowParkModal(true)} disabled={!cart.length} className="py-5 bg-slate-100 rounded-2xl font-black text-[10px] uppercase">Park</button>
-            <button onClick={() => setShowCheckoutModal(true)} disabled={!cart.length} className="py-5 bg-emerald-600 text-white rounded-2xl font-black text-[10px] uppercase">Checkout</button>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-slate-500 font-medium">{cartSummary.itemCount} items</span>
+              {discountValue > 0 && <span className="text-xs bg-rose-100 text-rose-700 px-2 py-1 rounded-full font-bold">{discountType === 'percent' ? `${discountValue}%` : `₦${discountValue}`} OFF</span>}
+            </div>
           </div>
+
+          <div className="flex-1 overflow-y-auto p-4 space-y-2 scrollbar-hide">
+            {cart.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-center py-12">
+                <ShoppingCart size={48} className="text-slate-200 mb-3" />
+                <p className="text-slate-400 font-bold text-sm">Cart is empty</p>
+              </div>
+            ) : (
+              cart.map((item) => (
+                <div key={item.productId} className="bg-slate-50 rounded-2xl p-3 flex items-center gap-3 group hover:bg-slate-100 transition-all">
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-bold text-sm text-slate-800 truncate">{item.name}</h4>
+                    <p className="text-xs text-slate-500 font-medium">₦{item.price.toLocaleString()} × {item.quantity}</p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button onClick={() => updateQuantity(item.productId, item.quantity - 1)} className="w-8 h-8 bg-white border border-slate-200 rounded-lg flex items-center justify-center"><Minus size={14} /></button>
+                    <span className="w-8 text-center font-bold text-sm">{item.quantity}</span>
+                    <button onClick={() => updateQuantity(item.productId, item.quantity + 1)} className="w-8 h-8 bg-white border border-slate-200 rounded-lg flex items-center justify-center"><Plus size={14} /></button>
+                  </div>
+                  <button onClick={() => removeFromCart(item.productId)} className="p-2 text-slate-400 hover:text-rose-600 opacity-0 group-hover:opacity-100"><Trash2 size={16} /></button>
+                </div>
+              ))
+            )}
+          </div>
+
+          {cart.length > 0 && (
+            <div className="p-4 border-t border-slate-100 space-y-3 shrink-0">
+              <button onClick={() => setShowDiscount(!showDiscount)} className="w-full flex items-center justify-between p-3 bg-slate-50 rounded-xl">
+                <div className="flex items-center gap-2"><TrendingDown size={16} className="text-amber-600" /><span className="text-sm font-bold">Apply Discount</span></div>
+                <ChevronRight size={16} className={showDiscount ? 'rotate-90' : ''} />
+              </button>
+              {showDiscount && (
+                <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 space-y-3 animate-in slide-in-from-top-2">
+                  <div className="flex gap-2">
+                    <button onClick={() => setDiscountType('percent')} className={`flex-1 py-2 rounded-xl font-bold text-xs ${discountType === 'percent' ? 'bg-amber-600 text-white' : 'bg-white text-amber-600'}`}>% Percent</button>
+                    <button onClick={() => setDiscountType('fixed')} className={`flex-1 py-2 rounded-xl font-bold text-xs ${discountType === 'fixed' ? 'bg-amber-600 text-white' : 'bg-white text-amber-600'}`}>₦ Fixed</button>
+                  </div>
+                  <input type="number" value={discountValue || ''} onChange={e => setDiscountValue(parseFloat(e.target.value) || 0)} className="w-full px-4 py-3 text-center text-2xl font-black bg-white border rounded-xl" placeholder="0" />
+                </div>
+              )}
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between"><span className="text-slate-500">Subtotal</span><span className="font-bold">₦{cartSummary.subtotal.toLocaleString()}</span></div>
+                {cartSummary.discount > 0 && <div className="flex justify-between text-rose-600"><span>Discount</span><span>-₦{cartSummary.discount.toLocaleString()}</span></div>}
+                <div className="flex justify-between items-center pt-2 border-t border-slate-200"><span className="text-slate-700 font-bold text-lg">Total</span><span className="text-2xl font-black text-emerald-600">₦{cartSummary.total.toLocaleString()}</span></div>
+              </div>
+              <div className="grid grid-cols-2 gap-3 pt-3">
+                <button onClick={handleParkOrder} className="py-4 bg-amber-50 text-amber-700 rounded-2xl font-black text-sm">Park</button>
+                <button onClick={() => setShowCheckout(true)} className="py-4 bg-emerald-600 text-white rounded-2xl font-black text-sm shadow-xl shadow-emerald-600/20">Checkout</button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
+      {/* MODALS */}
+      {showScanner && <BarcodeScanner onScan={handleBarcodeScan} onClose={() => setShowScanner(false)} />}
+      {showCheckout && <CheckoutModal isOpen={showCheckout} onClose={() => setShowCheckout(false)} cart={cart} total={cartSummary.total} currentUser={currentUser} onComplete={handleCheckoutComplete} />}
+      
       {showParkModal && (
-        <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4">
-          <div className="bg-white rounded-[3rem] p-8 w-full max-w-sm space-y-6">
-            <h3 className="text-2xl font-black text-center">Park Order</h3>
-            <form onSubmit={handleParkSale} className="space-y-4">
-              <input autoFocus required type="text" placeholder="Customer Name" className="w-full p-4 bg-slate-50 border rounded-2xl font-bold" value={tempName} onChange={e => setTempName(e.target.value)} />
-              <button type="submit" className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black">Confirm Park</button>
-              <button type="button" onClick={() => setShowParkModal(false)} className="w-full text-slate-400 font-bold uppercase text-xs">Cancel</button>
-            </form>
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="bg-white rounded-[3rem] w-full max-w-sm p-8 space-y-6 animate-in zoom-in">
+            <div className="text-center">
+              <div className="w-16 h-16 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                <ParkingCircle size={32} />
+              </div>
+              <h3 className="text-2xl font-black">Park Order</h3>
+              <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Hold current items</p>
+            </div>
+            <input autoFocus type="text" placeholder="Customer Name" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" value={parkingCustomerName} onChange={e => setParkingCustomerName(e.target.value)} />
+            <button onClick={confirmParkOrder} className="w-full py-4 bg-amber-600 text-white rounded-2xl font-black shadow-lg shadow-amber-200">Confirm Park</button>
+            <button onClick={() => { setShowParkModal(false); setParkingCustomerName(''); }} className="w-full text-slate-400 font-bold uppercase text-[10px]">Cancel</button>
           </div>
         </div>
       )}
 
-      {showCheckoutModal && <CheckoutModal isOpen={showCheckoutModal} onClose={() => setShowCheckoutModal(false)} cart={cart} total={total} currentUser={currentUser} onComplete={(sale) => { setCart([]); setShowCheckoutModal(false); setShowSuccessModal(true); setLastCompletedSale(sale); }} />}
-      {showSuccessModal && <div className="fixed inset-0 z-[1300] bg-emerald-950/90 flex items-center justify-center p-4"><div className="bg-white p-10 rounded-[3rem] text-center space-y-6"><CheckCircle size={64} className="mx-auto text-emerald-500"/><h3 className="text-2xl font-black">Sale Completed!</h3><button onClick={() => setShowSuccessModal(false)} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black">Next Customer</button></div></div>}
+      {showParkedOrders && (
+        <div className="fixed inset-0 z-[200] bg-white flex flex-col animate-in slide-in-from-right duration-300">
+          <div className="p-6 border-b flex items-center justify-between shrink-0 bg-gradient-to-r from-amber-50 to-white">
+            <div>
+              <h3 className="text-2xl font-black text-slate-900">Parked Orders</h3>
+              <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Orders waiting for checkout</p>
+            </div>
+            <button onClick={() => setShowParkedOrders(false)} className="p-3 hover:bg-slate-50 rounded-full transition-all text-slate-400"><X size={28} /></button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-6 space-y-4">
+            {parkedOrders.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-slate-300">
+                <ParkingCircle size={64} className="mb-4" />
+                <p className="font-black text-xs uppercase tracking-widest">No parked orders</p>
+              </div>
+            ) : (
+              parkedOrders.map(order => (
+                <div key={order.id} className="bg-white border-2 border-slate-100 rounded-[2rem] p-6 shadow-sm hover:border-amber-400 transition-all">
+                  <div className="flex justify-between items-start mb-4">
+                    <div>
+                      <h4 className="font-black text-xl text-slate-900">{order.customerName}</h4>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest flex items-center gap-1 mt-1">
+                        <Clock size={10} /> {new Date(order.timestamp).toLocaleString()}
+                      </p>
+                    </div>
+                    <span className="text-2xl font-black text-amber-600">₦{order.total.toLocaleString()}</span>
+                  </div>
+                  
+                  <div className="bg-slate-50 rounded-2xl p-4 mb-4">
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Items Breakdown</p>
+                    <div className="space-y-1">
+                      {order.items.map((item, i) => (
+                        <div key={i} className="flex justify-between text-xs">
+                          <span className="text-slate-600">{item.name}</span>
+                          <span className="font-bold text-slate-900">x{item.quantity}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    <button onClick={() => loadParkedOrder(order)} className="py-3 bg-emerald-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-emerald-200">Load</button>
+                    <button onClick={() => editParkedOrder(order)} className="py-3 bg-indigo-50 text-indigo-700 rounded-xl font-black text-[10px] uppercase tracking-widest border border-indigo-100">Edit</button>
+                    <button onClick={() => deleteParkedOrder(order.id!)} className="py-3 bg-rose-50 text-rose-700 rounded-xl font-black text-[10px] uppercase tracking-widest border border-rose-100">Delete</button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+      {editingParkedOrder && (
+        <div className="fixed inset-0 z-[250] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-white rounded-[3rem] w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[85vh] animate-in zoom-in">
+            <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-white">
+              <div>
+                <h3 className="text-2xl font-black text-slate-900">Edit Parked Order</h3>
+                <p className="text-[10px] text-amber-600 font-black uppercase tracking-widest mt-1">Customer: {editingParkedOrder.customerName}</p>
+              </div>
+              <button onClick={() => { setEditingParkedOrder(null); setEditingCart([]); }} className="p-3 hover:bg-slate-50 rounded-full text-slate-400"><X size={24} /></button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-8 space-y-4 scrollbar-hide">
+              {editingCart.map((item, idx) => {
+                const product = products.find(p => p.id === item.productId);
+                return (
+                  <div key={idx} className="bg-slate-50 rounded-2xl p-5 flex items-center gap-4 border border-slate-100">
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-bold text-slate-900 truncate">{item.name}</h4>
+                      <p className="text-xs text-slate-500 font-medium">₦{item.price.toLocaleString()} per unit</p>
+                    </div>
+                    <div className="flex items-center gap-2 bg-white p-1 rounded-xl border border-slate-200">
+                      <button
+                        onClick={() => {
+                          const updated = [...editingCart];
+                          if (updated[idx].quantity > 1) {
+                            updated[idx].quantity--;
+                            setEditingCart(updated);
+                          } else {
+                            setEditingCart(editingCart.filter((_, i) => i !== idx));
+                          }
+                        }}
+                        className="w-10 h-10 bg-slate-50 text-slate-600 rounded-lg flex items-center justify-center active:scale-95 transition-all"
+                      >
+                        <Minus size={18} />
+                      </button>
+                      <span className="w-10 text-center font-black text-lg tabular-nums">{item.quantity}</span>
+                      <button
+                        onClick={() => {
+                          if (product && item.quantity < product.stock_qty) {
+                            const updated = [...editingCart];
+                            updated[idx].quantity++;
+                            setEditingCart(updated);
+                          } else {
+                            alert("Limit reached based on current stock");
+                          }
+                        }}
+                        className="w-10 h-10 bg-slate-50 text-slate-600 rounded-lg flex items-center justify-center active:scale-95 transition-all"
+                      >
+                        <Plus size={18} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+              {editingCart.length === 0 && (
+                <div className="py-20 text-center space-y-4">
+                  <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto text-slate-300"><ShoppingCart size={32}/></div>
+                  <p className="text-slate-400 font-bold text-sm">Order items cleared. Saving will delete the parked order.</p>
+                </div>
+              )}
+            </div>
+
+            <div className="p-8 border-t bg-white shrink-0">
+              <div className="flex gap-3">
+                <button onClick={() => { setEditingParkedOrder(null); setEditingCart([]); }} className="flex-1 py-4 bg-slate-100 text-slate-500 rounded-2xl font-black text-xs uppercase tracking-widest">Cancel</button>
+                <button 
+                  onClick={async () => {
+                    if (editingCart.length === 0) {
+                      await db.parked_orders.delete(editingParkedOrder.id!);
+                      setEditingParkedOrder(null);
+                      alert("Empty order removed");
+                    } else {
+                      await saveEditedParkedOrder();
+                    }
+                  }} 
+                  className="flex-[2] py-4 bg-indigo-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-indigo-100 flex items-center justify-center gap-2"
+                >
+                  <Save size={18} /> Update Saved Order
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* GLOBAL CHATBOT OVERLAY */}
+      <SmartSupportChat 
+        currentUser={currentUser}
+        cart={cart}
+        onClearCart={clearCart}
+        onParkOrder={handleParkOrder}
+        onAddToCart={(product, quantity) => addToCart(product, quantity)}
+        onNavigate={(view) => setView(view as any)}
+      />
     </div>
   );
 };
