@@ -42,22 +42,33 @@ export const getTrialRemainingTime = (installationDate: number) => {
   const remaining = expiry - Date.now();
   if (remaining <= 0) return { days: 0, hours: 0, minutes: 0, totalMs: 0 };
   const days = Math.floor(remaining / (24 * 60 * 60 * 1000));
-  const hours = Math.floor((remaining % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
-  const minutes = Math.floor((remaining % (60 * 60 * 1000)) / (60 * 1000));
+  const hours = Math.floor((remaining % (24 * 60 * 60 * 1000)) / (60 * 1000));
+  const minutes = Math.floor((remaining % (60 * 1000)) / (60 * 1000));
   return { days, hours, minutes, totalMs: remaining };
 };
 
 interface ErrorBoundaryProps { children?: ReactNode; }
 interface ErrorBoundaryState { hasError: boolean; error: Error | null; }
 
+/**
+ * Fix: Explicitly extended Component (named import) to resolve 
+ * 'Property props does not exist' and 'Property state does not exist' errors 
+ * by ensuring correct type inheritance.
+ */
 class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  // Fix: Removed manual state and props declarations to avoid shadowing inherited members and fix 'property does not exist' errors
+  // Fix: Explicitly initialize state property to help compiler track instance members
+  state: ErrorBoundaryState = { hasError: false, error: null };
+
   constructor(props: ErrorBoundaryProps) {
     super(props);
-    this.state = { hasError: false, error: null };
   }
-  static getDerivedStateFromError(error: Error): ErrorBoundaryState { return { hasError: true, error }; }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState { 
+    return { hasError: true, error }; 
+  }
+
   render() {
+    // Fix: Access state through this.state
     if (this.state.hasError) {
       return (
         <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 text-center">
@@ -69,6 +80,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
         </div>
       );
     }
+    // Fix: Access props through this.props
     return this.props.children;
   }
 }
@@ -150,7 +162,6 @@ const AppContent: React.FC = () => {
 
   const s = settings as any;
   const isLicensed = settings?.license_expiry && settings.license_expiry > now;
-  // Fix: Added missing properties to match getTrialRemainingTime return type
   const trial = s?.installationDate ? getTrialRemainingTime(s.installationDate) : { totalMs: 999999, days: 30, hours: 0, minutes: 0 };
   const isTrialExpired = s?.installationDate && (trial.totalMs <= 0) && !s.isSubscribed && !isLicensed;
 
@@ -202,7 +213,15 @@ const AppContent: React.FC = () => {
         {currentView === 'activity-log' && <ActivityLog currentUser={currentUser} />}
         {currentView === 'inventory' && <Inventory setView={setCurrentView} currentUser={currentUser} isStaffLock={isStaffLock} />}
         {currentView === 'settings' && <Settings currentUser={currentUser} />}
-        {/* ... Other views as needed */}
+        {currentView === 'business-hub' && <BusinessHub />}
+        {currentView === 'audit-trail' && <AuditTrail />}
+        {currentView === 'expense-tracker' && <ExpenseTracker currentUser={currentUser} isStaffLock={isStaffLock} />}
+        {currentView === 'transfer-station' && <TransferStation setView={setCurrentView} />}
+        {currentView === 'inventory-ledger' && <InventoryLedger />}
+        {currentView === 'debts' && <Debts />}
+        {currentView === 'staff-management' && <StaffManagement />}
+        {currentView === 'security-backups' && <SecurityBackups currentUser={currentUser} />}
+        {currentView === 'activation' && <ActivationPage sessionRef={new URLSearchParams(window.location.search).get('session') || ''} onActivated={() => window.location.href = '/'} />}
       </Layout>
       <SupportChat 
         currentUser={currentUser} cart={cart} onClearCart={() => setCart([])}
