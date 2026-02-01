@@ -3,304 +3,354 @@ import {
   MessageCircle, 
   X, 
   Send, 
-  Clock, 
-  User,
   Bot,
   Trash2,
-  Headphones,
   Loader2,
-  CreditCard,
-  Package
+  Sparkles,
+  CheckCircle2,
+  AlertCircle,
+  Package,
+  ShoppingCart,
+  TrendingUp,
+  Clock,
+  Zap,
+  Mic,
+  MicOff
 } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
-import { generateRequestCode } from '../utils/licensing';
-import { getBestMatch, ShopData } from '../utils/SupportBotEngine';
+import { Product, Sale, Staff, SaleItem } from '../types';
 
 interface ChatMessage {
   id: string;
   sender: 'user' | 'bot';
   text: string;
   timestamp: number;
-  showOptions?: boolean;
-  action?: 'RENEW_LICENSE' | 'VIEW_STOCK' | 'NONE';
+  action?: {
+    type: 'VIEW_PRODUCT' | 'CLEAR_CART' | 'PARK_ORDER' | 'SHOW_SALES' | 'RESTOCK_ALERT' | 'NAVIGATE' | 'ADD_TO_CART';
+    data?: any;
+    label?: string;
+  };
+  isExecuting?: boolean;
 }
 
-const SupportChat: React.FC = () => {
-  const [isOpen, setIsOpen] = useState(false);
-  const [inputText, setInputText] = useState('');
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: 'welcome',
-      sender: 'bot',
-      text: "👋 Welcome to NaijaShop! I am your Assistant Guru. How can I help you manage your shop today?",
-      timestamp: Date.now()
-    }
-  ]);
-  const [isTyping, setIsTyping] = useState(false);
-  
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const settings = useLiveQuery(() => db.settings.get('app_settings'));
-  const products = useLiveQuery(() => db.products.toArray()) || [];
-  const sales = useLiveQuery(() => {
-    const today = new Date().setHours(0, 0, 0, 0);
-    return db.sales.where('timestamp').above(today).toArray();
-  }) || [];
+interface SmartChatProps {
+  currentUser: Staff | null;
+  cart?: SaleItem[];
+  onClearCart?: () => void;
+  onParkOrder?: () => void;
+  onNavigate?: (view: any) => void;
+  onAddToCart?: (product: Product, quantity: number) => void;
+}
 
-  // Calculate Real-time Shop Data
-  const shopStats: ShopData = useMemo(() => {
-    let todayTotal = 0;
-    let interestTotal = 0;
+// ==================== AI INTELLIGENCE ENGINE ====================
+
+interface Intent {
+  name: string;
+  patterns: string[];
+  action?: 'QUERY' | 'COMMAND' | 'NAVIGATION';
+  confidence: number;
+}
+
+class SmartBotEngine {
+  private products: Product[] = [];
+  private sales: Sale[] = [];
+  private currentUser: Staff | null = null;
+
+  constructor(products: Product[], sales: Sale[], user: Staff | null) {
+    this.products = products;
+    this.sales = sales;
+    this.currentUser = user;
+  }
+
+  detectIntent(userInput: string): Intent | null {
+    const input = userInput.toLowerCase().trim();
     
-    // Product map for interest calculation
-    const pMap: Record<number, number> = {};
-    products.forEach(p => { if(p.id) pMap[p.id] = p.cost_price; });
+    const intents: Intent[] = [
+      { name: 'CHECK_STOCK', patterns: ['how many', 'stock of', 'do i have', 'quantity of', 'how much', 'check stock'], action: 'QUERY', confidence: 0 },
+      { name: 'LOW_STOCK', patterns: ['low stock', 'running out', 'finishing', 'almost done', 'restock'], action: 'QUERY', confidence: 0 },
+      { name: 'SEARCH_PRODUCT', patterns: ['find', 'search for', 'locate', 'where is', 'show me'], action: 'QUERY', confidence: 0 },
+      { name: 'TODAY_SALES', patterns: ['sales today', 'how much today', 'today\'s sales', 'revenue today'], action: 'QUERY', confidence: 0 },
+      { name: 'PROFIT_CHECK', patterns: ['profit', 'gain', 'interest', 'margin'], action: 'QUERY', confidence: 0 },
+      { name: 'CLEAR_CART', patterns: ['clear cart', 'empty cart', 'remove all', 'delete cart', 'reset cart'], action: 'COMMAND', confidence: 0 },
+      { name: 'PARK_ORDER', patterns: ['park', 'save order', 'hold', 'keep order'], action: 'COMMAND', confidence: 0 },
+      { name: 'ADD_TO_CART', patterns: ['add', 'sell', 'put in cart', 'i want to sell'], action: 'COMMAND', confidence: 0 },
+      { name: 'NAVIGATE_INVENTORY', patterns: ['go to inventory', 'open inventory', 'show inventory', 'stock page'], action: 'NAVIGATION', confidence: 0 },
+      { name: 'NAVIGATE_POS', patterns: ['go to pos', 'open pos', 'sell', 'sales page'], action: 'NAVIGATION', confidence: 0 },
+      { name: 'NAVIGATE_DASHBOARD', patterns: ['dashboard', 'home', 'overview'], action: 'NAVIGATION', confidence: 0 },
+      { name: 'GENERAL_HELP', patterns: ['help', 'what can you do', 'features', 'assist'], action: 'QUERY', confidence: 0 }
+    ];
 
-    sales.forEach(s => {
-      todayTotal += s.total_amount;
-      s.items.forEach(item => {
-        const cost = pMap[item.productId] || (item.price * 0.85);
-        interestTotal += (item.price - cost) * item.quantity;
+    intents.forEach(intent => {
+      intent.patterns.forEach(pattern => {
+        if (input.includes(pattern)) {
+          intent.confidence += 10;
+        }
+        const patternWords = pattern.split(' ');
+        const inputWords = input.split(' ');
+        const matches = patternWords.filter(pw => inputWords.some(iw => iw.includes(pw) || pw.includes(iw)));
+        intent.confidence += matches.length * 2;
       });
     });
 
-    const lowCount = products.filter(p => p.stock_qty <= (p.low_stock_threshold || 5)).length;
-    const expiry = settings?.license_expiry ? new Date(settings.license_expiry).toLocaleDateString() : 'Not Set';
+    const sorted = intents.sort((a, b) => b.confidence - a.confidence);
+    return sorted[0].confidence >= 5 ? sorted[0] : null;
+  }
 
-    return {
-      adminName: settings?.admin_name || 'Oga',
-      shopName: settings?.shop_name || 'the shop',
-      todaySales: `₦${todayTotal.toLocaleString()}`,
-      lowStockCount: lowCount,
-      licenseExpiryDate: expiry,
-      totalInterest: `₦${interestTotal.toLocaleString()}`
-    };
-  }, [settings, products, sales]);
-
-  const terminalId = generateRequestCode();
-  const supportNumber = '2348184774884';
-
-  const scrollToBottom = () => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTo({
-        top: scrollRef.current.scrollHeight,
-        behavior: 'smooth'
-      });
+  extractProductName(input: string): string | null {
+    const cleaned = input.toLowerCase()
+      .replace(/how many|how much|do i have|stock of|quantity of|check|find|search|add|sell/gi, '')
+      .trim();
+    
+    const exactMatch = this.products.find(p => 
+      cleaned.includes(p.name.toLowerCase()) || p.name.toLowerCase().includes(cleaned)
+    );
+    if (exactMatch) return exactMatch.name;
+    
+    const words = cleaned.split(' ').filter(w => w.length > 2);
+    for (const product of this.products) {
+      const productWords = product.name.toLowerCase().split(' ');
+      const matchCount = words.filter(w => productWords.some(pw => pw.includes(w) || w.includes(pw))).length;
+      if (matchCount >= 1 && words.length <= 3) return product.name;
+      if (matchCount >= 2) return product.name;
     }
-  };
+    return null;
+  }
+
+  extractQuantity(input: string): number {
+    const match = input.match(/(\d+)/);
+    return match ? parseInt(match[1]) : 1;
+  }
+
+  async generateResponse(input: string, cart: SaleItem[]): Promise<{ text: string; action?: any }> {
+    const intent = this.detectIntent(input);
+    if (!intent) {
+      return { 
+        text: `Oga ${this.currentUser?.name || 'Boss'}, I didn't quite catch that. You can ask me about stock, sales, or tell me to clear cart, park order, or add items to cart.` 
+      };
+    }
+
+    switch (intent.name) {
+      case 'CHECK_STOCK': {
+        const productName = this.extractProductName(input);
+        if (!productName) return { text: "Which product? Mention the name." };
+        const product = this.products.find(p => p.name.toLowerCase() === productName.toLowerCase());
+        if (!product) return { text: `I can't find "${productName}" in inventory.` };
+        const status = product.stock_qty <= product.low_stock_threshold ? '⚠️ Low stock!' : '✅ Good stock';
+        return {
+          text: `You have **${product.stock_qty} units** of ${product.name}. ${status}\nPrice: ₦${product.price.toLocaleString()}`,
+          action: { type: 'NAVIGATE', data: 'inventory', label: 'View Stock' }
+        };
+      }
+      case 'LOW_STOCK': {
+        const lowStock = this.products.filter(p => p.stock_qty <= p.low_stock_threshold);
+        if (lowStock.length === 0) return { text: "Market is full! All items are well stocked." };
+        const list = lowStock.slice(0, 5).map(p => `• ${p.name}: ${p.stock_qty} left`).join('\n');
+        return {
+          text: `Oga, ${lowStock.length} items are finishing:\n\n${list}`,
+          action: { type: 'NAVIGATE', data: 'inventory', label: 'Restock Now' }
+        };
+      }
+      case 'TODAY_SALES': {
+        const today = new Date().setHours(0, 0, 0, 0);
+        const todaySales = this.sales.filter(s => s.timestamp >= today);
+        const total = todaySales.reduce((sum, s) => sum + s.total_amount, 0);
+        return {
+          text: `Today's Sales: **₦${total.toLocaleString()}**\nTransactions: ${todaySales.length}\n\nYou're doing well!`,
+          action: { type: 'NAVIGATE', data: 'activity-log', label: 'View History' }
+        };
+      }
+      case 'PROFIT_CHECK': {
+        let profit = 0;
+        const pMap: any = {};
+        this.products.forEach(p => { if (p.id) pMap[p.id] = p; });
+        this.sales.forEach(s => s.items.forEach(i => {
+          const p = pMap[i.productId];
+          if (p) profit += (i.price - p.cost_price) * i.quantity;
+        }));
+        return { text: `Total Estimated Profit: **₦${profit.toLocaleString()}** (Selling Price - Cost Price)` };
+      }
+      case 'CLEAR_CART': {
+        if (!cart.length) return { text: "Cart is already empty." };
+        return { text: `Clear ${cart.length} item(s) from cart?`, action: { type: 'CLEAR_CART', label: 'Confirm Clear' } };
+      }
+      case 'PARK_ORDER': {
+        if (!cart.length) return { text: "Nothing in cart to park." };
+        return { text: "Ready to park this order?", action: { type: 'PARK_ORDER', label: 'Park Now' } };
+      }
+      case 'ADD_TO_CART': {
+        const productName = this.extractProductName(input);
+        if (!productName) return { text: "What should I add? (e.g., 'add 2 Milo')" };
+        const product = this.products.find(p => p.name.toLowerCase() === productName.toLowerCase());
+        if (!product) return { text: `"${productName}" not found.` };
+        const qty = this.extractQuantity(input);
+        if (product.stock_qty < qty) return { text: `Only ${product.stock_qty} left in stock.` };
+        return {
+          text: `Add ${qty} x ${product.name} (₦${(product.price * qty).toLocaleString()}) to cart?`,
+          action: { type: 'ADD_TO_CART', data: { product, quantity: qty }, label: 'Add to Cart' }
+        };
+      }
+      case 'NAVIGATE_INVENTORY': return { text: "Opening Inventory...", action: { type: 'NAVIGATE', data: 'inventory', label: 'Go to Inventory' } };
+      case 'NAVIGATE_POS': return { text: "Opening POS...", action: { type: 'NAVIGATE', data: 'pos', label: 'Go to POS' } };
+      case 'NAVIGATE_DASHBOARD': return { text: "Opening Dashboard...", action: { type: 'NAVIGATE', data: 'dashboard', label: 'Go to Dashboard' } };
+      case 'GENERAL_HELP': return {
+        text: "I can help with:\n📦 Stock: 'How many Milo left?'\n💰 Sales: 'How much did we make today?'\n🛒 Cart: 'Clear cart' or 'Add 2 Coke'\n🧭 Pages: 'Go to inventory'"
+      };
+      default: return { text: "I'm here to help! What do you need?" };
+    }
+  }
+}
+
+// ==================== MAIN COMPONENT ====================
+
+const SmartSupportChat: React.FC<SmartChatProps> = ({ 
+  currentUser, cart = [], onClearCart, onParkOrder, onNavigate, onAddToCart 
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [inputText, setInputText] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [messages, setMessages] = useState<ChatMessage[]>([{
+    id: 'welcome', sender: 'bot', timestamp: Date.now(),
+    text: `👋 Hello ${currentUser?.name || 'Boss'}! I'm your AI shop assistant. Ask me about stock, sales, or tell me to manage your cart!`
+  }]);
+  
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const products = useLiveQuery(() => db.products.toArray()) || [];
+  const sales = useLiveQuery(() => db.sales.toArray()) || [];
+  const engine = useMemo(() => new SmartBotEngine(products, sales, currentUser), [products, sales, currentUser]);
 
   useEffect(() => {
-    scrollToBottom();
+    if (scrollRef.current) scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages, isTyping, isOpen]);
+
+  const startVoiceInput = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    
+    if (!SpeechRecognition) {
+      alert('Voice input not supported in this browser. Try using Chrome or Edge.');
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'en-NG'; // Set locale to Nigerian English for better accent recognition
+    
+    recognition.onstart = () => {
+      setIsListening(true);
+      if (navigator.vibrate) navigator.vibrate(50);
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    recognition.onerror = (event: any) => {
+      console.error('Speech Recognition Error:', event.error);
+      setIsListening(false);
+    };
+
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      setInputText(transcript);
+    };
+
+    try {
+      recognition.start();
+    } catch (e) {
+      console.error('Recognition already started');
+    }
+  };
 
   const handleSend = async () => {
     if (!inputText.trim() || isTyping) return;
-    
     const userText = inputText.trim();
-    const newUserMsg: ChatMessage = {
-      id: Date.now().toString(),
-      sender: 'user',
-      text: userText,
-      timestamp: Date.now()
-    };
-
-    setMessages(prev => [...prev, newUserMsg]);
+    setMessages(prev => [...prev, { id: Date.now().toString(), sender: 'user', text: userText, timestamp: Date.now() }]);
     setInputText('');
+    setIsTyping(true);
+    await new Promise(resolve => setTimeout(resolve, 800));
+    const response = await engine.generateResponse(userText, cart);
+    setMessages(prev => [...prev, { id: (Date.now() + 1).toString(), sender: 'bot', text: response.text, timestamp: Date.now(), action: response.action }]);
+    setIsTyping(false);
+  };
 
+  const executeAction = (action: any, messageId: string) => {
+    setMessages(prev => prev.map(m => m.id === messageId ? { ...m, isExecuting: true } : m));
     setTimeout(() => {
-      setIsTyping(true);
-      const match = getBestMatch(userText, shopStats);
-      const botMsgText = match?.answer || "I'm still learning! I couldn't find a direct answer for that. Let me connect you to a human expert who can help you better.";
-      
-      // 2-second realistic delay
-      setTimeout(() => {
-        setIsTyping(false);
-        const botMsg: ChatMessage = {
-          id: (Date.now() + 1).toString(),
-          sender: 'bot',
-          text: botMsgText,
-          timestamp: Date.now(),
-          showOptions: true,
-          action: match?.action || 'NONE'
-        };
-        setMessages(prev => [...prev, botMsg]);
-      }, 2000);
-    }, 500);
-  };
-
-  const clearChat = () => {
-    setMessages([
-      {
-        id: 'welcome',
-        sender: 'bot',
-        text: `👋 Welcome back ${shopStats.adminName}! How can I help you today?`,
-        timestamp: Date.now()
+      switch (action.type) {
+        case 'CLEAR_CART': onClearCart?.(); break;
+        case 'PARK_ORDER': onParkOrder?.(); break;
+        case 'NAVIGATE': onNavigate?.(action.data); break;
+        case 'ADD_TO_CART': onAddToCart?.(action.data.product, action.data.quantity); break;
       }
-    ]);
-  };
-
-  const connectToHuman = () => {
-    const shopName = settings?.shop_name || 'NaijaShop Terminal';
-    const lastUserMsg = messages.filter(m => m.sender === 'user').pop()?.text || 'Support Request';
-    const autoContext = `[Shop: ${shopName} | ID: ${terminalId}]`;
-    const fullMessage = `Hello, I need help with: ${lastUserMsg} ${autoContext}`;
-    const whatsappUrl = `https://wa.me/${supportNumber}?text=${encodeURIComponent(fullMessage)}`;
-    window.open(whatsappUrl, '_blank');
-  };
-
-  const handleAction = (action: string) => {
-    if (action === 'VIEW_STOCK') {
-      // In a real app we might use a global state or custom event
-      // For this implementation, we give the user visual feedback
-      setMessages(prev => [...prev, {
-        id: Date.now().toString(),
-        sender: 'bot',
-        text: "Please click 'Inventory' in the sidebar to see your low stock items.",
-        timestamp: Date.now()
-      }]);
-    } else if (action === 'RENEW_LICENSE') {
-      setMessages(prev => [...prev, {
-        id: Date.now().toString(),
-        sender: 'bot',
-        text: "Please go to 'Settings' and click the 'Activate Terminal' button to use Paystack.",
-        timestamp: Date.now()
-      }]);
-    }
+      setMessages(prev => prev.map(m => m.id === messageId ? { ...m, action: undefined, isExecuting: false } : m));
+    }, 500);
   };
 
   return (
     <>
-      <button 
-        onClick={() => setIsOpen(!isOpen)}
-        className="fixed bottom-6 right-6 z-[999] w-16 h-16 bg-emerald-600 text-white rounded-full shadow-2xl flex items-center justify-center hover:bg-emerald-700 hover:scale-110 active:scale-95 transition-all animate-in fade-in zoom-in duration-500"
-      >
-        {isOpen ? <X size={28} /> : <MessageCircle size={28} />}
-        {!isOpen && (
-          <span className="absolute top-0 right-0 w-4 h-4 bg-rose-500 border-2 border-white rounded-full"></span>
-        )}
+      <button onClick={() => setIsOpen(!isOpen)} className="fixed bottom-6 right-6 z-[999] w-16 h-16 bg-indigo-600 text-white rounded-full shadow-2xl flex items-center justify-center hover:bg-indigo-700 transition-all hover:scale-110 active:scale-95 group">
+        {isOpen ? <X size={28} /> : <><Sparkles size={28} className="group-hover:rotate-12 transition-transform" /><span className="absolute -top-1 -right-1 w-5 h-5 bg-emerald-500 border-2 border-white rounded-full flex items-center justify-center"><Zap size={12} className="text-white" /></span></>}
       </button>
 
       {isOpen && (
-        <div className="fixed bottom-24 right-6 z-[999] w-[380px] max-w-[calc(100vw-3rem)] h-[600px] max-h-[calc(100vh-10rem)] bg-white rounded-[2.5rem] shadow-[0_20px_60px_rgba(0,0,0,0.3)] border border-slate-100 flex flex-col overflow-hidden animate-in slide-in-from-bottom-10 fade-in duration-300">
-          
-          <div className="bg-emerald-900 p-6 text-white relative overflow-hidden shrink-0">
-            <div className="absolute right-[-20px] top-[-20px] opacity-10">
-              <Bot size={120} />
-            </div>
-            
+        <div className="fixed bottom-24 right-6 z-[999] w-[420px] max-w-[calc(100vw-3rem)] h-[600px] max-h-[calc(100vh-10rem)] bg-white rounded-[2.5rem] shadow-[0_20px_60px_rgba(0,0,0,0.3)] border border-slate-200 flex flex-col overflow-hidden animate-in slide-in-from-bottom-10 fade-in duration-300">
+          <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-6 text-white relative overflow-hidden shrink-0">
             <div className="relative z-10 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-white/20 backdrop-blur-md rounded-xl flex items-center justify-center">
-                  <Bot size={20} />
-                </div>
+                <div className="w-12 h-12 bg-white/20 backdrop-blur-md rounded-xl flex items-center justify-center"><Bot size={24} /></div>
                 <div>
-                  <h3 className="text-xl font-black tracking-tight leading-none">Assistant Guru</h3>
-                  <p className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest mt-1">NaijaShop Assistant</p>
+                  <h3 className="text-xl font-black tracking-tight leading-none">Shop AI Assistant</h3>
+                  <p className="text-[9px] font-bold text-indigo-200 uppercase tracking-widest mt-1 flex items-center gap-1"><Zap size={10} /> Powered by Smart Engine</p>
                 </div>
               </div>
-              <button 
-                onClick={clearChat}
-                className="p-2 hover:bg-white/10 rounded-xl transition-colors text-emerald-300"
-                title="Clear Chat"
-              >
-                <Trash2 size={18} />
-              </button>
+              <button onClick={() => setMessages([messages[0]])} className="p-2 hover:bg-white/10 rounded-xl transition-colors text-indigo-200"><Trash2 size={18} /></button>
             </div>
           </div>
 
-          <div 
-            ref={scrollRef}
-            className="flex-1 p-6 space-y-4 overflow-y-auto bg-slate-50/50 scrollbar-hide"
-          >
+          <div ref={scrollRef} className="flex-1 p-6 space-y-4 overflow-y-auto bg-slate-50 scrollbar-hide">
             {messages.map((msg) => (
-              <div 
-                key={msg.id} 
-                className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'} animate-in slide-in-from-bottom-2 fade-in duration-500`}
-              >
-                <div className={`max-w-[85%] p-4 rounded-3xl text-sm font-medium leading-relaxed shadow-sm ${
-                  msg.sender === 'user' 
-                    ? 'bg-emerald-600 text-white rounded-tr-none' 
-                    : 'bg-white border border-slate-100 text-slate-700 rounded-tl-none'
-                }`}>
-                  {msg.text}
+              <div key={msg.id} className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'} animate-in slide-in-from-bottom-2 fade-in duration-300`}>
+                <div className={`max-w-[85%] px-4 py-3 rounded-2xl text-sm font-medium leading-relaxed shadow-sm ${msg.sender === 'user' ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-white border border-slate-200 text-slate-700 rounded-tl-none'}`}>
+                  {msg.text.split('\n').map((line, i) => <p key={i}>{line}</p>)}
                 </div>
-                <div className="mt-1 flex items-center gap-1 text-[8px] font-black text-slate-300 uppercase tracking-widest">
-                  {msg.sender === 'user' ? <User size={8} /> : <Bot size={8} />}
-                  {msg.sender === 'user' ? 'You' : 'Assistant Guru'} • {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </div>
-
-                {msg.sender === 'bot' && msg.showOptions && (
-                  <div className="mt-3 flex flex-wrap gap-2 animate-in fade-in duration-700">
-                    {msg.action === 'RENEW_LICENSE' && (
-                      <button 
-                        onClick={() => handleAction('RENEW_LICENSE')}
-                        className="px-3 py-1.5 bg-indigo-600 text-white rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 transition-colors flex items-center gap-2 shadow-lg"
-                      >
-                        <CreditCard size={12} /> 💳 Renew License Now
-                      </button>
-                    )}
-                    {msg.action === 'VIEW_STOCK' && (
-                      <button 
-                        onClick={() => handleAction('VIEW_STOCK')}
-                        className="px-3 py-1.5 bg-emerald-600 text-white rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 transition-colors flex items-center gap-2 shadow-lg"
-                      >
-                        <Package size={12} /> 📦 View Low Stock
-                      </button>
-                    )}
-                    <button 
-                      onClick={() => setMessages(prev => [...prev, { id: Date.now().toString(), sender: 'bot', text: "No wahala, I am here if you need me!", timestamp: Date.now() }])}
-                      className="px-3 py-1.5 bg-emerald-50 text-emerald-600 rounded-full text-[10px] font-black uppercase tracking-widest border border-emerald-100 hover:bg-emerald-100 transition-colors"
-                    >
-                      ✅ This helped
-                    </button>
-                    <button 
-                      onClick={connectToHuman}
-                      className="px-3 py-1.5 bg-rose-50 text-rose-600 rounded-full text-[10px] font-black uppercase tracking-widest border border-rose-100 hover:bg-rose-100 transition-colors flex items-center gap-1 shadow-sm"
-                    >
-                      <Headphones size={12} /> Talk to Human
-                    </button>
-                  </div>
+                {msg.action && (
+                  <button onClick={() => executeAction(msg.action, msg.id)} disabled={msg.isExecuting} className="mt-2 px-4 py-2 bg-indigo-50 text-indigo-700 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-indigo-100 transition-colors disabled:opacity-50 flex items-center gap-2 shadow-sm">
+                    {msg.isExecuting ? <><Loader2 className="animate-spin" size={14} /> Executing...</> : <><CheckCircle2 size={14} /> {msg.action.label}</>}
+                  </button>
                 )}
               </div>
             ))}
-
-            {isTyping && (
-              <div className="flex flex-col items-start animate-in slide-in-from-bottom-2 fade-in duration-500">
-                <div className="bg-white border border-slate-100 p-4 rounded-3xl rounded-tl-none shadow-sm flex items-center gap-1">
-                  <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-                  <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                  <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce"></div>
-                </div>
-                <div className="mt-1 flex items-center gap-1 text-[8px] font-black text-slate-300 uppercase tracking-widest">
-                  <Bot size={8} /> Assistant is thinking...
-                </div>
-              </div>
-            )}
+            {isTyping && <div className="text-xs text-slate-400 font-medium px-2">AI thinking...</div>}
           </div>
 
           <div className="p-6 border-t border-slate-100 bg-white shrink-0">
-            <div className="relative">
-              <input 
-                type="text"
-                placeholder="Ask a question..."
-                className="w-full p-4 pr-12 bg-slate-50 border border-slate-200 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-emerald-500 font-medium transition-all"
-                value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-              />
+            <div className="relative flex items-center gap-2">
+              <div className="relative flex-1">
+                <input 
+                  type="text" 
+                  placeholder={isListening ? "Listening..." : "Ask about stock, sales..."}
+                  className={`w-full pl-4 pr-12 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-medium transition-all ${isListening ? 'border-rose-400 ring-2 ring-rose-200' : ''}`} 
+                  value={inputText} 
+                  onChange={e => setInputText(e.target.value)} 
+                  onKeyDown={e => e.key === 'Enter' && handleSend()} 
+                />
+                <button 
+                  onClick={startVoiceInput}
+                  className={`absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-xl transition-all ${isListening ? 'bg-rose-500 text-white animate-pulse' : 'text-slate-400 hover:bg-slate-200'}`}
+                  title="Voice Input"
+                >
+                  {isListening ? <MicOff size={18} /> : <Mic size={18} />}
+                </button>
+              </div>
               <button 
-                onClick={handleSend}
-                disabled={!inputText.trim() || isTyping}
-                className="absolute right-3 top-1/2 -translate-y-1/2 p-2 bg-emerald-600 text-white rounded-xl disabled:opacity-30 transition-all hover:bg-emerald-700 active:scale-90 shadow-lg shadow-emerald-200"
+                onClick={handleSend} 
+                disabled={!inputText.trim() || isTyping} 
+                className="p-3 bg-indigo-600 text-white rounded-xl disabled:opacity-30 transition-all hover:bg-indigo-700 active:scale-90 shadow-lg shadow-indigo-200"
               >
-                <Send size={18} />
+                <Send size={20} />
               </button>
             </div>
-            
-            <div className="flex items-center justify-center gap-2 text-slate-300 mt-4">
-              <Clock size={12} />
-              <span className="text-[9px] font-black uppercase tracking-widest">Offline Intelligence active</span>
-            </div>
+            <div className="flex items-center justify-center gap-2 text-slate-300 mt-3"><Sparkles size={12} /><span className="text-[9px] font-black uppercase tracking-widest">Smart AI • Offline-First</span></div>
           </div>
         </div>
       )}
@@ -308,4 +358,4 @@ const SupportChat: React.FC = () => {
   );
 };
 
-export default SupportChat;
+export default SmartSupportChat;

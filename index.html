@@ -45,12 +45,6 @@
     "xlsx": "https://esm.sh/xlsx@^0.18.5",
     "mammoth": "https://esm.sh/mammoth@^1.11.0",
     "@/": "./",
-    "@/components/": "./components/",
-    "@/hooks/": "./hooks/",
-    "@/utils/": "./utils/",
-    "@/services/": "./services/",
-    "@/db/": "./db/",
-    "@/pages/": "./pages/",
     "path": "https://esm.sh/path@^0.12.7",
     "url": "https://esm.sh/url@^0.11.4"
   }
@@ -65,13 +59,48 @@
     <script type="module" src="./index.tsx"></script>
     
     <script>
+      // Service Worker Registration - Safe & Robust
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          const swUrl = `${window.location.origin}/sw.js`;
-          navigator.serviceWorker
-            .register(swUrl)
-            .then(reg => console.log('SW registered:', reg.scope))
-            .catch(err => console.error('SW failed:', err));
+          // Only register in production or on localhost
+          const isLocalhost = Boolean(
+            window.location.hostname === 'localhost' ||
+            window.location.hostname === '[::1]' ||
+            window.location.hostname.match(/^127(?:\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)){3}$/)
+          );
+          
+          const isSecure = window.location.protocol === 'https:' || isLocalhost;
+          
+          if (!isSecure) {
+            console.warn('Service Worker requires HTTPS or localhost');
+            return;
+          }
+          
+          // Wait for DOM to be fully interactive
+          if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', registerSW);
+          } else {
+            registerSW();
+          }
+          
+          function registerSW() {
+            // Using relative path './sw.js' to ensure registration within current origin
+            navigator.serviceWorker.register('./sw.js', {
+              scope: './'
+            })
+            .then(registration => {
+              console.log('✅ SW registered:', registration.scope);
+              
+              // Check for updates
+              registration.addEventListener('updatefound', () => {
+                const newWorker = registration.installing;
+                console.log('🔄 SW update found');
+              });
+            })
+            .catch(err => {
+              console.warn('⚠️ SW registration failed:', err);
+            });
+          }
         });
       }
     </script>

@@ -142,7 +142,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
         </div>
       )}
 
-      {showCheckoutModal && <CheckoutModal isOpen={showCheckoutModal} onClose={() => setShowCheckoutModal(false)} cart={cart} total={total} currentUser={currentUser} onComplete={(sale) => { setCart([]); setShowCheckoutModal(false); setShowSuccessModal(true); setLastCompletedSale(sale); }} />}
+      {showCheckoutModal && <CheckoutModal isOpen={showCheckoutModal} onClose={() => setShowCheckoutModal(false)} cart={cart} total={total} currentUser={currentUser} onComplete={() => { setCart([]); setShowCheckoutModal(false); setShowSuccessModal(true); }} />}
       {showSuccessModal && <div className="fixed inset-0 z-[1300] bg-emerald-950/90 flex items-center justify-center p-4"><div className="bg-white p-10 rounded-[3rem] text-center space-y-6"><CheckCircle size={64} className="mx-auto text-emerald-500"/><h3 className="text-2xl font-black">Sale Completed!</h3><button onClick={() => setShowSuccessModal(false)} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black">Next Customer</button></div></div>}
     </div>
   );

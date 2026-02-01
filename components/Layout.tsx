@@ -185,7 +185,7 @@ const Layout: React.FC<LayoutProps> = ({
       </main>
       {showUnlockModal && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-          <div className="bg-white rounded-[3rem] w-full max-sm p-10 text-center space-y-8 animate-in zoom-in duration-300">
+          <div className="bg-white rounded-[3rem] w-full max-w-sm p-10 text-center space-y-8 animate-in zoom-in duration-300">
             <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-3xl flex items-center justify-center mx-auto shadow-inner"><Lock size={40} /></div>
             <h3 className="text-2xl font-black text-slate-900">Admin Unlock</h3>
             <form onSubmit={handleUnlockChallenge} className="space-y-6">
