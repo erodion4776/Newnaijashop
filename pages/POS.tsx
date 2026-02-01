@@ -27,7 +27,8 @@ import {
   ParkingCircle,
   RotateCcw,
   Percent,
-  TrendingDown
+  TrendingDown,
+  History
 } from 'lucide-react';
 import { Product, SaleItem, Staff, View, ParkedOrder } from '../types';
 import BarcodeScanner from '../components/BarcodeScanner';
@@ -76,9 +77,9 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
   }, [parkTrigger, cart.length]);
 
   // ==================== COMPUTED VALUES ====================
-  const categories = useMemo<string[]>(() => {
-    const cats = new Set<string>(products.map(p => p.category));
-    return ['All', ...(Array.from(cats) as string[])];
+  const categories = useMemo(() => {
+    const cats = new Set(products.map(p => p.category));
+    return ['All', ...Array.from(cats)];
   }, [products]);
 
   const filteredProducts = useMemo(() => {
@@ -201,7 +202,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
     try {
       await db.parked_orders.add({
         customerName: parkingCustomerName,
-        items: [...cart],
+        items: cart,
         total: cartSummary.total,
         staffId: currentUser?.id?.toString() || '0',
         timestamp: Date.now()
@@ -290,17 +291,34 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
               ref={searchInputRef}
               type="text"
               placeholder="Search products..."
-              className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500 font-medium transition-all"
+              className="w-full pl-10 pr-4 h-14 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500 font-medium transition-all"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
+
+          {/* Parked Orders List Icon Button */}
+          <button
+            onClick={() => setShowParkedOrders(true)}
+            className={`relative h-14 w-14 flex items-center justify-center bg-white border border-slate-200 rounded-xl transition-all shadow-sm active:scale-95 ${parkedOrders.length === 0 ? 'opacity-40' : 'opacity-100'}`}
+            title="Parked Orders List"
+          >
+            <History size={24} className="text-slate-600" />
+            {parkedOrders.length > 0 && (
+              <span className="absolute -top-1 -right-1 w-6 h-6 bg-rose-600 text-white text-[11px] font-black rounded-full flex items-center justify-center border-2 border-white shadow-sm animate-in zoom-in">
+                {parkedOrders.length}
+              </span>
+            )}
+          </button>
+
+          {/* Scanner Button */}
           <button
             onClick={() => setShowScanner(true)}
-            className="p-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all shadow-lg active:scale-95"
+            className="h-14 w-14 flex items-center justify-center bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all shadow-lg active:scale-95"
           >
-            <Camera size={20} />
+            <Camera size={24} />
           </button>
+
           <div className="hidden sm:flex bg-slate-100 rounded-xl p-1">
             <button onClick={() => setViewMode('grid')} className={`p-2 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-white shadow-sm' : 'text-slate-400'}`}>
               <Grid3x3 size={18} />
@@ -321,8 +339,8 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
 
       {/* MAIN CONTENT */}
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-        {/* PRODUCT GRID */}
-        <div className="flex-1 overflow-y-auto p-4">
+        {/* PRODUCT GRID (Full screen on mobile) */}
+        <div className="flex-1 overflow-y-auto p-4 pb-32 lg:pb-4">
           {filteredProducts.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center py-20">
               <Package size={64} className="text-slate-200 mb-4" />
@@ -360,8 +378,8 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
           )}
         </div>
 
-        {/* CART (Overlay on mobile, sidebar on desktop) */}
-        <div className={`lg:w-[400px] bg-white border-l border-slate-200 flex flex-col h-full lg:h-auto ${showMobileCart ? 'fixed inset-0 z-[150] w-full animate-in slide-in-from-bottom duration-300' : 'hidden lg:flex'}`}>
+        {/* CART (Mobile Drawer / Desktop Sidebar) */}
+        <div className={`lg:w-[400px] bg-white lg:border-l border-slate-200 flex flex-col h-full lg:h-auto ${showMobileCart ? 'fixed inset-0 z-[150] w-full animate-in slide-in-from-bottom duration-300' : 'hidden lg:flex'}`}>
           <div className="p-4 border-b border-slate-100 shrink-0">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
@@ -369,13 +387,18 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
                 <h3 className="font-black text-lg">Current Sale</h3>
               </div>
               <div className="flex gap-2 items-center">
+                {/* Parked Icon (Preserved) */}
                 <button onClick={() => setShowParkedOrders(true)} className="relative p-2 text-amber-600 hover:bg-amber-50 rounded-lg transition-all">
                   <ParkingCircle size={20} />
                   {parkedOrders.length > 0 && <span className="absolute -top-1 -right-1 w-5 h-5 bg-amber-500 text-white text-[10px] font-black rounded-full flex items-center justify-center">{parkedOrders.length}</span>}
                 </button>
+                {/* Trash Icon (Preserved) */}
                 <button onClick={clearCart} className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg transition-all"><Trash2 size={20} /></button>
-                {/* Mobile Close Button */}
-                <button onClick={() => setShowMobileCart(false)} className="lg:hidden p-2 text-slate-400 hover:bg-slate-100 rounded-full transition-all ml-2">
+                {/* Mobile Drawer Close Button */}
+                <button 
+                  onClick={() => setShowMobileCart(false)} 
+                  className="lg:hidden p-2 text-slate-400 hover:bg-slate-100 rounded-full transition-all ml-2"
+                >
                   <X size={28} />
                 </button>
               </div>
@@ -404,7 +427,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
                     <span className="w-8 text-center font-bold text-sm">{item.quantity}</span>
                     <button onClick={() => updateQuantity(item.productId, item.quantity + 1)} className="w-8 h-8 bg-white border border-slate-200 rounded-lg flex items-center justify-center"><Plus size={14} /></button>
                   </div>
-                  <button onClick={() => removeFromCart(item.productId)} className="p-2 text-slate-400 hover:text-rose-600 opacity-0 group-hover:opacity-100"><Trash2 size={16} /></button>
+                  <button onClick={() => removeFromCart(item.productId)} className="p-2 text-slate-400 hover:text-rose-600 lg:opacity-0 group-hover:opacity-100"><Trash2 size={16} /></button>
                 </div>
               ))
             )}
@@ -439,12 +462,12 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
         </div>
       </div>
 
-      {/* MOBILE FLOATING VIEW CART BUTTON */}
+      {/* MOBILE FLOATING 'VIEW CART' BUTTON */}
       {cart.length > 0 && !showMobileCart && (
         <div className="lg:hidden fixed bottom-24 left-1/2 -translate-x-1/2 z-[140] w-[90%] max-w-sm">
           <button 
             onClick={() => setShowMobileCart(true)}
-            className="w-full bg-emerald-600 text-white py-5 rounded-[2rem] font-black text-lg shadow-2xl flex items-center justify-center gap-3 active:scale-95 transition-all border-4 border-white/20"
+            className="w-full bg-emerald-600 text-white py-5 rounded-full font-black text-lg shadow-2xl flex items-center justify-center gap-3 active:scale-95 transition-all border-4 border-white/20"
           >
             <ShoppingCart size={24} />
             View Cart ({cartSummary.itemCount} items) - ₦{cartSummary.total.toLocaleString()}
@@ -455,72 +478,36 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
       {/* MODALS */}
       {showScanner && <BarcodeScanner onScan={handleBarcodeScan} onClose={() => setShowScanner(false)} />}
       {showCheckout && <CheckoutModal isOpen={showCheckout} onClose={() => setShowCheckout(false)} cart={cart} total={cartSummary.total} currentUser={currentUser} onComplete={handleCheckoutComplete} />}
-      
       {showParkModal && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
           <div className="bg-white rounded-[3rem] w-full max-w-sm p-8 space-y-6 animate-in zoom-in">
-            <div className="text-center">
-              <div className="w-16 h-16 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                <ParkingCircle size={32} />
-              </div>
-              <h3 className="text-2xl font-black">Park Order</h3>
-              <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Hold current items</p>
-            </div>
-            <input autoFocus type="text" placeholder="Customer Name" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" value={parkingCustomerName} onChange={e => setParkingCustomerName(e.target.value)} />
-            <button onClick={confirmParkOrder} className="w-full py-4 bg-amber-600 text-white rounded-2xl font-black shadow-lg shadow-amber-200">Confirm Park</button>
-            <button onClick={() => { setShowParkModal(false); setParkingCustomerName(''); }} className="w-full text-slate-400 font-bold uppercase text-[10px]">Cancel</button>
+            <div className="text-center"><div className="w-16 h-16 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-4"><ParkingCircle size={32} /></div><h3 className="text-2xl font-black">Park Order</h3></div>
+            <input autoFocus type="text" placeholder="Customer Name" className="w-full px-4 py-4 bg-slate-50 border rounded-2xl outline-none font-bold" value={parkingCustomerName} onChange={e => setParkingCustomerName(e.target.value)} />
+            <button onClick={confirmParkOrder} className="w-full py-4 bg-amber-600 text-white rounded-2xl font-black shadow-lg">Confirm Park</button>
+            <button onClick={() => setShowParkModal(false)} className="w-full text-slate-400 font-bold uppercase text-xs">Cancel</button>
           </div>
         </div>
       )}
-
       {showParkedOrders && (
         <div className="fixed inset-0 z-[200] bg-white flex flex-col animate-in slide-in-from-right duration-300">
-          <div className="p-6 border-b flex items-center justify-between shrink-0 bg-gradient-to-r from-amber-50 to-white">
-            <div>
-              <h3 className="text-2xl font-black text-slate-900">Parked Orders</h3>
-              <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Orders waiting for checkout</p>
-            </div>
-            <button onClick={() => setShowParkedOrders(false)} className="p-3 hover:bg-slate-50 rounded-full transition-all text-slate-400"><X size={28} /></button>
-          </div>
-          <div className="flex-1 overflow-y-auto p-6 space-y-4">
-            {parkedOrders.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-slate-300">
-                <ParkingCircle size={64} className="mb-4" />
-                <p className="font-black text-xs uppercase tracking-widest">No parked orders</p>
-              </div>
-            ) : (
-              parkedOrders.map(order => (
-                <div key={order.id} className="bg-white border-2 border-slate-100 rounded-[2rem] p-6 shadow-sm hover:border-amber-400 transition-all">
-                  <div className="flex justify-between items-start mb-4">
-                    <div>
-                      <h4 className="font-black text-xl text-slate-900">{order.customerName}</h4>
-                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest flex items-center gap-1 mt-1">
-                        <Clock size={10} /> {new Date(order.timestamp).toLocaleString()}
-                      </p>
-                    </div>
-                    <span className="text-2xl font-black text-amber-600">₦{order.total.toLocaleString()}</span>
+          <div className="p-6 border-b border-slate-100 flex items-center justify-between"><div><h3 className="text-2xl font-black">Parked Orders</h3></div><button onClick={() => setShowParkedOrders(false)}><X size={24} /></button></div>
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            {parkedOrders.length === 0 ? <p className="text-center text-slate-400 py-20">No parked orders</p> : parkedOrders.map(order => (
+              <div key={order.id} className="bg-white border-2 border-slate-200 rounded-2xl p-4">
+                <div className="flex justify-between items-start mb-3">
+                  <div>
+                    <h4 className="font-black text-lg">{order.customerName}</h4>
+                    <p className="text-xs text-slate-400">{new Date(order.timestamp).toLocaleString()}</p>
                   </div>
-                  
-                  <div className="bg-slate-50 rounded-2xl p-4 mb-4">
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Items Breakdown</p>
-                    <div className="space-y-1">
-                      {order.items.map((item, i) => (
-                        <div key={i} className="flex justify-between text-xs">
-                          <span className="text-slate-600">{item.name}</span>
-                          <span className="font-bold text-slate-900">x{item.quantity}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-2">
-                    <button onClick={() => loadParkedOrder(order)} className="py-3 bg-emerald-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-emerald-200">Load</button>
-                    <button onClick={() => editParkedOrder(order)} className="py-3 bg-indigo-50 text-indigo-700 rounded-xl font-black text-[10px] uppercase tracking-widest border border-indigo-100">Edit</button>
-                    <button onClick={() => deleteParkedOrder(order.id!)} className="py-3 bg-rose-50 text-rose-700 rounded-xl font-black text-[10px] uppercase tracking-widest border border-rose-100">Delete</button>
-                  </div>
+                  <span className="font-black text-amber-600">₦{order.total.toLocaleString()}</span>
                 </div>
-              ))
-            )}
+                <div className="flex gap-2">
+                  <button onClick={() => loadParkedOrder(order)} className="flex-1 py-2 bg-emerald-600 text-white rounded-xl font-bold text-xs">Load</button>
+                  <button onClick={() => editParkedOrder(order)} className="flex-1 py-2 bg-slate-100 text-slate-600 rounded-xl font-bold text-xs">Edit</button>
+                  <button onClick={() => deleteParkedOrder(order.id!)} className="p-2 text-rose-600"><Trash2 size={18} /></button>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -528,84 +515,17 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
       {editingParkedOrder && (
         <div className="fixed inset-0 z-[250] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-white rounded-[3rem] w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[85vh] animate-in zoom-in">
-            <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-white">
-              <div>
-                <h3 className="text-2xl font-black text-slate-900">Edit Parked Order</h3>
-                <p className="text-[10px] text-amber-600 font-black uppercase tracking-widest mt-1">Customer: {editingParkedOrder.customerName}</p>
-              </div>
-              <button onClick={() => { setEditingParkedOrder(null); setEditingCart([]); }} className="p-3 hover:bg-slate-50 rounded-full text-slate-400"><X size={24} /></button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-8 space-y-4 scrollbar-hide">
-              {editingCart.map((item, idx) => {
-                const product = products.find(p => p.id === item.productId);
-                return (
-                  <div key={idx} className="bg-slate-50 rounded-2xl p-5 flex items-center gap-4 border border-slate-100">
-                    <div className="flex-1 min-w-0">
-                      <h4 className="font-bold text-slate-900 truncate">{item.name}</h4>
-                      <p className="text-xs text-slate-500 font-medium">₦{item.price.toLocaleString()} per unit</p>
-                    </div>
-                    <div className="flex items-center gap-2 bg-white p-1 rounded-xl border border-slate-200">
-                      <button
-                        onClick={() => {
-                          const updated = [...editingCart];
-                          if (updated[idx].quantity > 1) {
-                            updated[idx].quantity--;
-                            setEditingCart(updated);
-                          } else {
-                            setEditingCart(editingCart.filter((_, i) => i !== idx));
-                          }
-                        }}
-                        className="w-10 h-10 bg-slate-50 text-slate-600 rounded-lg flex items-center justify-center active:scale-95 transition-all"
-                      >
-                        <Minus size={18} />
-                      </button>
-                      <span className="w-10 text-center font-black text-lg tabular-nums">{item.quantity}</span>
-                      <button
-                        onClick={() => {
-                          if (product && item.quantity < product.stock_qty) {
-                            const updated = [...editingCart];
-                            updated[idx].quantity++;
-                            setEditingCart(updated);
-                          } else {
-                            alert("Limit reached based on current stock");
-                          }
-                        }}
-                        className="w-10 h-10 bg-slate-50 text-slate-600 rounded-lg flex items-center justify-center active:scale-95 transition-all"
-                      >
-                        <Plus size={18} />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-              {editingCart.length === 0 && (
-                <div className="py-20 text-center space-y-4">
-                  <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto text-slate-300"><ShoppingCart size={32}/></div>
-                  <p className="text-slate-400 font-bold text-sm">Order items cleared. Saving will delete the parked order.</p>
+            <div className="p-8 border-b border-slate-100 flex items-center justify-between"><div><h3 className="text-2xl font-black">Edit Saved Order</h3><p className="text-xs text-amber-600 font-bold uppercase">{editingParkedOrder.customerName}</p></div><button onClick={() => { setEditingParkedOrder(null); setEditingCart([]); }}><X size={24} /></button></div>
+            <div className="flex-1 overflow-y-auto p-8 space-y-4">
+              {editingCart.map((item, idx) => (
+                <div key={idx} className="bg-slate-50 rounded-2xl p-4 flex items-center gap-4">
+                  <div className="flex-1 min-w-0"><h4 className="font-bold truncate">{item.name}</h4><p className="text-xs text-slate-500">₦{item.price.toLocaleString()}</p></div>
+                  <div className="flex items-center gap-2"><button onClick={() => { const u = [...editingCart]; if(u[idx].quantity > 1) u[idx].quantity--; else u.splice(idx,1); setEditingCart(u); }} className="w-8 h-8 bg-white rounded-lg flex items-center justify-center"><Minus size={14}/></button><span className="w-8 text-center font-bold">{item.quantity}</span><button onClick={() => { const u = [...editingCart]; u[idx].quantity++; setEditingCart(u); }} className="w-8 h-8 bg-white rounded-lg flex items-center justify-center"><Plus size={14}/></button></div>
                 </div>
-              )}
+              ))}
+              {editingCart.length === 0 && <p className="text-center text-slate-400 py-10">Order is empty</p>}
             </div>
-
-            <div className="p-8 border-t bg-white shrink-0">
-              <div className="flex gap-3">
-                <button onClick={() => { setEditingParkedOrder(null); setEditingCart([]); }} className="flex-1 py-4 bg-slate-100 text-slate-500 rounded-2xl font-black text-xs uppercase tracking-widest">Cancel</button>
-                <button 
-                  onClick={async () => {
-                    if (editingCart.length === 0) {
-                      await db.parked_orders.delete(editingParkedOrder.id!);
-                      setEditingParkedOrder(null);
-                      alert("Empty order removed");
-                    } else {
-                      await saveEditedParkedOrder();
-                    }
-                  }} 
-                  className="flex-[2] py-4 bg-indigo-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-indigo-100 flex items-center justify-center gap-2"
-                >
-                  <Save size={18} /> Update Saved Order
-                </button>
-              </div>
-            </div>
+            <div className="p-8 border-t"><button onClick={async () => { if(editingCart.length === 0) await db.parked_orders.delete(editingParkedOrder.id!); else await saveEditedParkedOrder(); setEditingParkedOrder(null); }} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black">Update Saved Order</button></div>
           </div>
         </div>
       )}
