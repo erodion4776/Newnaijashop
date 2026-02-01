@@ -80,8 +80,8 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
         </div>
       );
     }
-    // Fix: Access props through this.props
-    return this.props.children;
+    // Fix: Cast 'this' to any to access children when inheritance is not correctly resolved by the compiler
+    return (this as any).props.children;
   }
 }
 
