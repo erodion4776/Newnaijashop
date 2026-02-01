@@ -28,6 +28,7 @@ import { View, Staff } from '../types';
 import ClosingReport from './ClosingReport';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
+import SmartSupportChat from './SupportChat';
 
 const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-9987-b4ed4c0e3c36.png";
 
@@ -148,7 +149,7 @@ const Layout: React.FC<LayoutProps> = ({
         <div className="p-4 space-y-3">
           {renderTrialWidget()}
           {showAllFeatures && (
-            <button onClick={() => setShowClosingModal(true)} className="w-full flex items-center justify-center gap-2 py-4 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-emerald-500 shadow-xl shadow-emerald-950/20 active:scale-95">
+            <button onClick={() => setShowClosingModal(true)} className="w-full flex items-center justify-center gap-2 py-4 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-emerald-50 shadow-xl shadow-emerald-950/20 active:scale-95">
               <Moon size={16} /> Close Shop for Today
             </button>
           )}
@@ -181,7 +182,15 @@ const Layout: React.FC<LayoutProps> = ({
              <p className="text-xs font-bold text-slate-800 leading-none">{shopName}</p>
           </div>
         </header>
-        <section className="flex-1 overflow-y-auto p-4 lg:p-8">{children}</section>
+        <section className="flex-1 overflow-y-auto p-4 lg:p-8">
+          {children}
+        </section>
+
+        {/* Global Smart Assistant */}
+        <SmartSupportChat 
+          currentUser={currentUser}
+          onNavigate={(view) => setView(view as any)}
+        />
       </main>
       {showUnlockModal && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">

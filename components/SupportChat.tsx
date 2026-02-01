@@ -126,7 +126,7 @@ class SmartBotEngine {
     const intent = this.detectIntent(input);
     if (!intent) {
       return { 
-        text: `Oga ${this.currentUser?.name || 'Boss'}, I didn't quite catch that. You can ask me about stock, sales, or tell me to clear cart, park order, or add items to cart.` 
+        text: `Oga ${this.currentUser?.name || 'Boss'}, I didn't quite catch that. You can ask me about stock, sales, or tell me to manage your cart!` 
       };
     }
 
@@ -233,7 +233,7 @@ const SmartSupportChat: React.FC<SmartChatProps> = ({
     }
 
     const recognition = new SpeechRecognition();
-    recognition.lang = 'en-NG'; // Set locale to Nigerian English for better accent recognition
+    recognition.lang = 'en-NG'; // Nigerian locale for better accent matching
     
     recognition.onstart = () => {
       setIsListening(true);
@@ -288,7 +288,7 @@ const SmartSupportChat: React.FC<SmartChatProps> = ({
 
   return (
     <>
-      <button onClick={() => setIsOpen(!isOpen)} className="fixed bottom-6 right-6 z-[999] w-16 h-16 bg-indigo-600 text-white rounded-full shadow-2xl flex items-center justify-center hover:bg-indigo-700 transition-all hover:scale-110 active:scale-95 group">
+      <button onClick={() => setIsOpen(!isOpen)} className="fixed bottom-6 right-6 z-[999] w-16 h-16 bg-indigo-600 text-white rounded-full shadow-2xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all group">
         {isOpen ? <X size={28} /> : <><Sparkles size={28} className="group-hover:rotate-12 transition-transform" /><span className="absolute -top-1 -right-1 w-5 h-5 bg-emerald-500 border-2 border-white rounded-full flex items-center justify-center"><Zap size={12} className="text-white" /></span></>}
       </button>
 
@@ -299,7 +299,7 @@ const SmartSupportChat: React.FC<SmartChatProps> = ({
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 bg-white/20 backdrop-blur-md rounded-xl flex items-center justify-center"><Bot size={24} /></div>
                 <div>
-                  <h3 className="text-xl font-black tracking-tight leading-none">Shop AI Assistant</h3>
+                  <h3 className="text-xl font-black tracking-tight leading-none">AI Shop Assistant</h3>
                   <p className="text-[9px] font-bold text-indigo-200 uppercase tracking-widest mt-1 flex items-center gap-1"><Zap size={10} /> Powered by Smart Engine</p>
                 </div>
               </div>
