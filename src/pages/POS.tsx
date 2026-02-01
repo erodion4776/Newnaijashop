@@ -27,7 +27,8 @@ import {
   ParkingCircle,
   RotateCcw,
   Percent,
-  TrendingDown
+  TrendingDown,
+  History
 } from 'lucide-react';
 import { Product, SaleItem, Staff, View, ParkedOrder } from '../types';
 import BarcodeScanner from '../components/BarcodeScanner';
@@ -286,17 +287,34 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
               ref={searchInputRef}
               type="text"
               placeholder="Search products..."
-              className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500 font-medium transition-all"
+              className="w-full pl-10 pr-4 h-14 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500 font-medium transition-all"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
+
+          {/* Parked Orders List Icon Button */}
+          <button
+            onClick={() => setShowParkedOrders(true)}
+            className={`relative h-14 w-14 flex items-center justify-center bg-white border border-slate-200 rounded-xl transition-all shadow-sm active:scale-95 ${parkedOrders.length === 0 ? 'opacity-40' : 'opacity-100'}`}
+            title="Parked Orders List"
+          >
+            <History size={24} className="text-slate-600" />
+            {parkedOrders.length > 0 && (
+              <span className="absolute -top-1 -right-1 w-6 h-6 bg-rose-600 text-white text-[11px] font-black rounded-full flex items-center justify-center border-2 border-white shadow-sm animate-in zoom-in">
+                {parkedOrders.length}
+              </span>
+            )}
+          </button>
+
+          {/* Scanner Button */}
           <button
             onClick={() => setShowScanner(true)}
-            className="p-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all shadow-lg active:scale-95"
+            className="h-14 w-14 flex items-center justify-center bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all shadow-lg active:scale-95"
           >
-            <Camera size={20} />
+            <Camera size={24} />
           </button>
+
           <div className="hidden sm:flex bg-slate-100 rounded-xl p-1">
             <button onClick={() => setViewMode('grid')} className={`p-2 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-white shadow-sm' : 'text-slate-400'}`}>
               <Grid3x3 size={18} />
@@ -307,7 +325,6 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
           </div>
         </div>
         <div className="flex gap-2 mt-3 overflow-x-auto scrollbar-hide pb-2">
-          {/* Fix: Added explicit string type for 'cat' parameter in categories.map to resolve unknown type errors */}
           {categories.map((cat: string) => (
             <button key={cat} onClick={() => setSelectedCategory(cat)} className={`px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest whitespace-nowrap transition-all ${selectedCategory === cat ? 'bg-emerald-600 text-white shadow-lg' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>
               {cat}
