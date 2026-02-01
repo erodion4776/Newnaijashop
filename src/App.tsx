@@ -19,17 +19,19 @@ import AuditTrail from './pages/AuditTrail';
 import ActivationPage from './pages/ActivationPage';
 import AffiliatePortal from './pages/AffiliatePortal';
 import SetupShop from './pages/SetupShop';
+import LandingPage from './pages/LandingPage';
 import MasterAdminHub from './pages/MasterAdminHub';
 import InstallModal from './components/InstallModal';
+import SupportChat from './components/SupportChat';
 import { performAutoSnapshot } from './utils/backup';
 import { 
   AlertTriangle,
   ShieldAlert,
   CreditCard,
   AlertCircle,
-  ChevronLeft,
   Clock,
-  Loader2
+  Loader2,
+  ChevronLeft
 } from 'lucide-react';
 
 const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-9987-b4ed4c0e3c36.png";
@@ -39,10 +41,13 @@ export const getTrialRemainingTime = (installationDate: number) => {
   const trialPeriod = 30 * 24 * 60 * 60 * 1000;
   const expiry = installationDate + trialPeriod;
   const remaining = expiry - Date.now();
+  
   if (remaining <= 0) return { days: 0, hours: 0, minutes: 0, totalMs: 0 };
+  
   const days = Math.floor(remaining / (24 * 60 * 60 * 1000));
   const hours = Math.floor((remaining % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
   const minutes = Math.floor((remaining % (60 * 60 * 1000)) / (60 * 1000));
+  
   return { days, hours, minutes, totalMs: remaining };
 };
 
@@ -51,9 +56,20 @@ interface ErrorBoundaryState { hasError: boolean; error: Error | null; }
 
 class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   state: ErrorBoundaryState;
+  /**
+   * Fix: Explicitly define props to resolve 'Property props does not exist' error 
+   * which can occur in strict mode or specific TypeScript configurations when 
+   * accessing this.props in class components.
+   */
+  props: ErrorBoundaryProps;
+
   constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = { hasError: false, error: null };
+    /**
+     * Fix: Explicitly assign props to class instance.
+     */
+    this.props = props;
   }
   static getDerivedStateFromError(error: Error): ErrorBoundaryState { 
     return { hasError: true, error }; 
@@ -78,7 +94,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 }
 
 const AppContent: React.FC = () => {
-  const [currentView, setCurrentView] = useState<View>('dashboard');
+  const [currentView, setCurrentView] = useState<View>('landing');
   const [isInitialized, setIsInitialized] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
   const [currentUser, setCurrentUser] = useState<Staff | null>(null);
@@ -87,11 +103,14 @@ const AppContent: React.FC = () => {
   const [isStaffLock, setIsStaffLock] = useState(localStorage.getItem('isStaffLock') === 'true');
   const [isAffiliateView, setIsAffiliateView] = useState(window.location.pathname.includes('affiliate'));
   const [isMasterView, setIsMasterView] = useState(window.location.pathname.includes('master-control'));
+  
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showInstallModal, setShowInstallModal] = useState(false);
   const [isPWA, setIsPWA] = useState(false);
   const [activationSession, setActivationSession] = useState<string | null>(null);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [showLanding, setShowLanding] = useState(true);
+
   const [now, setNow] = useState(Date.now());
 
   const settings = useLiveQuery(() => db.settings.get('app_settings'));
@@ -109,17 +128,21 @@ const AppContent: React.FC = () => {
       setActivationSession(session);
       setCurrentView('activation');
     }
+
     const splashTimer = setTimeout(() => setShowSplash(false), 2000);
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone;
     setIsPWA(isStandalone);
+
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
       setDeferredPrompt(e);
     };
+
     const checkPath = () => {
       setIsAffiliateView(window.location.pathname.includes('affiliate'));
       setIsMasterView(window.location.pathname.includes('master-control'));
     };
+
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     window.addEventListener('popstate', checkPath);
     return () => {
@@ -137,11 +160,6 @@ const AppContent: React.FC = () => {
         await db.settings.update('app_settings', { last_used_timestamp: Date.now() });
       }
     });
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') performAutoSnapshot();
-    };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, []);
 
   const s = settings as any;
@@ -167,12 +185,27 @@ const AppContent: React.FC = () => {
     handler.openIframe();
   };
 
+  const handleInstallClick = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setDeferredPrompt(null);
+        setShowInstallModal(false);
+      }
+    }
+  };
+
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const staff = staffList.find(s => s.id === Number(selectedStaffId));
     if (loginPassword === MASTER_RECOVERY_PIN) {
       const admin = staffList.find(s => s.role === 'Admin');
-      if (admin) { setCurrentUser(admin); setCurrentView('dashboard'); return; }
+      if (admin) {
+        setCurrentUser(admin);
+        setCurrentView('dashboard');
+        return;
+      }
     }
     if (staff && staff.password === loginPassword) {
       setCurrentUser(staff);
@@ -183,10 +216,15 @@ const AppContent: React.FC = () => {
     }
   };
 
+  const toggleStaffLock = (active: boolean) => {
+    setIsStaffLock(active);
+    localStorage.setItem('isStaffLock', active.toString());
+  };
+
   if (showSplash || !isInitialized) {
     return (
       <div className="min-h-screen bg-emerald-900 flex flex-col items-center justify-center p-6 text-center">
-        <div className="w-32 h-32 bg-white rounded-[2.5rem] p-6 flex items-center justify-center shadow-2xl mb-8">
+        <div className="w-32 h-32 bg-white rounded-[2.5rem] p-6 flex items-center justify-center shadow-2xl animate-pulse-soft mb-8">
           <img src={LOGO_URL} className="w-full h-full object-contain" alt="Logo" />
         </div>
         <h1 className="text-white text-4xl font-black tracking-tighter">NaijaShop POS</h1>
@@ -200,10 +238,12 @@ const AppContent: React.FC = () => {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6 text-center">
         <div className="max-w-md w-full bg-slate-900 p-12 rounded-[3.5rem] shadow-2xl border border-rose-500/30 space-y-8">
-          <div className="w-24 h-24 bg-rose-500/10 text-rose-500 rounded-full flex items-center justify-center mx-auto"><Clock size={48} /></div>
-          <h2 className="text-3xl font-black text-white">Security Alert</h2>
-          <p className="text-rose-200/60">System clock tampering detected. Please set your phone time correctly.</p>
-          <button onClick={() => window.location.reload()} className="w-full py-5 bg-rose-600 text-white rounded-2xl font-black">Re-validate Terminal</button>
+          <div className="w-24 h-24 bg-rose-500/10 text-rose-500 rounded-full flex items-center justify-center mx-auto animate-pulse">
+            <Clock size={48} />
+          </div>
+          <h2 className="text-3xl font-black text-white tracking-tight leading-tight">Security Alert</h2>
+          <p className="text-rose-200/60 font-medium leading-relaxed">System clock tampering detected. Oga, please ensure your phone date and time are set correctly.</p>
+          <button onClick={() => window.location.reload()} className="w-full py-5 bg-rose-600 text-white rounded-2xl font-black text-lg">Re-validate Terminal</button>
         </div>
       </div>
     );
@@ -211,29 +251,25 @@ const AppContent: React.FC = () => {
 
   if (isTrialExpired && currentView !== 'activation') {
     return (
-      <div className="min-h-screen bg-emerald-950 flex items-center justify-center p-6 text-center">
-        <div className="max-w-md w-full bg-white p-12 rounded-[3.5rem] space-y-8">
-          <div className="w-24 h-24 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto"><ShieldAlert size={48} /></div>
-          <h2 className="text-3xl font-black">Trial Expired</h2>
-          <p className="text-slate-500">Oga, your 30-day trial has ended. Please subscribe to continue.</p>
-          <button onClick={handlePaystackPayment} className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-xl">Subscribe Now</button>
+      <div className="min-h-screen bg-emerald-950 flex items-center justify-center p-6">
+        <div className="max-w-md w-full bg-white p-12 rounded-[3.5rem] shadow-2xl text-center space-y-8">
+          <div className="w-24 h-24 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
+            <ShieldAlert size={48} />
+          </div>
+          <h2 className="text-3xl font-black text-slate-900 tracking-tighter">Trial Expired</h2>
+          <p className="text-slate-500 font-medium">Oga, your 30-day trial has ended. Please subscribe to continue.</p>
+          <button onClick={handlePaystackPayment} disabled={isProcessingPayment} className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-xl shadow-xl flex items-center justify-center gap-3">
+            {isProcessingPayment ? <Loader2 className="animate-spin" /> : <CreditCard size={24} />} Subscribe Now
+          </button>
         </div>
       </div>
     );
   }
 
-  if (isAffiliateView) {
-    return (
-      <div className="min-h-screen bg-slate-50 p-8">
-        <button onClick={() => { window.history.pushState({}, '', '/'); setIsAffiliateView(false); }} className="mb-6 flex items-center gap-2 font-black uppercase text-[10px] tracking-widest">
-          <ChevronLeft size={14} /> Back to Terminal
-        </button>
-        <AffiliatePortal />
-      </div>
-    );
-  }
+  if (isAffiliateView) return <AffiliatePortal />;
 
   if (isInitialized && (!settings?.is_setup_complete || staffList.length === 0)) {
+    if (showLanding) return <LandingPage onStartTrial={() => setShowLanding(false)} />;
     return <SetupShop onComplete={() => window.location.reload()} />;
   }
 
@@ -242,19 +278,21 @@ const AppContent: React.FC = () => {
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
         <div className="w-full max-w-sm space-y-10">
           <div className="text-center flex flex-col items-center">
-             <div className="w-24 h-24 bg-white rounded-[2rem] p-4 flex items-center justify-center shadow-2xl mb-6">
+             <div className="w-24 h-24 bg-white rounded-[2rem] p-4 flex items-center justify-center shadow-2xl border border-slate-100 mb-6">
                 <img src={LOGO_URL} className="w-full h-full object-contain" alt="Logo" />
              </div>
-             <h1 className="text-4xl font-black text-slate-900">{settings?.shop_name || 'NaijaShop'}</h1>
+             <h1 className="text-4xl font-black text-slate-900 tracking-tight">{settings?.shop_name || 'NaijaShop'}</h1>
           </div>
           <div className="bg-white p-10 rounded-[3rem] shadow-2xl border border-slate-200 space-y-8">
             <form onSubmit={handleLoginSubmit} className="space-y-6">
-              <select required className="w-full px-5 py-4 bg-slate-50 border rounded-2xl font-bold" value={selectedStaffId} onChange={(e) => setSelectedStaffId(Number(e.target.value))}>
+              <select required className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold outline-none" value={selectedStaffId} onChange={(e) => setSelectedStaffId(Number(e.target.value))}>
                 <option value="">Select Account</option>
-                {staffList.map(s => <option key={s.id} value={s.id!}>{s.name} ({s.role})</option>)}
+                {staffList.sort((a,b) => (a.role === 'Admin' ? -1 : 1)).map(s => (
+                  <option key={s.id} value={s.id!}>{s.name} ({s.role})</option>
+                ))}
               </select>
-              <input required type="password" placeholder="PIN / Password" className="w-full px-5 py-4 bg-slate-50 border rounded-2xl font-bold" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} />
-              <button type="submit" className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-xl">Unlock Terminal</button>
+              <input required type="password" placeholder="PIN / Password" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold outline-none" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} />
+              <button type="submit" className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-xl shadow-xl">Unlock Terminal</button>
             </form>
           </div>
         </div>
@@ -263,36 +301,53 @@ const AppContent: React.FC = () => {
   }
 
   return (
-    <Layout 
-      activeView={currentView} setView={setCurrentView} 
-      shopName={settings?.shop_name || 'NaijaShop POS'} 
-      currentUser={currentUser} 
-      isStaffLock={isStaffLock} toggleStaffLock={(a) => { setIsStaffLock(a); localStorage.setItem('isStaffLock', a.toString()); }}
-      adminPin={settings?.admin_pin || ''}
-      onLogout={() => setCurrentUser(null)}
-      canInstall={!!deferredPrompt} onInstall={handleInstallClick}
-      trialRemaining={trial} isSubscribed={s?.isSubscribed} onSubscribe={handlePaystackPayment}
-    >
-      {showInstallModal && <InstallModal onInstall={handleInstallClick} onClose={() => setShowInstallModal(false)} />}
-      {currentView === 'dashboard' && <Dashboard currentUser={currentUser} setView={setCurrentView} isStaffLock={isStaffLock} trialRemaining={trial} isSubscribed={s?.isSubscribed} onSubscribe={handlePaystackPayment} />}
-      {currentView === 'pos' && <POS setView={setCurrentView} currentUser={currentUser} />}
-      {currentView === 'activity-log' && <ActivityLog currentUser={currentUser} />}
-      {currentView === 'audit-trail' && <AuditTrail />}
-      {currentView === 'expense-tracker' && <ExpenseTracker />}
-      {currentView === 'transfer-station' && <TransferStation setView={setCurrentView} />}
-      {currentView === 'inventory' && <Inventory setView={setCurrentView} currentUser={currentUser} isStaffLock={isStaffLock} />}
-      {currentView === 'inventory-ledger' && <InventoryLedger />}
-      {currentView === 'debts' && <Debts />}
-      {currentView === 'business-hub' && <BusinessHub />}
-      {currentView === 'staff-management' && <StaffManagement />}
-      {currentView === 'security-backups' && <SecurityBackups currentUser={currentUser} />}
-      {currentView === 'settings' && <Settings currentUser={currentUser} />}
-      {currentView === 'activation' && activationSession && (
-        <ActivationPage sessionRef={activationSession} onActivated={() => { setActivationSession(null); window.history.replaceState({}, '', "/"); setCurrentView('dashboard'); }} />
-      )}
-    </Layout>
+    <>
+      <Layout 
+        activeView={currentView} 
+        setView={setCurrentView} 
+        shopName={settings?.shop_name || 'NaijaShop POS'} 
+        currentUser={currentUser} 
+        isStaffLock={isStaffLock}
+        toggleStaffLock={toggleStaffLock}
+        adminPin={settings?.admin_pin || ''}
+        onLogout={() => setCurrentUser(null)}
+        trialRemaining={trial}
+        isSubscribed={s?.isSubscribed}
+        onSubscribe={handlePaystackPayment}
+      >
+        {currentView === 'dashboard' && <Dashboard currentUser={currentUser} setView={setCurrentView} isStaffLock={isStaffLock} trialRemaining={trial} isSubscribed={s?.isSubscribed} onSubscribe={handlePaystackPayment} />}
+        {currentView === 'pos' && <POS setView={setCurrentView} currentUser={currentUser} />}
+        {currentView === 'activity-log' && <ActivityLog currentUser={currentUser} />}
+        {currentView === 'audit-trail' && <AuditTrail />}
+        {currentView === 'expense-tracker' && <ExpenseTracker />}
+        {currentView === 'transfer-station' && <TransferStation setView={setCurrentView} />}
+        {currentView === 'inventory' && <Inventory setView={setCurrentView} currentUser={currentUser} isStaffLock={isStaffLock} />}
+        {currentView === 'inventory-ledger' && <InventoryLedger />}
+        {currentView === 'debts' && <Debts />}
+        {currentView === 'business-hub' && <BusinessHub />}
+        {currentView === 'staff-management' && <StaffManagement />}
+        {currentView === 'security-backups' && <SecurityBackups currentUser={currentUser} />}
+        {currentView === 'settings' && <Settings currentUser={currentUser} />}
+        {currentView === 'activation' && activationSession && (
+          <ActivationPage 
+            sessionRef={activationSession} 
+            onActivated={() => {
+              setActivationSession(null);
+              window.history.replaceState({}, document.title, "/");
+              setCurrentView('dashboard');
+            }} 
+          />
+        )}
+      </Layout>
+      <SupportChat />
+    </>
   );
 };
 
-const App: React.FC = () => (<ErrorBoundary><AppContent /></ErrorBoundary>);
+const App: React.FC = () => (
+  <ErrorBoundary>
+    <AppContent />
+  </ErrorBoundary>
+);
+
 export default App;
