@@ -1,4 +1,5 @@
-import React, { useState, useEffect, ErrorInfo, ReactNode, Component } from 'react';
+
+import React, { useState, useEffect, ReactNode, Component } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, initSettings } from './db/db';
 import { View, Staff, SaleItem, Product } from './types';
@@ -17,19 +18,13 @@ import Settings from './pages/Settings';
 import ExpenseTracker from './pages/ExpenseTracker';
 import AuditTrail from './pages/AuditTrail';
 import ActivationPage from './pages/ActivationPage';
-import AffiliatePortal from './pages/AffiliatePortal';
 import SetupShop from './pages/SetupShop';
 import LandingPage from './pages/LandingPage';
 import MasterAdminHub from './pages/MasterAdminHub';
-import InstallModal from './components/InstallModal';
 import SupportChat from './components/SupportChat';
 import { 
   AlertTriangle,
   ShieldAlert,
-  CreditCard,
-  AlertCircle,
-  Clock,
-  Loader2
 } from 'lucide-react';
 
 const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-9987-b4ed4c0e3c36.png";
@@ -50,12 +45,10 @@ interface ErrorBoundaryProps { children?: ReactNode; }
 interface ErrorBoundaryState { hasError: boolean; error: Error | null; }
 
 class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  state: ErrorBoundaryState;
-  props: ErrorBoundaryProps;
+  // Fix: Removed explicit property declarations to rely on inherited types from React.Component
   constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = { hasError: false, error: null };
-    this.props = props;
   }
   static getDerivedStateFromError(error: Error): ErrorBoundaryState { return { hasError: true, error }; }
   render() {
@@ -82,14 +75,11 @@ const AppContent: React.FC = () => {
   const [loginPassword, setLoginPassword] = useState('');
   const [selectedStaffId, setSelectedStaffId] = useState<number | ''>('');
   const [isStaffLock, setIsStaffLock] = useState(localStorage.getItem('isStaffLock') === 'true');
-  const [isAffiliateView, setIsAffiliateView] = useState(window.location.pathname.includes('affiliate'));
-  const [isMasterView, setIsMasterView] = useState(window.location.pathname.includes('master-control'));
+  const [isMasterView] = useState(window.location.pathname.includes('master-control'));
   
-  // Lifted Global Cart State
   const [cart, setCart] = useState<SaleItem[]>([]);
   const [parkTrigger, setParkTrigger] = useState(0);
 
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [now, setNow] = useState(Date.now());
   const settings = useLiveQuery(() => db.settings.get('app_settings'));
   const staffList = useLiveQuery(() => db.staff.toArray()) || [];
@@ -100,12 +90,7 @@ const AppContent: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('session')) setCurrentView('activation');
     setTimeout(() => setShowSplash(false), 2000);
-    const handleBeforeInstallPrompt = (e: Event) => { e.preventDefault(); setDeferredPrompt(e); };
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
   }, []);
 
   useEffect(() => {
@@ -139,7 +124,7 @@ const AppContent: React.FC = () => {
   if (showSplash || !isInitialized) {
     return (
       <div className="min-h-screen bg-emerald-900 flex flex-col items-center justify-center p-6 text-center">
-        <div className="w-32 h-32 bg-white rounded-[2.5rem] p-6 flex items-center justify-center shadow-2xl animate-pulse-soft mb-8">
+        <div className="w-32 h-32 bg-white rounded-[2.5rem] p-6 flex items-center justify-center shadow-2xl animate-pulse mb-8">
           <img src={LOGO_URL} className="w-full h-full object-contain" alt="Logo" />
         </div>
         <h1 className="text-white text-4xl font-black tracking-tighter">NaijaShop POS</h1>
@@ -151,12 +136,20 @@ const AppContent: React.FC = () => {
 
   const s = settings as any;
   const isLicensed = settings?.license_expiry && settings.license_expiry > now;
-  // Fix: Add missing hours and minutes to the default trial object to match the getTrialRemainingTime return type.
   const trial = s?.installationDate ? getTrialRemainingTime(s.installationDate) : { totalMs: 999999, days: 30, hours: 0, minutes: 0 };
   const isTrialExpired = s?.installationDate && (trial.totalMs <= 0) && !s.isSubscribed && !isLicensed;
 
   if (isTrialExpired && currentView !== 'activation') {
-    return <div className="min-h-screen bg-emerald-950 flex items-center justify-center p-6"><div className="bg-white p-12 rounded-[3.5rem] text-center space-y-8"><ShieldAlert size={48} className="mx-auto text-emerald-600"/><h2 className="text-3xl font-black">Trial Expired</h2><p>Please subscribe to continue.</p></div></div>;
+    return (
+      <div className="min-h-screen bg-emerald-950 flex items-center justify-center p-6">
+        <div className="bg-white p-12 rounded-[3.5rem] text-center space-y-8">
+          <ShieldAlert size={48} className="mx-auto text-emerald-600"/>
+          <h2 className="text-3xl font-black">Trial Expired</h2>
+          <p>Please subscribe to continue managing your business.</p>
+          <button onClick={() => setCurrentView('activation')} className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black">Renew License</button>
+        </div>
+      </div>
+    );
   }
 
   if (isInitialized && (!settings?.is_setup_complete || staffList.length === 0)) {
@@ -203,7 +196,15 @@ const AppContent: React.FC = () => {
         {currentView === 'activity-log' && <ActivityLog currentUser={currentUser} />}
         {currentView === 'inventory' && <Inventory setView={setCurrentView} currentUser={currentUser} isStaffLock={isStaffLock} />}
         {currentView === 'settings' && <Settings currentUser={currentUser} />}
-        {/* ... Other views as needed */}
+        {currentView === 'business-hub' && <BusinessHub />}
+        {currentView === 'audit-trail' && <AuditTrail />}
+        {currentView === 'expense-tracker' && <ExpenseTracker currentUser={currentUser} isStaffLock={isStaffLock} />}
+        {currentView === 'transfer-station' && <TransferStation setView={setCurrentView} />}
+        {currentView === 'inventory-ledger' && <InventoryLedger />}
+        {currentView === 'debts' && <Debts />}
+        {currentView === 'staff-management' && <StaffManagement />}
+        {currentView === 'security-backups' && <SecurityBackups currentUser={currentUser} />}
+        {currentView === 'activation' && <ActivationPage sessionRef={new URLSearchParams(window.location.search).get('session') || ''} onActivated={() => window.location.href = '/'} />}
       </Layout>
       <SupportChat 
         currentUser={currentUser} cart={cart} onClearCart={() => setCart([])}

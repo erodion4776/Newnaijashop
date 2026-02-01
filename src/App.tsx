@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, ErrorInfo, ReactNode, Component } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, initSettings } from './db/db';
@@ -50,12 +51,10 @@ interface ErrorBoundaryProps { children?: ReactNode; }
 interface ErrorBoundaryState { hasError: boolean; error: Error | null; }
 
 class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  state: ErrorBoundaryState;
-  props: ErrorBoundaryProps;
+  // Fix: Removed manual state and props declarations to avoid shadowing inherited members and fix 'property does not exist' errors
   constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = { hasError: false, error: null };
-    this.props = props;
   }
   static getDerivedStateFromError(error: Error): ErrorBoundaryState { return { hasError: true, error }; }
   render() {
@@ -151,7 +150,7 @@ const AppContent: React.FC = () => {
 
   const s = settings as any;
   const isLicensed = settings?.license_expiry && settings.license_expiry > now;
-  // Fix: Add missing hours and minutes to the default trial object to match the getTrialRemainingTime return type.
+  // Fix: Added missing properties to match getTrialRemainingTime return type
   const trial = s?.installationDate ? getTrialRemainingTime(s.installationDate) : { totalMs: 999999, days: 30, hours: 0, minutes: 0 };
   const isTrialExpired = s?.installationDate && (trial.totalMs <= 0) && !s.isSubscribed && !isLicensed;
 
