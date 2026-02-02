@@ -1,3 +1,4 @@
+
 export interface Product {
   id?: number;
   name: string;
@@ -20,6 +21,20 @@ export interface InventoryLog {
   type: 'Restock' | 'Adjustment' | 'Sale' | 'Return' | 'Initial Stock' | 'Sync' | 'Manual';
   timestamp: number;
   performed_by: string;
+}
+
+/**
+ * Fix: Added missing StockSnapshot interface used by database hooks and auditing pages.
+ */
+export interface StockSnapshot {
+  id?: number;
+  date: string; // YYYY-MM-DD
+  product_id: number;
+  product_name: string;
+  starting_qty: number;
+  added_qty: number;
+  sold_qty: number;
+  closing_qty?: number;
 }
 
 export interface AuditEntry {
@@ -137,6 +152,9 @@ export interface Settings {
   isSubscribed?: boolean;
 }
 
-export type View = 'landing' | 'setup' | 'dashboard' | 'pos' | 'inventory' | 'inventory-ledger' | 'debts' | 'settings' | 'staff-management' | 'activity-log' | 'security-backups' | 'transfer-station' | 'expense-tracker' | 'audit-trail' | 'customer-wallets' | 'business-hub' | 'activation';
+/**
+ * Fix: Added 'stock-audit' to the View type union.
+ */
+export type View = 'landing' | 'setup' | 'dashboard' | 'pos' | 'inventory' | 'inventory-ledger' | 'debts' | 'settings' | 'staff-management' | 'activity-log' | 'security-backups' | 'transfer-station' | 'expense-tracker' | 'audit-trail' | 'customer-wallets' | 'business-hub' | 'activation' | 'stock-audit';
 
 export type SyncStatus = 'offline' | 'connecting' | 'live' | 'reconnecting' | 'failed';

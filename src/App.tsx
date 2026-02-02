@@ -24,6 +24,7 @@ import LandingPage from './pages/LandingPage';
 import MasterAdminHub from './pages/MasterAdminHub';
 import InstallModal from './components/InstallModal';
 import SupportChat from './components/SupportChat';
+import StockAudit from './pages/StockAudit';
 import { 
   AlertTriangle,
   ShieldAlert,
@@ -177,7 +178,7 @@ const AppContent: React.FC = () => {
   if (!currentUser && currentView !== 'activation') {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
-        <div className="w-full max-w-sm space-y-10">
+        <div className="w-full max-sm:px-4 max-w-sm space-y-10">
           <div className="text-center flex flex-col items-center">
              <div className="w-24 h-24 bg-white rounded-[2rem] p-4 shadow-2xl border border-slate-100 mb-6">
                 <img src={LOGO_URL} className="w-full h-full object-contain" alt="Logo" />
@@ -206,9 +207,9 @@ const AppContent: React.FC = () => {
         shopName={settings?.shop_name || 'NaijaShop'} currentUser={currentUser} 
         isStaffLock={isStaffLock} toggleStaffLock={(v) => { setIsStaffLock(v); localStorage.setItem('isStaffLock', String(v)); }}
         adminPin={settings?.admin_pin || ''} onLogout={() => setCurrentUser(null)}
-        trialRemaining={trial} isSubscribed={s?.isSubscribed}
+        trialRemaining={{...trial, label: s?.isSubscribed ? 'Pro License' : 'Free Trial', totalPeriod: s?.isSubscribed ? 365 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000}} isSubscribed={s?.isSubscribed}
       >
-        {currentView === 'dashboard' && <Dashboard currentUser={currentUser} setView={setCurrentView} isStaffLock={isStaffLock} trialRemaining={trial} isSubscribed={s?.isSubscribed} />}
+        {currentView === 'dashboard' && <Dashboard currentUser={currentUser} setView={setCurrentView} isStaffLock={isStaffLock} trialRemaining={{...trial, label: s?.isSubscribed ? 'Pro License' : 'Free Trial', totalPeriod: s?.isSubscribed ? 365 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000}} isSubscribed={s?.isSubscribed} />}
         {currentView === 'pos' && <POS setView={setCurrentView} currentUser={currentUser} cart={cart} setCart={setCart} parkTrigger={parkTrigger} />}
         {currentView === 'activity-log' && <ActivityLog currentUser={currentUser} />}
         {currentView === 'inventory' && <Inventory setView={setCurrentView} currentUser={currentUser} isStaffLock={isStaffLock} />}
@@ -218,6 +219,7 @@ const AppContent: React.FC = () => {
         {currentView === 'expense-tracker' && <ExpenseTracker currentUser={currentUser} isStaffLock={isStaffLock} />}
         {currentView === 'transfer-station' && <TransferStation setView={setCurrentView} />}
         {currentView === 'inventory-ledger' && <InventoryLedger />}
+        {currentView === 'stock-audit' && <StockAudit />}
         {currentView === 'debts' && <Debts />}
         {currentView === 'staff-management' && <StaffManagement />}
         {currentView === 'security-backups' && <SecurityBackups currentUser={currentUser} />}
