@@ -131,10 +131,17 @@ const AppContent: React.FC = () => {
     const terminalId = settings?.terminal_id || 'UNKNOWN';
     const refCode = settings?.referral_code_used || 'NONE';
 
+    // FIX: Fixed Email Parameter logic as requested
+    const generatedEmail = settings?.admin_name 
+      ? `${settings.admin_name.replace(/\s+/g, '').toLowerCase()}@naijashop.pos` 
+      : 'customer@naijashop.com.ng';
+
+    console.log('Starting Paystack for email:', generatedEmail);
+
     try {
       const handler = (window as any).PaystackPop.setup({
         key: paystackKey,
-        email: `${(settings?.admin_name || 'admin').replace(/\s+/g, '.').toLowerCase()}@naijashop.pos`,
+        email: generatedEmail,
         amount: 1000000, // ₦10,000 in kobo
         currency: 'NGN',
         ref: 'NS-TRIAL-' + Math.floor((Math.random() * 1000000000) + 1),
@@ -154,7 +161,7 @@ const AppContent: React.FC = () => {
       handler.openIframe();
     } catch (err) {
       console.error("Paystack setup failed:", err);
-      alert("Could not start payment gateway. Please check your connection.");
+      alert("Could not start payment gateway. Please check your internet connection.");
     }
   };
 
