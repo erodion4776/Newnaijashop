@@ -187,7 +187,10 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, isStaffLock
            </p>
         </div>
         <button 
-          onClick={onSubscribe}
+          onClick={() => {
+            console.log('Dashboard Subscribe Clicked');
+            if (onSubscribe) onSubscribe();
+          }}
           className={`px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest text-white shadow-lg active:scale-95 transition-all flex items-center gap-2 ${iconColor} hover:brightness-110`}
         >
           <CreditCard size={14} /> Subscribe Now

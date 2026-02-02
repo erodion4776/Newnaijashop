@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, ReactNode, Component } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
@@ -115,6 +114,50 @@ const AppContent: React.FC = () => {
     setCurrentView('pos');
   };
 
+  const handlePaystackPayment = () => {
+    // Paystack Initialization Guard
+    if (!(window as any).PaystackPop) {
+      alert("Payment system is loading, please wait 2 seconds and try again.");
+      return;
+    }
+
+    const paystackKey = (import.meta as any).env.VITE_PAYSTACK_PUBLIC_KEY;
+    if (!paystackKey) {
+      console.error("Paystack Public Key missing in env.");
+      alert("System Configuration Error: Payment key not found.");
+      return;
+    }
+
+    const terminalId = settings?.terminal_id || 'UNKNOWN';
+    const refCode = settings?.referral_code_used || 'NONE';
+
+    try {
+      const handler = (window as any).PaystackPop.setup({
+        key: paystackKey,
+        email: `${(settings?.admin_name || 'admin').replace(/\s+/g, '.').toLowerCase()}@naijashop.pos`,
+        amount: 1000000, // ₦10,000 in kobo
+        currency: 'NGN',
+        ref: 'NS-TRIAL-' + Math.floor((Math.random() * 1000000000) + 1),
+        metadata: {
+          terminal_id: terminalId,
+          referral_code: refCode,
+          custom_fields: [
+            { display_name: "Terminal ID", variable_name: "terminal_id", value: terminalId },
+            { display_name: "Referrer", variable_name: "referrer", value: refCode }
+          ]
+        },
+        callback: (response: any) => {
+          // Success Redirect to Activation Terminal
+          window.location.href = '/activation?session=' + response.reference;
+        }
+      });
+      handler.openIframe();
+    } catch (err) {
+      console.error("Paystack setup failed:", err);
+      alert("Could not start payment gateway. Please check your connection.");
+    }
+  };
+
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const staff = staffList.find(s => s.id === Number(selectedStaffId));
@@ -201,8 +244,9 @@ const AppContent: React.FC = () => {
                 isStaffLock={isStaffLock} toggleStaffLock={(v) => { setIsStaffLock(v); localStorage.setItem('isStaffLock', String(v)); }}
                 adminPin={settings?.admin_pin || ''} onLogout={() => setCurrentUser(null)}
                 trialRemaining={trial} isSubscribed={s?.isSubscribed}
+                onSubscribe={handlePaystackPayment}
               >
-                {currentView === 'dashboard' && <Dashboard currentUser={currentUser} setView={setCurrentView} isStaffLock={isStaffLock} trialRemaining={trial} isSubscribed={s?.isSubscribed} />}
+                {currentView === 'dashboard' && <Dashboard currentUser={currentUser} setView={setCurrentView} isStaffLock={isStaffLock} trialRemaining={trial} isSubscribed={s?.isSubscribed} onSubscribe={handlePaystackPayment} />}
                 {currentView === 'pos' && <POS setView={setCurrentView} currentUser={currentUser} cart={cart} setCart={setCart} parkTrigger={parkTrigger} />}
                 {currentView === 'activity-log' && <ActivityLog currentUser={currentUser} />}
                 {currentView === 'inventory' && <Inventory setView={setCurrentView} currentUser={currentUser} isStaffLock={isStaffLock} />}
