@@ -168,7 +168,7 @@ const AppContent: React.FC = () => {
         ) : (
           !currentUser ? (
             <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
-              <div className="w-full max-w-sm space-y-10">
+              <div className="w-full max-sm:px-4 max-w-sm space-y-10">
                 <div className="text-center flex flex-col items-center">
                    <div className="w-24 h-24 bg-white rounded-[2rem] p-4 shadow-2xl border border-slate-100 mb-6">
                       <img src={LOGO_URL} className="w-full h-full object-contain" alt="Logo" />

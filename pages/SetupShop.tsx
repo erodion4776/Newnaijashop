@@ -36,9 +36,9 @@ const SetupShop: React.FC<SetupShopProps> = ({ onComplete }) => {
     e.preventDefault();
     setIsProcessing(true);
 
-    // 1. Submit to Netlify Tracking (AJAX Background)
     try {
-      fetch("/", {
+      // 1. Submit to Netlify Tracking (Awaited as per instructions)
+      await fetch("/", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: encode({ 
@@ -48,22 +48,20 @@ const SetupShop: React.FC<SetupShopProps> = ({ onComplete }) => {
           "terminal-id": terminalId,
           "referral-code-used": formData.referralCode || "NONE"
         }),
-      })
-      .then(() => console.log("Netlify Tracking Success"))
-      .catch((error) => console.error("Netlify Tracking Error:", error));
-    } catch (err) {
-      console.error("Netlify POST catch", err);
-    }
+      });
+      console.log("Netlify Tracking Success");
 
-    // 2. Perform Local DB Setup (Guaranteed regardless of network)
-    try {
+      // 2. Perform Atomic Database Setup
       await (db as any).transaction('rw', [db.settings, db.staff], async () => {
         const now = Date.now();
+        
+        // Update App Settings
         await db.settings.update('app_settings', {
           shop_name: formData.shopName,
           admin_name: formData.adminName,
           admin_pin: formData.adminPin,
           is_setup_complete: true,
+          referral_code_used: formData.referralCode || 'NONE',
           // Trial Initialization & Security
           installationDate: now,
           isTrialActive: true,
@@ -71,21 +69,23 @@ const SetupShop: React.FC<SetupShopProps> = ({ onComplete }) => {
           last_used_timestamp: now
         } as any);
 
-        const adminId = await db.staff.add({
+        // Add Admin Account
+        await db.staff.add({
           name: formData.adminName,
           role: 'Admin',
           password: formData.adminPin,
           status: 'Active',
           created_at: now
         });
-
-        // 3. Finalize
-        setTimeout(() => {
-          onComplete(adminId as number);
-        }, 1000);
       });
+
+      // 3. Finalize: Forced hard redirect to break registration loop
+      console.log("Setup Transaction Successful. Redirecting...");
+      window.location.href = '/';
+
     } catch (err) {
-      alert("Critical DB Error: " + err);
+      console.error("Setup Error:", err);
+      alert("Critical DB Error during setup: " + err);
       setIsProcessing(false);
     }
   };
@@ -103,7 +103,12 @@ const SetupShop: React.FC<SetupShopProps> = ({ onComplete }) => {
             <Store size={120} />
           </div>
 
-          <form onSubmit={handleSetup} className="space-y-6 relative z-10">
+          <form 
+            name="shop-registration" 
+            data-netlify="true" 
+            onSubmit={handleSetup} 
+            className="space-y-6 relative z-10"
+          >
             <input type="hidden" name="form-name" value="shop-registration" />
             
             <div>
