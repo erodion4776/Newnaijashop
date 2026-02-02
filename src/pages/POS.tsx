@@ -201,12 +201,43 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
     }
     
     try {
-      await db.parked_orders.add({
-        customerName: parkingCustomerName,
-        items: cart,
-        total: cartSummary.total,
-        staffId: currentUser?.id?.toString() || '0',
-        timestamp: Date.now()
+      // STRICT INSTRUCTION: Atomic transaction to deduct stock permanently during parking
+      await (db as any).transaction('rw', [db.products, db.inventory_logs, db.parked_orders], async () => {
+        const itemsToSave: SaleItem[] = [];
+        
+        for (const item of cart) {
+          const product = await db.products.get(item.productId);
+          if (product) {
+            const oldStock = Number(product.stock_qty || 0);
+            const soldQty = Number(item.quantity || 0);
+            const newStock = Math.max(0, oldStock - soldQty);
+            
+            // Subtract stock physically from products table
+            await db.products.update(item.productId, { stock_qty: newStock });
+            
+            // Create an inventory log for the audit trail
+            await db.inventory_logs.add({
+              product_id: item.productId,
+              product_name: product.name,
+              quantity_changed: -soldQty,
+              old_stock: oldStock,
+              new_stock: newStock,
+              type: 'Adjustment',
+              timestamp: Date.now(),
+              performed_by: `Parking: ${currentUser?.name || 'Staff'}`
+            });
+          }
+          // Mark as already deducted so checkout doesn't touch stock again
+          itemsToSave.push({ ...item, isStockAlreadyDeducted: true });
+        }
+
+        await db.parked_orders.add({
+          customerName: parkingCustomerName,
+          items: itemsToSave,
+          total: cartSummary.total,
+          staffId: currentUser?.id?.toString() || '0',
+          timestamp: Date.now()
+        });
       });
       
       setCart([]);
@@ -214,8 +245,9 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
       setParkingCustomerName('');
       setShowParkModal(false);
       setShowMobileCart(false);
-      alert('Order parked successfully!');
+      alert('Order parked & stock secured!');
     } catch (err) {
+      console.error(err);
       alert('Failed to park order');
     }
   };
@@ -224,6 +256,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
     if (cart.length > 0) {
       if (!confirm('Current cart will be replaced. Continue?')) return;
     }
+    // Items will carry the isStockAlreadyDeducted: true flag into the cart
     setCart([...order.items]);
     setShowParkedOrders(false);
     setShowMobileCart(true);
