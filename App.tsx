@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, ReactNode, Component } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
@@ -26,6 +27,7 @@ import SupportChat from './components/SupportChat';
 import { 
   AlertTriangle,
   ShieldAlert,
+  CheckCircle2
 } from 'lucide-react';
 
 const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-9987-b4ed4c0e3c36.png";
@@ -184,6 +186,10 @@ const AppContent: React.FC = () => {
                     <input required type="password" placeholder="PIN" className="w-full px-5 py-4 bg-slate-50 border rounded-2xl font-bold" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} />
                     <button type="submit" className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-xl shadow-xl">Unlock Terminal</button>
                   </form>
+                </div>
+                <div className="mt-8 flex items-center justify-center gap-2 text-slate-400">
+                  <CheckCircle2 size={14} />
+                  <span className="text-[10px] font-black uppercase tracking-widest">Hardware ID: {settings?.terminal_id || 'Generating...'}</span>
                 </div>
               </div>
             </div>

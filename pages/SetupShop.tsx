@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+
+import React, { useState, useEffect } from 'react';
 import { db } from '../db/db';
-import { generateRequestCode } from '../utils/licensing';
+import { getOrCreateTerminalId } from '../utils/licensing';
 import { 
   Store, 
   User, 
@@ -23,6 +24,7 @@ const encode = (data: any) => {
 
 const SetupShop: React.FC<SetupShopProps> = ({ onComplete }) => {
   const [isProcessing, setIsProcessing] = useState(false);
+  const [terminalId, setTerminalId] = useState('');
   const [formData, setFormData] = useState({
     shopName: '',
     adminName: '',
@@ -30,7 +32,9 @@ const SetupShop: React.FC<SetupShopProps> = ({ onComplete }) => {
     referralCode: ''
   });
 
-  const terminalId = generateRequestCode();
+  useEffect(() => {
+    getOrCreateTerminalId().then(setTerminalId);
+  }, []);
 
   const handleSetup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,10 +65,10 @@ const SetupShop: React.FC<SetupShopProps> = ({ onComplete }) => {
           admin_name: formData.adminName,
           admin_pin: formData.adminPin,
           is_setup_complete: true,
+          terminal_id: terminalId,
           referral_code_used: formData.referralCode || 'NONE',
           // Trial Initialization & Security
           installationDate: now,
-          isTrialActive: true,
           isSubscribed: false,
           last_used_timestamp: now
         } as any);
@@ -198,7 +202,7 @@ const SetupShop: React.FC<SetupShopProps> = ({ onComplete }) => {
 
           <div className="mt-8 flex items-center justify-center gap-2 text-slate-400">
             <CheckCircle2 size={14} />
-            <span className="text-[10px] font-black uppercase tracking-widest">Hardware ID: {terminalId}</span>
+            <span className="text-[10px] font-black uppercase tracking-widest">Hardware ID: {terminalId || 'Initializing...'}</span>
           </div>
         </div>
       </div>

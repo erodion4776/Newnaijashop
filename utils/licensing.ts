@@ -1,21 +1,37 @@
 
-export const generateRequestCode = (): string => {
-  const browserInfo = [
-    navigator.userAgent,
-    navigator.language,
-    screen.width,
-    screen.height,
-    navigator.hardwareConcurrency
-  ].join('|');
+import { db } from '../db/db';
+
+/**
+ * Ensures a unique, persistent terminal ID for the device.
+ * Checks DB first, generates and saves if missing.
+ */
+export const getOrCreateTerminalId = async (): Promise<string> => {
+  const settings = await db.settings.get('app_settings');
   
-  // Simple hashing function for a unique fingerprint
-  let hash = 0;
-  for (let i = 0; i < browserInfo.length; i++) {
-    const char = browserInfo.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash;
+  if (settings?.terminal_id) {
+    return settings.terminal_id;
   }
-  return `NS-${Math.abs(hash).toString(16).toUpperCase().substring(0, 8)}`;
+
+  // Generate a high-entropy random ID
+  const newId = `NS-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
+  
+  if (settings) {
+    await db.settings.update('app_settings', { terminal_id: newId });
+  } else {
+    // If settings don't exist yet (very early setup), we wait for setup to create them
+    // but returning a valid string for the form
+    return newId;
+  }
+
+  return newId;
+};
+
+/**
+ * Kept for backwards compatibility during the shift, 
+ * but now points to the persistent ID engine.
+ */
+export const generateRequestCode = async (): Promise<string> => {
+  return await getOrCreateTerminalId();
 };
 
 export const validateLicense = (key: string, lastUsed: number): { valid: boolean; error?: string } => {

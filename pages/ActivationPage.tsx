@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { db } from '../db/db';
-import { generateRequestCode } from '../utils/licensing';
+import { getOrCreateTerminalId } from '../utils/licensing';
 import { CheckCircle, ArrowRight, Zap, ShieldCheck, Loader2, AlertCircle } from 'lucide-react';
 import { View } from '../types';
 
@@ -13,7 +13,7 @@ interface ActivationPageProps {
 const SECRET_SALT = "9JA_SECURE_SALT_001";
 
 const ActivationPage: React.FC<ActivationPageProps> = ({ sessionRef, onActivated }) => {
-  const [requestCode, setRequestCode] = useState('');
+  const [terminalId, setTerminalId] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isAlreadyUsed, setIsAlreadyUsed] = useState(false);
@@ -26,11 +26,11 @@ const ActivationPage: React.FC<ActivationPageProps> = ({ sessionRef, onActivated
       }
     };
     checkRef();
-    setRequestCode(generateRequestCode());
+    getOrCreateTerminalId().then(setTerminalId);
   }, [sessionRef]);
 
   const handleActivate = async () => {
-    if (!requestCode.trim() || isProcessing) return;
+    if (!terminalId.trim() || isProcessing) return;
     setIsProcessing(true);
     setError(null);
 
@@ -41,10 +41,10 @@ const ActivationPage: React.FC<ActivationPageProps> = ({ sessionRef, onActivated
         throw new Error('This payment has already been used to activate a device.');
       }
 
-      // 2. Generate Activation Key
-      // Logic: Simple but secure hashing-like Base64 mix
+      // 2. Generate Activation Key based on Unique Terminal ID
+      // Security Guard: Using the persistent database terminal ID ensures the license is device-locked.
       const currentYear = new Date().getFullYear();
-      const rawKey = `${requestCode}:${SECRET_SALT}:${currentYear}`;
+      const rawKey = `${terminalId}:${SECRET_SALT}:${currentYear}`;
       const activationKey = btoa(rawKey).substring(0, 20).toUpperCase();
       
       const oneYearFromNow = Date.now() + (365 * 24 * 60 * 60 * 1000);
@@ -53,7 +53,8 @@ const ActivationPage: React.FC<ActivationPageProps> = ({ sessionRef, onActivated
       await (db as any).transaction('rw', [db.settings, db.used_references], async () => {
         await db.settings.update('app_settings', {
           license_key: activationKey,
-          license_expiry: oneYearFromNow
+          license_expiry: oneYearFromNow,
+          isSubscribed: true
         });
         await db.used_references.add({
           reference: sessionRef,
@@ -102,9 +103,9 @@ const ActivationPage: React.FC<ActivationPageProps> = ({ sessionRef, onActivated
                 type="text" 
                 readOnly
                 className="w-full px-6 py-4 bg-white border border-slate-200 rounded-2xl font-black text-emerald-700 tracking-widest outline-none"
-                value={requestCode}
+                value={terminalId || 'Loading...'}
               />
-              <p className="text-[10px] text-slate-400 font-medium italic mt-1">* ID detected automatically from this browser.</p>
+              <p className="text-[10px] text-slate-400 font-medium italic mt-1">* ID detected automatically from this terminal's database.</p>
            </div>
 
            <div className="space-y-4">
@@ -127,7 +128,7 @@ const ActivationPage: React.FC<ActivationPageProps> = ({ sessionRef, onActivated
 
         <button 
           onClick={handleActivate}
-          disabled={isProcessing}
+          disabled={isProcessing || !terminalId}
           className="w-full py-5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-[2rem] font-black text-xl shadow-xl shadow-emerald-200 transition-all active:scale-95 flex items-center justify-center gap-3"
         >
           {isProcessing ? <Loader2 className="animate-spin" size={24} /> : <Zap size={24} />}
