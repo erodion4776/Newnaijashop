@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, ReactNode, Component } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
@@ -115,7 +114,7 @@ const AppContent: React.FC = () => {
     setCurrentView('pos');
   };
 
-  const handlePaystackPayment = () => {
+  const handlePaystackPayment = async () => {
     // Paystack Initialization Guard
     if (!(window as any).PaystackPop) {
       alert("Payment system is loading, please wait 2 seconds and try again.");
@@ -129,11 +128,11 @@ const AppContent: React.FC = () => {
       return;
     }
 
-    const terminalId = settings?.terminal_id || 'UNKNOWN';
-    const refCode = settings?.referral_code_used || 'NONE';
-
-    // FIX: Pull email directly from settings with fallback
-    const userEmail = settings?.email || 'customer@naijashop.com.ng';
+    // FIX: Always fetch latest settings from DB to get the newest email
+    const currentSettings = await db.settings.get('app_settings');
+    const terminalId = currentSettings?.terminal_id || 'UNKNOWN';
+    const refCode = currentSettings?.referral_code_used || 'NONE';
+    const userEmail = currentSettings?.email || 'customer@naijashop.pos';
 
     console.log('Starting Paystack for email:', userEmail);
 
@@ -256,7 +255,7 @@ const AppContent: React.FC = () => {
                 {currentView === 'pos' && <POS setView={setCurrentView} currentUser={currentUser} cart={cart} setCart={setCart} parkTrigger={parkTrigger} />}
                 {currentView === 'activity-log' && <ActivityLog currentUser={currentUser} />}
                 {currentView === 'inventory' && <Inventory setView={setCurrentView} currentUser={currentUser} isStaffLock={isStaffLock} />}
-                {currentView === 'settings' && <Settings currentUser={currentUser} />}
+                {currentView === 'settings' && <Settings currentUser={currentUser} onSubscribe={handlePaystackPayment} />}
                 {currentView === 'business-hub' && <BusinessHub />}
                 {currentView === 'audit-trail' && <AuditTrail />}
                 {currentView === 'expense-tracker' && <ExpenseTracker currentUser={currentUser} isStaffLock={isStaffLock} />}

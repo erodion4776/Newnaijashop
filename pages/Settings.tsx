@@ -59,7 +59,12 @@ const FAQ_DATA = [
   }
 ];
 
-const Settings: React.FC<{ currentUser: Staff | null }> = ({ currentUser }) => {
+interface SettingsProps {
+  currentUser: Staff | null;
+  onSubscribe?: () => void;
+}
+
+const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
   const settings = useLiveQuery(() => db.settings.get('app_settings'));
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -175,7 +180,7 @@ const Settings: React.FC<{ currentUser: Staff | null }> = ({ currentUser }) => {
           {settings && (
             <SubscriptionManager 
               settings={settings} 
-              onSuccess={handleSubscriptionSuccess} 
+              onSubscribe={onSubscribe}
             />
           )}
 
