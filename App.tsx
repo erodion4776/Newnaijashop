@@ -32,15 +32,36 @@ import {
 const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-9987-b4ed4c0e3c36.png";
 const MASTER_RECOVERY_PIN = "9999";
 
-export const getTrialRemainingTime = (installationDate: number) => {
+// Unified License Logic
+export const getLicenseStatus = (settings: any, now: number) => {
+  if (settings?.isSubscribed) {
+    const totalPeriod = 365 * 24 * 60 * 60 * 1000;
+    const remaining = (settings.license_expiry || 0) - now;
+    const totalMs = Math.max(0, remaining);
+    return {
+      label: 'Pro License',
+      days: Math.floor(totalMs / (24 * 60 * 60 * 1000)),
+      hours: Math.floor((totalMs % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000)),
+      minutes: Math.floor((totalMs % (60 * 60 * 1000)) / (60 * 1000)),
+      totalMs,
+      totalPeriod,
+      isSubscribed: true
+    };
+  }
+  
   const trialPeriod = 30 * 24 * 60 * 60 * 1000;
-  const expiry = installationDate + trialPeriod;
-  const remaining = expiry - Date.now();
-  if (remaining <= 0) return { days: 0, hours: 0, minutes: 0, totalMs: 0 };
-  const days = Math.floor(remaining / (24 * 60 * 60 * 1000));
-  const hours = Math.floor((remaining % (24 * 60 * 60 * 1000)) / (60 * 1000));
-  const minutes = Math.floor((remaining % (60 * 1000)) / (60 * 1000));
-  return { days, hours, minutes, totalMs: remaining };
+  const expiry = (settings?.installationDate || now) + trialPeriod;
+  const remaining = expiry - now;
+  const totalMs = Math.max(0, remaining);
+  return {
+    label: 'Free Trial',
+    days: Math.floor(totalMs / (24 * 60 * 60 * 1000)),
+    hours: Math.floor((totalMs % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000)),
+    minutes: Math.floor((totalMs % (60 * 60 * 1000)) / (60 * 1000)),
+    totalMs,
+    totalPeriod: trialPeriod,
+    isSubscribed: false
+  };
 };
 
 interface ErrorBoundaryProps { children?: ReactNode; }
@@ -115,7 +136,6 @@ const AppContent: React.FC = () => {
   };
 
   const handlePaystackPayment = async () => {
-    // Paystack Initialization Guard
     if (!(window as any).PaystackPop) {
       alert("Payment system is loading, please wait 2 seconds and try again.");
       return;
@@ -128,7 +148,6 @@ const AppContent: React.FC = () => {
       return;
     }
 
-    // FIX: Always fetch latest settings from DB to get the newest email
     const currentSettings = await db.settings.get('app_settings');
     const terminalId = currentSettings?.terminal_id || 'UNKNOWN';
     const refCode = currentSettings?.referral_code_used || 'NONE';
@@ -140,7 +159,7 @@ const AppContent: React.FC = () => {
       const handler = (window as any).PaystackPop.setup({
         key: paystackKey,
         email: userEmail,
-        amount: 1000000, // ₦10,000 in kobo
+        amount: 1000000, 
         currency: 'NGN',
         ref: 'NS-TRIAL-' + Math.floor((Math.random() * 1000000000) + 1),
         metadata: {
@@ -152,7 +171,6 @@ const AppContent: React.FC = () => {
           ]
         },
         callback: (response: any) => {
-          // Success Redirect to Activation Terminal
           window.location.href = '/activation?session=' + response.reference;
         }
       });
@@ -189,18 +207,19 @@ const AppContent: React.FC = () => {
 
   if (location.pathname === '/master-control') return <MasterAdminHub />;
 
-  const s = settings as any;
-  const trial = s?.installationDate ? getTrialRemainingTime(s.installationDate) : { totalMs: 999999, days: 30, hours: 0, minutes: 0 };
-  const isLicensed = settings?.license_expiry && settings.license_expiry > now;
-  const isTrialExpired = s?.installationDate && (trial.totalMs <= 0) && !s.isSubscribed && !isLicensed;
+  const license = getLicenseStatus(settings, now);
+  // Lockout logic: Expired trial AND not subscribed
+  /* Fix: Changed property 'remainingMs' to 'totalMs' on the license object as 'remainingMs' does not exist on its type. */
+  const isExpired = (license.totalMs <= 0) && !license.isSubscribed;
 
-  if (isTrialExpired && location.pathname !== '/activation') {
+  if (isExpired && location.pathname !== '/activation') {
     return (
       <div className="min-h-screen bg-emerald-950 flex items-center justify-center p-6">
         <div className="bg-white p-12 rounded-[3.5rem] text-center space-y-8">
           <ShieldAlert size={48} className="mx-auto text-emerald-600"/>
-          <h2 className="text-3xl font-black">Trial Expired</h2>
+          <h2 className="text-3xl font-black">License Expired</h2>
           <p>Please subscribe to continue managing your business.</p>
+          <button onClick={handlePaystackPayment} className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-xl">Renew License Now</button>
           <Navigate to="/activation" />
         </div>
       </div>
@@ -248,10 +267,10 @@ const AppContent: React.FC = () => {
                 shopName={settings?.shop_name || 'NaijaShop'} currentUser={currentUser} 
                 isStaffLock={isStaffLock} toggleStaffLock={(v) => { setIsStaffLock(v); localStorage.setItem('isStaffLock', String(v)); }}
                 adminPin={settings?.admin_pin || ''} onLogout={() => setCurrentUser(null)}
-                trialRemaining={trial} isSubscribed={s?.isSubscribed}
+                trialRemaining={license} isSubscribed={license.isSubscribed}
                 onSubscribe={handlePaystackPayment}
               >
-                {currentView === 'dashboard' && <Dashboard currentUser={currentUser} setView={setCurrentView} isStaffLock={isStaffLock} trialRemaining={trial} isSubscribed={s?.isSubscribed} onSubscribe={handlePaystackPayment} />}
+                {currentView === 'dashboard' && <Dashboard currentUser={currentUser} setView={setCurrentView} isStaffLock={isStaffLock} trialRemaining={license} isSubscribed={license.isSubscribed} onSubscribe={handlePaystackPayment} />}
                 {currentView === 'pos' && <POS setView={setCurrentView} currentUser={currentUser} cart={cart} setCart={setCart} parkTrigger={parkTrigger} />}
                 {currentView === 'activity-log' && <ActivityLog currentUser={currentUser} />}
                 {currentView === 'inventory' && <Inventory setView={setCurrentView} currentUser={currentUser} isStaffLock={isStaffLock} />}

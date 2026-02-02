@@ -20,7 +20,8 @@ import {
   Lightbulb,
   Zap,
   Gift,
-  CreditCard
+  CreditCard,
+  CheckCircle2
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { Staff, Product, Sale } from '../types';
@@ -155,10 +156,30 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, isStaffLock
   }
 
   const renderTrialBar = () => {
-    if (isSubscribed || !trialRemaining) return null;
+    if (!trialRemaining) return null;
 
     const { days, hours, minutes } = trialRemaining;
+
+    // ACTIVE PRO SUBSCRIPTION UI
+    if (isSubscribed) {
+      return (
+        <div className="p-4 rounded-2xl flex items-center justify-between border shadow-sm transition-all duration-500 mb-6 bg-emerald-600 text-white">
+          <div className="flex items-center gap-3">
+             <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-white/20">
+                <CheckCircle2 size={16} />
+             </div>
+             <p className="text-xs font-bold leading-tight uppercase tracking-wide">
+               ✅ Subscription Active: {days}d {hours}h remaining
+             </p>
+          </div>
+          <div className="px-3 py-1 bg-white/10 rounded-full text-[9px] font-black uppercase tracking-widest">
+            Licensed Terminal
+          </div>
+        </div>
+      );
+    }
     
+    // TRIAL UI
     let bgColor = "bg-emerald-50 border-emerald-200 text-emerald-900";
     let iconColor = "bg-emerald-600";
     let message = `🎁 Free Trial Active: ${days}d ${hours}h remaining`;
@@ -188,7 +209,6 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, isStaffLock
         </div>
         <button 
           onClick={() => {
-            console.log('Dashboard Subscribe Clicked');
             if (onSubscribe) onSubscribe();
           }}
           className={`px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest text-white shadow-lg active:scale-95 transition-all flex items-center gap-2 ${iconColor} hover:brightness-110`}
@@ -201,7 +221,6 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, isStaffLock
 
   return (
     <div className="space-y-6">
-      {/* Trial Status Banner */}
       {renderTrialBar()}
 
       {/* Notification Banner */}
@@ -238,7 +257,6 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, isStaffLock
         )}
       </div>
 
-      {/* KPI Section */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-4">
           <div className="flex items-center justify-between">

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { db } from '../db/db';
 import { getOrCreateTerminalId } from '../utils/licensing';
@@ -42,19 +41,19 @@ const ActivationPage: React.FC<ActivationPageProps> = ({ sessionRef, onActivated
       }
 
       // 2. Generate Activation Key based on Unique Terminal ID
-      // Security Guard: Using the persistent database terminal ID ensures the license is device-locked.
       const currentYear = new Date().getFullYear();
       const rawKey = `${terminalId}:${SECRET_SALT}:${currentYear}`;
       const activationKey = btoa(rawKey).substring(0, 20).toUpperCase();
       
       const oneYearFromNow = Date.now() + (365 * 24 * 60 * 60 * 1000);
 
-      // 3. Save to DB
+      // 3. Save to DB with proper instruction-mandated flags
       await (db as any).transaction('rw', [db.settings, db.used_references], async () => {
         await db.settings.update('app_settings', {
           license_key: activationKey,
           license_expiry: oneYearFromNow,
-          isSubscribed: true
+          isSubscribed: true,
+          isTrialActive: false // STRICT INSTRUCTION: Set isTrialActive to false
         });
         await db.used_references.add({
           reference: sessionRef,
@@ -62,11 +61,10 @@ const ActivationPage: React.FC<ActivationPageProps> = ({ sessionRef, onActivated
         });
       });
 
-      // 4. Success
-      onActivated();
+      // 4. Success: Use forced redirect to dashboard as requested to refresh app state
+      window.location.href = '/dashboard';
     } catch (err: any) {
       setError(err.message || "Activation failed.");
-    } finally {
       setIsProcessing(false);
     }
   };
@@ -79,7 +77,7 @@ const ActivationPage: React.FC<ActivationPageProps> = ({ sessionRef, onActivated
         </div>
         <h2 className="text-2xl font-black text-slate-900">Link Expired</h2>
         <p className="text-slate-500 max-w-sm">This payment reference ({sessionRef}) has already been used to activate a terminal.</p>
-        <button onClick={onActivated} className="px-8 py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-xs tracking-widest">Return to Terminal</button>
+        <button onClick={() => window.location.href = '/'} className="px-8 py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-xs tracking-widest">Return to Terminal</button>
       </div>
     );
   }
@@ -129,7 +127,7 @@ const ActivationPage: React.FC<ActivationPageProps> = ({ sessionRef, onActivated
         <button 
           onClick={handleActivate}
           disabled={isProcessing || !terminalId}
-          className="w-full py-5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-[2rem] font-black text-xl shadow-xl shadow-emerald-200 transition-all active:scale-95 flex items-center justify-center gap-3"
+          className="w-full py-5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-[2rem] font-black text-xl shadow-xl shadow-emerald-200 transition-all active:scale-[0.98] flex items-center justify-center gap-3"
         >
           {isProcessing ? <Loader2 className="animate-spin" size={24} /> : <Zap size={24} />}
           Activate Terminal App
