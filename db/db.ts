@@ -1,3 +1,4 @@
+
 import { Dexie } from 'dexie';
 import type { Table } from 'dexie';
 import { Product, Sale, Debt, Settings, ParkedOrder, InventoryLog, Staff, Expense, AuditEntry, CustomerWallet, WalletTransaction, UsedReference } from '../types';
@@ -54,6 +55,7 @@ export const initSettings = async () => {
       shop_name: '',
       admin_name: '',
       admin_pin: '',
+      email: '',
       is_setup_complete: false,
       bank_name: 'Access Bank',
       account_number: '0123456789',

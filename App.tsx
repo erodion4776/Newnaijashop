@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, ReactNode, Component } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
@@ -131,17 +132,15 @@ const AppContent: React.FC = () => {
     const terminalId = settings?.terminal_id || 'UNKNOWN';
     const refCode = settings?.referral_code_used || 'NONE';
 
-    // FIX: Fixed Email Parameter logic as requested
-    const generatedEmail = settings?.admin_name 
-      ? `${settings.admin_name.replace(/\s+/g, '').toLowerCase()}@naijashop.pos` 
-      : 'customer@naijashop.com.ng';
+    // FIX: Pull email directly from settings with fallback
+    const userEmail = settings?.email || 'customer@naijashop.com.ng';
 
-    console.log('Starting Paystack for email:', generatedEmail);
+    console.log('Starting Paystack for email:', userEmail);
 
     try {
       const handler = (window as any).PaystackPop.setup({
         key: paystackKey,
-        email: generatedEmail,
+        email: userEmail,
         amount: 1000000, // ₦10,000 in kobo
         currency: 'NGN',
         ref: 'NS-TRIAL-' + Math.floor((Math.random() * 1000000000) + 1),

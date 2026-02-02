@@ -125,6 +125,7 @@ export interface Settings {
   shop_name: string;
   admin_name: string;
   admin_pin: string;
+  email: string;
   is_setup_complete: boolean;
   bank_name: string;
   account_number: string;

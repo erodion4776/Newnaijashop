@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
@@ -28,7 +29,8 @@ import {
   Printer,
   Bluetooth,
   AlertTriangle,
-  CreditCard
+  CreditCard,
+  Mail
 } from 'lucide-react';
 import { Staff } from '../types';
 import BluetoothPrintService from '../services/BluetoothPrintService';
@@ -64,6 +66,7 @@ const Settings: React.FC<{ currentUser: Staff | null }> = ({ currentUser }) => {
   const [showTutorial, setShowTutorial] = useState(false);
   
   const [shopName, setShopName] = useState('');
+  const [email, setEmail] = useState('');
   const [bankName, setBankName] = useState('');
   const [accountNumber, setAccountNumber] = useState('');
   const [accountName, setAccountName] = useState('');
@@ -88,6 +91,7 @@ const Settings: React.FC<{ currentUser: Staff | null }> = ({ currentUser }) => {
   useEffect(() => {
     if (settings) {
       setShopName(settings.shop_name);
+      setEmail(settings.email || '');
       setBankName(settings.bank_name || '');
       setAccountNumber(settings.account_number || '');
       setAccountName(settings.account_name || '');
@@ -104,6 +108,7 @@ const Settings: React.FC<{ currentUser: Staff | null }> = ({ currentUser }) => {
     try {
       await db.settings.update('app_settings', {
         shop_name: shopName,
+        email: email,
         bank_name: bankName,
         account_number: accountNumber,
         account_name: accountName,
@@ -252,11 +257,11 @@ const Settings: React.FC<{ currentUser: Staff | null }> = ({ currentUser }) => {
               )}
             </div>
 
-            {/* General Shop Info */}
+            {/* Business Details Section */}
             <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
               <div className="flex items-center gap-3">
                 <div className="p-3 bg-slate-50 text-slate-600 rounded-2xl"><Store size={24} /></div>
-                <h3 className="text-xl font-black text-slate-800 tracking-tight">Store Identity</h3>
+                <h3 className="text-xl font-black text-slate-800 tracking-tight">Business Details</h3>
               </div>
               
               <div className="space-y-4">
@@ -268,6 +273,25 @@ const Settings: React.FC<{ currentUser: Staff | null }> = ({ currentUser }) => {
                     value={shopName}
                     onChange={e => setShopName(e.target.value)}
                   />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Email Address (For Receipts & Subscription)</label>
+                  <div className="relative">
+                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+                    <input 
+                      type="email" 
+                      className="w-full pl-12 pr-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 font-bold" 
+                      value={email}
+                      onChange={e => setEmail(e.target.value)}
+                      placeholder="business@example.com"
+                    />
+                  </div>
+                  {!email && (
+                    <div className="mt-3 p-3 bg-amber-50 border border-amber-100 rounded-xl flex items-center gap-2 text-[10px] font-bold text-amber-700 animate-pulse">
+                      <AlertTriangle size={14} />
+                      <span>Please add your email to enable easy subscription renewals.</span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
