@@ -13,11 +13,11 @@ const SubscriptionManager: React.FC<SubscriptionManagerProps> = ({ settings, onS
   const isLicensed = settings.license_expiry && settings.license_expiry > Date.now();
   const expiryDate = settings.license_expiry ? new Date(settings.license_expiry).toLocaleDateString() : 'N/A';
 
-  const handlePaystackPayment = (e?: React.MouseEvent) => {
+  const payWithPaystack = (e?: React.MouseEvent) => {
     // Stop form refresh if button is inside a form
     if (e) e.preventDefault();
 
-    // Check if Paystack script is loaded
+    // Key Check: Ensure Paystack script is loaded
     if (!(window as any).PaystackPop) {
       alert("Paystack is loading, please wait...");
       return;
@@ -32,7 +32,7 @@ const SubscriptionManager: React.FC<SubscriptionManagerProps> = ({ settings, onS
     // Accessing the key via standard Vite environment variable syntax
     const paystackKey = (import.meta as any).env.VITE_PAYSTACK_PUBLIC_KEY;
 
-    // Debugging Logs for the owner
+    // Debugging Logs for the terminal owner
     console.log('Initializing Paystack with Key:', paystackKey);
     console.log('Terminal ID:', terminalId);
     console.log('Referral Code:', savedReferralCode);
@@ -50,7 +50,6 @@ const SubscriptionManager: React.FC<SubscriptionManagerProps> = ({ settings, onS
         email: `${settings.admin_name.replace(/\s+/g, '.').toLowerCase()}@naijashop.pos`,
         amount: 1000000, // ₦10,000.00 (Standardized in Kobo: 10000 * 100)
         currency: 'NGN',
-        ref: 'NS-' + Math.floor((Math.random() * 1000000000) + 1),
         metadata: {
           terminal_id: terminalId,
           referrer_code: savedReferralCode,
@@ -61,9 +60,8 @@ const SubscriptionManager: React.FC<SubscriptionManagerProps> = ({ settings, onS
         },
         callback: (response: any) => {
           setIsProcessing(false);
-          // Redirect to the activation page with the payment reference
-          // Note: App routing uses '/activation'
-          window.location.href = '/activation?session=' + response.reference;
+          // Redirect to the activation page with the payment reference as requested
+          window.location.href = '/activate?session=' + response.reference;
         },
         onClose: () => {
           setIsProcessing(false);
@@ -102,12 +100,12 @@ const SubscriptionManager: React.FC<SubscriptionManagerProps> = ({ settings, onS
 
       <div className="space-y-4">
         <button 
-          onClick={handlePaystackPayment}
+          onClick={payWithPaystack}
           disabled={isProcessing}
           className="w-full py-5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-sm uppercase tracking-widest flex items-center justify-center gap-3 transition-all shadow-lg shadow-emerald-200 disabled:opacity-50 active:scale-[0.98]"
         >
           {isProcessing ? <Loader2 className="animate-spin" size={20} /> : <CreditCard size={20} />}
-          {isLicensed ? 'Extend License (₦10,000/Yr)' : 'Activate Terminal (₦10,000/Yr)'}
+          {isLicensed ? 'Extend License (₦10,000/Yr)' : 'Subscribe Now (₦10,000/Yr)'}
         </button>
 
         <div className="flex flex-col items-center gap-2">
