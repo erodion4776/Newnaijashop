@@ -73,6 +73,10 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
     Math.ceil(total / 10000) * 10000,
   ].filter((v, i, a) => a.indexOf(v) === i && v >= total).slice(0, 3);
 
+  /**
+   * handleCompleteSale Implementation
+   * Uses sequential async logic for database reliability
+   */
   const handleCompleteSale = async () => {
     if (!paymentMethod) {
       alert('Please select a payment method');
@@ -106,13 +110,14 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
       let lowItems: string[] = [];
 
-      // STRICT INSTRUCTION: Loop through items and only deduct stock if not already deducted (during parking)
+      // STRICT INSTRUCTION: Loop through items sequentially in a single Dexie transaction
       await (db as any).transaction('rw', [db.sales, db.products, db.inventory_logs], async () => {
         // 1. Record the Sale
         await db.sales.add(saleData);
         
-        // 2. Process each item for stock deduction
+        // 2. Process each item for stock deduction sequentially
         for (const item of cart) {
+          // CHECKPOINT: Skip if stock was already subtracted during a 'Park' event
           if (!item.isStockAlreadyDeducted) {
             const product = await db.products.get(item.productId);
             if (product) {
@@ -120,6 +125,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
               const soldQty = Number(item.quantity || 0);
               const newStock = Math.max(0, currentStock - soldQty);
               
+              // Force database update sequentially
               await db.products.update(item.productId, { stock_qty: newStock });
               
               // Create an inventory log for the audit trail
@@ -139,8 +145,8 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
               }
             }
           } else {
-             // Stock was already removed during parking, so we just acknowledge it here
-             console.log('Finalized Sale Record: Stock was previously deducted during Parking event.');
+             // LOGGING: Stock was already removed during parking, acknowledging safety check
+             console.log('Stock skipping deduction: Flag detected for', item.name);
           }
         }
       });
@@ -148,7 +154,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
       setIsProcessing(false);
       onComplete(saleData, lowItems);
       
-      // Reset
+      // UI Reset
       setStep('payment');
       setPaymentMethod(null);
       setCashAmount(total);
