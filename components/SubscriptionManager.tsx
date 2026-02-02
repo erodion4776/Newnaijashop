@@ -1,6 +1,5 @@
-
 import React, { useState } from 'react';
-import { CreditCard, ShieldCheck, ShieldAlert, Loader2, Calendar } from 'lucide-react';
+import { CreditCard, ShieldCheck, ShieldAlert, Loader2, Calendar, Lock } from 'lucide-react';
 import { Settings } from '../types';
 
 interface SubscriptionManagerProps {
@@ -15,24 +14,54 @@ const SubscriptionManager: React.FC<SubscriptionManagerProps> = ({ settings, onS
   const expiryDate = settings.license_expiry ? new Date(settings.license_expiry).toLocaleDateString() : 'N/A';
 
   const handlePaystackPayment = () => {
+    if (isProcessing) return;
     setIsProcessing(true);
     
-    const handler = (window as any).PaystackPop.setup({
-      key: 'pk_test_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx', // Replace with your actual Paystack public key
-      email: 'customer@naijashop.pos',
-      amount: 1000000, // ₦10,000.00 (in kobo)
-      currency: 'NGN',
-      ref: 'NS-' + Math.floor((Math.random() * 1000000000) + 1),
-      callback: (response: any) => {
-        setIsProcessing(false);
-        onSuccess(response.reference);
-      },
-      onClose: () => {
-        setIsProcessing(false);
-      }
-    });
-    
-    handler.openIframe();
+    const terminalId = settings.terminal_id || 'UNKNOWN';
+    const savedReferralCode = settings.referral_code_used || 'NONE';
+
+    // Fix: Cast import.meta to any to resolve the 'Property env does not exist on type ImportMeta' error 
+    // which can occur due to missing Vite client types in some environments.
+    const paystackKey = (import.meta as any).env.VITE_PAYSTACK_PUBLIC_KEY;
+
+    if (!paystackKey) {
+      console.error("Paystack Public Key is missing in environment variables.");
+      alert("System Configuration Error: Payment gateway key not found. Please contact support.");
+      setIsProcessing(false);
+      return;
+    }
+
+    try {
+      const handler = (window as any).PaystackPop.setup({
+        key: paystackKey,
+        email: `${settings.admin_name.replace(/\s+/g, '.').toLowerCase()}@naijashop.pos`,
+        amount: 1000000, // ₦10,000.00 (Standardized in Kobo: 10000 * 100)
+        currency: 'NGN',
+        ref: 'NS-' + Math.floor((Math.random() * 1000000000) + 1),
+        metadata: {
+          terminal_id: terminalId,
+          referrer_code: savedReferralCode,
+          custom_fields: [
+            { display_name: "Terminal ID", variable_name: "terminal_id", value: terminalId },
+            { display_name: "Referrer", variable_name: "referrer", value: savedReferralCode }
+          ]
+        },
+        callback: (response: any) => {
+          setIsProcessing(false);
+          // Standardized success route to the activation terminal
+          window.location.href = '/activation?session=' + response.reference;
+        },
+        onClose: () => {
+          setIsProcessing(false);
+        }
+      });
+      
+      handler.openIframe();
+    } catch (err) {
+      console.error("Paystack Initialization Error:", err);
+      alert("Could not load payment gateway. Please check your internet connection.");
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -52,22 +81,30 @@ const SubscriptionManager: React.FC<SubscriptionManagerProps> = ({ settings, onS
         </div>
       </div>
 
-      <p className="text-sm text-slate-500 font-medium">
-        Professional features require an active license. Licenses are ₦10,000 per year per terminal.
+      <p className="text-sm text-slate-500 font-medium leading-relaxed">
+        Professional features require an active terminal license. Standard licensing is <b>₦10,000 per year</b> per terminal device.
       </p>
 
-      <button 
-        onClick={handlePaystackPayment}
-        disabled={isProcessing}
-        className="w-full py-5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-sm uppercase tracking-widest flex items-center justify-center gap-3 transition-all shadow-lg shadow-emerald-200 disabled:opacity-50"
-      >
-        {isProcessing ? <Loader2 className="animate-spin" size={20} /> : <CreditCard size={20} />}
-        {isLicensed ? 'Extend License (₦10,000/Yr)' : 'Activate Terminal (₦10,000/Yr)'}
-      </button>
+      <div className="space-y-4">
+        <button 
+          onClick={handlePaystackPayment}
+          disabled={isProcessing}
+          className="w-full py-5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-sm uppercase tracking-widest flex items-center justify-center gap-3 transition-all shadow-lg shadow-emerald-200 disabled:opacity-50 active:scale-[0.98]"
+        >
+          {isProcessing ? <Loader2 className="animate-spin" size={20} /> : <CreditCard size={20} />}
+          {isLicensed ? 'Extend License (₦10,000/Yr)' : 'Activate Terminal (₦10,000/Yr)'}
+        </button>
 
-      <div className="flex items-center justify-center gap-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">
-         <Calendar size={12} />
-         Secure Yearly Renewals
+        <div className="flex flex-col items-center gap-2">
+          <div className="flex items-center gap-1.5 text-slate-400">
+            <Lock size={12} />
+            <span className="text-[10px] font-black uppercase tracking-widest">Secure Payment by Paystack</span>
+          </div>
+          <div className="flex items-center justify-center gap-2 text-[9px] font-black text-slate-300 uppercase tracking-widest">
+             <Calendar size={12} />
+             Automated Yearly Verification
+          </div>
+        </div>
       </div>
     </div>
   );

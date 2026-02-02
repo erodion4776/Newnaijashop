@@ -121,6 +121,7 @@ export interface Staff {
 export interface Settings {
   id: string; // 'app_settings'
   terminal_id?: string;
+  referral_code_used?: string;
   shop_name: string;
   admin_name: string;
   admin_pin: string;
