@@ -13,16 +13,29 @@ const SubscriptionManager: React.FC<SubscriptionManagerProps> = ({ settings, onS
   const isLicensed = settings.license_expiry && settings.license_expiry > Date.now();
   const expiryDate = settings.license_expiry ? new Date(settings.license_expiry).toLocaleDateString() : 'N/A';
 
-  const handlePaystackPayment = () => {
+  const handlePaystackPayment = (e?: React.MouseEvent) => {
+    // Stop form refresh if button is inside a form
+    if (e) e.preventDefault();
+
+    // Check if Paystack script is loaded
+    if (!(window as any).PaystackPop) {
+      alert("Paystack is loading, please wait...");
+      return;
+    }
+    
     if (isProcessing) return;
     setIsProcessing(true);
     
     const terminalId = settings.terminal_id || 'UNKNOWN';
     const savedReferralCode = settings.referral_code_used || 'NONE';
 
-    // Fix: Cast import.meta to any to resolve the 'Property env does not exist on type ImportMeta' error 
-    // which can occur due to missing Vite client types in some environments.
+    // Accessing the key via standard Vite environment variable syntax
     const paystackKey = (import.meta as any).env.VITE_PAYSTACK_PUBLIC_KEY;
+
+    // Debugging Logs for the owner
+    console.log('Initializing Paystack with Key:', paystackKey);
+    console.log('Terminal ID:', terminalId);
+    console.log('Referral Code:', savedReferralCode);
 
     if (!paystackKey) {
       console.error("Paystack Public Key is missing in environment variables.");
@@ -48,11 +61,13 @@ const SubscriptionManager: React.FC<SubscriptionManagerProps> = ({ settings, onS
         },
         callback: (response: any) => {
           setIsProcessing(false);
-          // Standardized success route to the activation terminal
+          // Redirect to the activation page with the payment reference
+          // Note: App routing uses '/activation'
           window.location.href = '/activation?session=' + response.reference;
         },
         onClose: () => {
           setIsProcessing(false);
+          console.log("Payment window closed by user.");
         }
       });
       
