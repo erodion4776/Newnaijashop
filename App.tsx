@@ -1,5 +1,5 @@
-
 import React, { useState, useEffect, ReactNode, Component } from 'react';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, initSettings } from './db/db';
 import { View, Staff, SaleItem, Product } from './types';
@@ -21,6 +21,7 @@ import ActivationPage from './pages/ActivationPage';
 import SetupShop from './pages/SetupShop';
 import LandingPage from './pages/LandingPage';
 import MasterAdminHub from './pages/MasterAdminHub';
+import AffiliatePortal from './pages/AffiliatePortal';
 import SupportChat from './components/SupportChat';
 import { 
   AlertTriangle,
@@ -44,13 +45,7 @@ export const getTrialRemainingTime = (installationDate: number) => {
 interface ErrorBoundaryProps { children?: ReactNode; }
 interface ErrorBoundaryState { hasError: boolean; error: Error | null; }
 
-/**
- * Fix: Explicitly extended Component (named import) to resolve 
- * 'Property props does not exist' and 'Property state does not exist' errors 
- * by ensuring correct type inheritance.
- */
 class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  // Fix: Explicitly initialize state property to help compiler track instance members
   state: ErrorBoundaryState = { hasError: false, error: null };
 
   constructor(props: ErrorBoundaryProps) {
@@ -62,7 +57,6 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   }
 
   render() {
-    // Fix: Access state through this.state
     if (this.state.hasError) {
       return (
         <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 text-center">
@@ -74,20 +68,19 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
         </div>
       );
     }
-    // Fix: Access props through casting 'this' to any to bypass environment-specific property inheritance errors.
     return (this as any).props.children;
   }
 }
 
 const AppContent: React.FC = () => {
-  const [currentView, setCurrentView] = useState<View>('landing');
+  const location = useLocation();
+  const [currentView, setCurrentView] = useState<View>('dashboard');
   const [isInitialized, setIsInitialized] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
   const [currentUser, setCurrentUser] = useState<Staff | null>(null);
   const [loginPassword, setLoginPassword] = useState('');
   const [selectedStaffId, setSelectedStaffId] = useState<number | ''>('');
   const [isStaffLock, setIsStaffLock] = useState(localStorage.getItem('isStaffLock') === 'true');
-  const [isMasterView] = useState(window.location.pathname.includes('master-control'));
   
   const [cart, setCart] = useState<SaleItem[]>([]);
   const [parkTrigger, setParkTrigger] = useState(0);
@@ -144,86 +137,89 @@ const AppContent: React.FC = () => {
     );
   }
 
-  if (isMasterView) return <MasterAdminHub />;
+  if (location.pathname === '/master-control') return <MasterAdminHub />;
 
   const s = settings as any;
-  const isLicensed = settings?.license_expiry && settings.license_expiry > now;
   const trial = s?.installationDate ? getTrialRemainingTime(s.installationDate) : { totalMs: 999999, days: 30, hours: 0, minutes: 0 };
+  const isLicensed = settings?.license_expiry && settings.license_expiry > now;
   const isTrialExpired = s?.installationDate && (trial.totalMs <= 0) && !s.isSubscribed && !isLicensed;
 
-  if (isTrialExpired && currentView !== 'activation') {
+  if (isTrialExpired && location.pathname !== '/activation') {
     return (
       <div className="min-h-screen bg-emerald-950 flex items-center justify-center p-6">
         <div className="bg-white p-12 rounded-[3.5rem] text-center space-y-8">
           <ShieldAlert size={48} className="mx-auto text-emerald-600"/>
           <h2 className="text-3xl font-black">Trial Expired</h2>
           <p>Please subscribe to continue managing your business.</p>
-          <button onClick={() => setCurrentView('activation')} className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black">Renew License</button>
-        </div>
-      </div>
-    );
-  }
-
-  if (isInitialized && (!settings?.is_setup_complete || staffList.length === 0)) {
-    if (currentView === 'landing') return <LandingPage onStartTrial={() => setCurrentView('setup')} />;
-    return <SetupShop onComplete={() => window.location.reload()} />;
-  }
-
-  if (!currentUser && currentView !== 'activation') {
-    return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
-        <div className="w-full max-w-sm space-y-10">
-          <div className="text-center flex flex-col items-center">
-             <div className="w-24 h-24 bg-white rounded-[2rem] p-4 shadow-2xl border border-slate-100 mb-6">
-                <img src={LOGO_URL} className="w-full h-full object-contain" alt="Logo" />
-             </div>
-             <h1 className="text-4xl font-black text-slate-900 tracking-tight">{settings?.shop_name || 'NaijaShop'}</h1>
-          </div>
-          <div className="bg-white p-10 rounded-[3rem] shadow-2xl border border-slate-200">
-            <form onSubmit={handleLoginSubmit} className="space-y-6">
-              <select required className="w-full px-5 py-4 bg-slate-50 border rounded-2xl font-bold" value={selectedStaffId} onChange={(e) => setSelectedStaffId(Number(e.target.value))}>
-                <option value="">Select Account</option>
-                {staffList.map(s => <option key={s.id} value={s.id!}>{s.name} ({s.role})</option>)}
-              </select>
-              <input required type="password" placeholder="PIN" className="w-full px-5 py-4 bg-slate-50 border rounded-2xl font-bold" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} />
-              <button type="submit" className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-xl shadow-xl">Unlock Terminal</button>
-            </form>
-          </div>
+          <Navigate to="/activation" />
         </div>
       </div>
     );
   }
 
   return (
-    <>
-      <Layout 
-        activeView={currentView} setView={setCurrentView} 
-        shopName={settings?.shop_name || 'NaijaShop'} currentUser={currentUser} 
-        isStaffLock={isStaffLock} toggleStaffLock={(v) => { setIsStaffLock(v); localStorage.setItem('isStaffLock', String(v)); }}
-        adminPin={settings?.admin_pin || ''} onLogout={() => setCurrentUser(null)}
-        trialRemaining={trial} isSubscribed={s?.isSubscribed}
-      >
-        {currentView === 'dashboard' && <Dashboard currentUser={currentUser} setView={setCurrentView} isStaffLock={isStaffLock} trialRemaining={trial} isSubscribed={s?.isSubscribed} />}
-        {currentView === 'pos' && <POS setView={setCurrentView} currentUser={currentUser} cart={cart} setCart={setCart} parkTrigger={parkTrigger} />}
-        {currentView === 'activity-log' && <ActivityLog currentUser={currentUser} />}
-        {currentView === 'inventory' && <Inventory setView={setCurrentView} currentUser={currentUser} isStaffLock={isStaffLock} />}
-        {currentView === 'settings' && <Settings currentUser={currentUser} />}
-        {currentView === 'business-hub' && <BusinessHub />}
-        {currentView === 'audit-trail' && <AuditTrail />}
-        {currentView === 'expense-tracker' && <ExpenseTracker currentUser={currentUser} isStaffLock={isStaffLock} />}
-        {currentView === 'transfer-station' && <TransferStation setView={setCurrentView} />}
-        {currentView === 'inventory-ledger' && <InventoryLedger />}
-        {currentView === 'debts' && <Debts />}
-        {currentView === 'staff-management' && <StaffManagement />}
-        {currentView === 'security-backups' && <SecurityBackups currentUser={currentUser} />}
-        {currentView === 'activation' && <ActivationPage sessionRef={new URLSearchParams(window.location.search).get('session') || ''} onActivated={() => window.location.href = '/'} />}
-      </Layout>
-      <SupportChat 
-        currentUser={currentUser} cart={cart} onClearCart={() => setCart([])}
-        onNavigate={setCurrentView} onAddToCart={handleAddToCart}
-        onParkOrder={() => { setCurrentView('pos'); setParkTrigger(prev => prev + 1); }}
-      />
-    </>
+    <Routes>
+      <Route path="/affiliate" element={<AffiliatePortal />} />
+      <Route path="/activation" element={<ActivationPage sessionRef={new URLSearchParams(location.search).get('session') || ''} onActivated={() => window.location.href = '/'} />} />
+      <Route path="/setup" element={<SetupShop onComplete={() => window.location.reload()} />} />
+      <Route path="*" element={
+        !settings?.is_setup_complete || staffList.length === 0 ? (
+          <LandingPage onStartTrial={() => window.location.href = '/setup'} />
+        ) : (
+          !currentUser ? (
+            <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
+              <div className="w-full max-w-sm space-y-10">
+                <div className="text-center flex flex-col items-center">
+                   <div className="w-24 h-24 bg-white rounded-[2rem] p-4 shadow-2xl border border-slate-100 mb-6">
+                      <img src={LOGO_URL} className="w-full h-full object-contain" alt="Logo" />
+                   </div>
+                   <h1 className="text-4xl font-black text-slate-900 tracking-tight">{settings?.shop_name || 'NaijaShop'}</h1>
+                </div>
+                <div className="bg-white p-10 rounded-[3rem] shadow-2xl border border-slate-200">
+                  <form onSubmit={handleLoginSubmit} className="space-y-6">
+                    <select required className="w-full px-5 py-4 bg-slate-50 border rounded-2xl font-bold" value={selectedStaffId} onChange={(e) => setSelectedStaffId(Number(e.target.value))}>
+                      <option value="">Select Account</option>
+                      {staffList.map(s => <option key={s.id} value={s.id!}>{s.name} ({s.role})</option>)}
+                    </select>
+                    <input required type="password" placeholder="PIN" className="w-full px-5 py-4 bg-slate-50 border rounded-2xl font-bold" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} />
+                    <button type="submit" className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-xl shadow-xl">Unlock Terminal</button>
+                  </form>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <>
+              <Layout 
+                activeView={currentView} setView={setCurrentView} 
+                shopName={settings?.shop_name || 'NaijaShop'} currentUser={currentUser} 
+                isStaffLock={isStaffLock} toggleStaffLock={(v) => { setIsStaffLock(v); localStorage.setItem('isStaffLock', String(v)); }}
+                adminPin={settings?.admin_pin || ''} onLogout={() => setCurrentUser(null)}
+                trialRemaining={trial} isSubscribed={s?.isSubscribed}
+              >
+                {currentView === 'dashboard' && <Dashboard currentUser={currentUser} setView={setCurrentView} isStaffLock={isStaffLock} trialRemaining={trial} isSubscribed={s?.isSubscribed} />}
+                {currentView === 'pos' && <POS setView={setCurrentView} currentUser={currentUser} cart={cart} setCart={setCart} parkTrigger={parkTrigger} />}
+                {currentView === 'activity-log' && <ActivityLog currentUser={currentUser} />}
+                {currentView === 'inventory' && <Inventory setView={setCurrentView} currentUser={currentUser} isStaffLock={isStaffLock} />}
+                {currentView === 'settings' && <Settings currentUser={currentUser} />}
+                {currentView === 'business-hub' && <BusinessHub />}
+                {currentView === 'audit-trail' && <AuditTrail />}
+                {currentView === 'expense-tracker' && <ExpenseTracker currentUser={currentUser} isStaffLock={isStaffLock} />}
+                {currentView === 'transfer-station' && <TransferStation setView={setCurrentView} />}
+                {currentView === 'inventory-ledger' && <InventoryLedger />}
+                {currentView === 'debts' && <Debts />}
+                {currentView === 'staff-management' && <StaffManagement />}
+                {currentView === 'security-backups' && <SecurityBackups currentUser={currentUser} />}
+              </Layout>
+              <SupportChat 
+                currentUser={currentUser} cart={cart} onClearCart={() => setCart([])}
+                onNavigate={setCurrentView} onAddToCart={handleAddToCart}
+                onParkOrder={() => { setCurrentView('pos'); setParkTrigger(prev => prev + 1); }}
+              />
+            </>
+          )
+        )
+      } />
+    </Routes>
   );
 };
 

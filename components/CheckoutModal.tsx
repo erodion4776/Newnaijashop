@@ -104,34 +104,47 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
       let lowItems: string[] = [];
 
-      // Atomic transaction for sale and inventory
+      // STRICT INSTRUCTION: Atomic transactions and manual stock deduction logic
       await (db as any).transaction('rw', [db.sales, db.products, db.inventory_logs], async () => {
+        // 1. Record the Sale
         await db.sales.add(saleData);
         
+        // 2. Process each item for stock deduction
         for (const item of cart) {
+          // Only deduct if it wasn't already deducted during 'Parking' edit cycles
           if (!item.isStockAlreadyDeducted) {
             const product = await db.products.get(item.productId);
             if (product) {
-              const oldStock = Number(product.stock_qty || 0);
-              const newStock = Math.max(0, oldStock - item.quantity);
+              // DATA TYPE SAFETY: Force Number conversion for accurate math
+              const currentStock = Number(product.stock_qty || 0);
+              const soldQty = Number(item.quantity || 0);
+              const newStock = Math.max(0, currentStock - soldQty);
               
+              // DEBUGGING: Log to verify calculation
+              console.log('Deducting stock for:', item.name, 'New Stock:', newStock);
+              
+              // Update the product table
               await db.products.update(item.productId, { stock_qty: newStock });
               
+              // Create an inventory log for the audit trail
               await db.inventory_logs.add({
                 product_id: item.productId,
                 product_name: product.name,
-                quantity_changed: -item.quantity,
-                old_stock: oldStock,
+                quantity_changed: -soldQty,
+                old_stock: currentStock,
                 new_stock: newStock,
                 type: 'Sale',
                 timestamp: Date.now(),
                 performed_by: currentUser?.name || 'Staff'
               });
 
-              if (newStock <= (product.low_stock_threshold || 5)) {
+              // Track low items for post-sale alert
+              if (newStock <= Number(product.low_stock_threshold || 5)) {
                 lowItems.push(product.name);
               }
             }
+          } else {
+             console.log('Skipping stock deduction for (Already Deducted):', item.name);
           }
         }
       });
@@ -147,8 +160,8 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
       setCustomerPhone('');
       
     } catch (error) {
-      console.error("Checkout Error:", error);
-      alert('Error: Could not save sale');
+      console.error("Critical Transaction Error:", error);
+      alert('Error: Transaction failed. Inventory remains unchanged.');
       setIsProcessing(false);
     }
   };

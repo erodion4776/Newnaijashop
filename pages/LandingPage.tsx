@@ -95,6 +95,13 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
     navigate('/affiliate');
   };
 
+  const scrollToPricing = () => {
+    const section = document.getElementById('pricing-section');
+    if (section) {
+      section.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -530,7 +537,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
                 </div>
                 <div className="md:col-span-2 space-y-2">
                   <label className="text-[10px] font-black uppercase tracking-widest text-emerald-400">Your Message</label>
-                  <textarea name="message" value={formState.description} onChange={e => setFormState({...formState, description: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 font-bold outline-none focus:ring-2 focus:ring-emerald-500 h-32 resize-none" placeholder="How can we help?"></textarea>
+                  <textarea name="message" value={formState.message} onChange={e => setFormState({...formState, message: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 font-bold outline-none focus:ring-2 focus:ring-emerald-500 h-32 resize-none" placeholder="How can we help?"></textarea>
                 </div>
                 <div className="md:col-span-2">
                   <motion.button 
@@ -553,9 +560,14 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
         <div className="max-w-7xl mx-auto px-6 flex flex-col items-center space-y-8">
            <img src={LOGO_URL} className="w-16 h-16 object-contain" alt="Logo" />
            <div className="flex flex-wrap justify-center gap-8 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">
-             <a href="#" className="hover:text-emerald-400 transition-colors">Privacy</a>
-             <a href="#" className="hover:text-emerald-400 transition-colors">Terms</a>
-             <a href="#" className="hover:text-emerald-400 transition-colors">Pricing</a>
+             <a href="/privacy" className="hover:text-emerald-400 transition-colors">Privacy</a>
+             <a href="/terms" className="hover:text-emerald-400 transition-colors">Terms</a>
+             <button 
+               onClick={scrollToPricing}
+               className="hover:text-emerald-400 transition-colors uppercase tracking-[0.2em]"
+             >
+               Pricing
+             </button>
              <motion.button 
                whileHover={{ scale: 1.05 }}
                onClick={handleMarketerClick}
