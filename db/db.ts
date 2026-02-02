@@ -1,14 +1,8 @@
 
 import { Dexie } from 'dexie';
 import type { Table } from 'dexie';
-import { Product, Sale, Debt, Settings, ParkedOrder, InventoryLog, Staff, Expense, AuditEntry, CustomerWallet, WalletTransaction, UsedReference } from '../types';
+import { Product, Sale, Debt, Settings, ParkedOrder, InventoryLog, Staff, Expense, AuditEntry, CustomerWallet, WalletTransaction, UsedReference, StockSnapshot } from '../types';
 
-/**
- * Fix: Changed the import to named import { Dexie } from 'dexie'. 
- * Inheriting from the named export ensures that prototype methods like .version() 
- * and .transaction() are correctly inherited and recognized by the TypeScript compiler
- * on the subclass instance.
- */
 export class NaijaShopDB extends Dexie {
   products!: Table<Product>;
   sales!: Table<Sale>;
@@ -22,13 +16,12 @@ export class NaijaShopDB extends Dexie {
   wallets!: Table<CustomerWallet>;
   wallet_transactions!: Table<WalletTransaction>;
   used_references!: Table<UsedReference>;
+  stock_snapshots!: Table<StockSnapshot>;
 
   constructor() {
     super('NaijaShopDB');
     
-    // Fix: Cast 'this' to any to resolve the 'Property version does not exist' error 
-    // which can occur due to inconsistencies in how Dexie types are inferred in some build environments.
-    (this as any).version(27).stores({
+    (this as any).version(28).stores({
       products: '++id, name, category, barcode',
       sales: '++id, sale_id, timestamp, payment_method, staff_name',
       debts: '++id, customer_name, phone, status',
@@ -40,12 +33,58 @@ export class NaijaShopDB extends Dexie {
       audit_trail: '++id, action, staff_name, timestamp',
       wallets: '++id, phone, balance',
       wallet_transactions: '++id, phone, type, timestamp',
-      used_references: '++id, &reference'
+      used_references: '++id, &reference',
+      stock_snapshots: '++id, date, product_id, [date+product_id]'
+    });
+
+    // REAL-TIME SNAPSHOT HOOKS
+    this.sales.hook('creating', (primKey, obj, transaction) => {
+      const today = new Date().toISOString().split('T')[0];
+      obj.items.forEach(async (item) => {
+        const snapshot = await this.stock_snapshots.where({ date: today, product_id: item.productId }).first();
+        if (snapshot && snapshot.id) {
+          await this.stock_snapshots.update(snapshot.id, { sold_qty: snapshot.sold_qty + item.quantity });
+        }
+      });
+    });
+
+    this.inventory_logs.hook('creating', (primKey, obj, transaction) => {
+      if (obj.type === 'Restock' || (obj.type === 'Adjustment' && obj.quantity_changed > 0)) {
+        const today = new Date().toISOString().split('T')[0];
+        this.stock_snapshots.where({ date: today, product_id: obj.product_id }).first().then(snapshot => {
+          if (snapshot && snapshot.id) {
+            this.stock_snapshots.update(snapshot.id, { added_qty: snapshot.added_qty + Math.abs(obj.quantity_changed) });
+          }
+        });
+      }
     });
   }
 }
 
 export const db: NaijaShopDB = new NaijaShopDB();
+
+/**
+ * Ensures today's stock records are prepared.
+ * Run during Admin login or app init.
+ */
+export const initializeDailyStock = async () => {
+  const today = new Date().toISOString().split('T')[0];
+  const existing = await db.stock_snapshots.where('date').equals(today).first();
+  
+  if (!existing) {
+    const allProducts = await db.products.toArray();
+    const snapshots: StockSnapshot[] = allProducts.map(p => ({
+      date: today,
+      product_id: p.id!,
+      product_name: p.name,
+      starting_qty: p.stock_qty,
+      added_qty: 0,
+      sold_qty: 0
+    }));
+    await db.stock_snapshots.bulkAdd(snapshots);
+    console.log(`[SNAPSHOT] Initialized ${snapshots.length} stock records for ${today}`);
+  }
+};
 
 export const initSettings = async () => {
   const settings = await db.settings.get('app_settings');
@@ -65,4 +104,6 @@ export const initSettings = async () => {
       receipt_footer: 'Thanks for your patronage! No refund after payment.'
     });
   }
+  // Trigger daily stock initialization
+  await initializeDailyStock();
 };

@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Lock, 
   Moon, 
@@ -16,13 +16,14 @@ import {
   FileText,
   Loader2,
   AlertTriangle,
-  History
+  History,
+  ClipboardCheck
 } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
 import { generateBackupData } from '../utils/backup';
 import BluetoothPrintService from '../services/BluetoothPrintService';
-import { Staff, Settings } from '../types';
+import { Staff, Settings, StockSnapshot } from '../types';
 
 interface ClosingReportProps {
   onClose: () => void;
@@ -38,6 +39,9 @@ const ClosingReport: React.FC<ClosingReportProps> = ({ onClose, currentUser, onL
   const [closingNotes, setClosingNotes] = useState('');
   const [isPrinting, setIsPrinting] = useState(false);
 
+  // Today's Date String for Snapshots
+  const todayDate = new Date().toISOString().split('T')[0];
+
   // Fetch today's data
   const todayStart = new Date().setHours(0, 0, 0, 0);
   const todayEnd = new Date().setHours(23, 59, 59, 999);
@@ -51,6 +55,7 @@ const ClosingReport: React.FC<ClosingReportProps> = ({ onClose, currentUser, onL
   ) || [];
 
   const products = useLiveQuery(() => db.products.toArray()) || [];
+  const snapshots = useLiveQuery(() => db.stock_snapshots.where('date').equals(todayDate).toArray()) || [];
 
   const summary = useMemo(() => {
     const stats = {
@@ -99,27 +104,41 @@ const ClosingReport: React.FC<ClosingReportProps> = ({ onClose, currentUser, onL
   const handleFinalize = async () => {
     setIsFinalizing(true);
     
-    // Create an audit log for the closing
-    await db.audit_trail.add({
-      action: 'Daily Shop Closing',
-      details: `Total Sales: ₦${summary.totalSales.toLocaleString()} | Expenses: ₦${summary.expenses.toLocaleString()} | Notes: ${closingNotes || 'None'}`,
-      staff_name: currentUser?.name || 'Admin',
-      timestamp: Date.now()
-    });
+    try {
+      await (db as any).transaction('rw', [db.audit_trail, db.stock_snapshots, db.products], async () => {
+        // 1. Log Closure
+        await db.audit_trail.add({
+          action: 'Daily Shop Closing',
+          details: `Total Sales: ₦${summary.totalSales.toLocaleString()} | Expenses: ₦${summary.expenses.toLocaleString()} | Notes: ${closingNotes || 'None'}`,
+          staff_name: currentUser?.name || 'Admin',
+          timestamp: Date.now()
+        });
 
-    // If bluetooth is connected, try to print automatically
-    if (BluetoothPrintService.isConnected()) {
-      try {
-        await BluetoothPrintService.printZReport(summary, settings, closingNotes);
-      } catch (e) {
-        console.error("Auto-print failed", e);
+        // 2. Finalize Stock Snapshots
+        for (const p of products) {
+          await db.stock_snapshots
+            .where({ date: todayDate, product_id: p.id })
+            .modify({ closing_qty: p.stock_qty });
+        }
+      });
+
+      // 3. Bluetooth Print Z-Report
+      if (BluetoothPrintService.isConnected()) {
+        try {
+          await BluetoothPrintService.printZReport(summary, settings, closingNotes);
+        } catch (e) {
+          console.error("Auto-print failed", e);
+        }
       }
-    }
 
-    setTimeout(() => {
-      setShowSuccess(true);
+      setTimeout(() => {
+        setShowSuccess(true);
+        setIsFinalizing(false);
+      }, 1000);
+    } catch (err) {
+      alert("Closing failed. Please retry.");
       setIsFinalizing(false);
-    }, 1500);
+    }
   };
 
   if (showSuccess) {
@@ -131,24 +150,6 @@ const ClosingReport: React.FC<ClosingReportProps> = ({ onClose, currentUser, onL
         <div className="space-y-4 max-w-md">
           <h2 className="text-5xl font-black text-white tracking-tighter">Shop Closed</h2>
           <p className="text-emerald-300 font-bold text-xl">Market was good today, Oga! Enjoy your rest.</p>
-          
-          <div className="bg-emerald-900/50 border border-white/10 p-6 rounded-[2.5rem] mt-8 text-left space-y-4">
-            <div className="flex justify-between items-center text-white/60 text-xs font-black uppercase tracking-widest">
-               <span>Today's Performance</span>
-               <span>{new Date().toLocaleDateString()}</span>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-               <div>
-                  <p className="text-[10px] text-emerald-400 font-black uppercase">Revenue</p>
-                  <p className="text-2xl font-black text-white">₦{summary.totalSales.toLocaleString()}</p>
-               </div>
-               <div>
-                  <p className="text-[10px] text-emerald-400 font-black uppercase">Net Profit</p>
-                  <p className="text-2xl font-black text-white">₦{summary.interest.toLocaleString()}</p>
-               </div>
-            </div>
-          </div>
-
           <button 
             onClick={onLogout}
             className="w-full mt-8 py-5 bg-white text-emerald-900 rounded-[2rem] font-black text-xl flex items-center justify-center gap-3 shadow-2xl hover:scale-105 transition-transform"
@@ -162,68 +163,89 @@ const ClosingReport: React.FC<ClosingReportProps> = ({ onClose, currentUser, onL
 
   return (
     <div className="fixed inset-0 z-[1500] bg-slate-50 flex flex-col animate-in slide-in-from-bottom-10 duration-500 overflow-hidden">
-      {/* Header */}
       <header className="bg-emerald-900 p-8 text-white flex items-center justify-between shrink-0">
         <div className="flex items-center gap-4">
-          <div className="p-3 bg-white/10 rounded-2xl backdrop-blur-md">
-            <Moon size={32} />
-          </div>
+          <div className="p-3 bg-white/10 rounded-2xl backdrop-blur-md"><Moon size={32} /></div>
           <div>
             <h2 className="text-3xl font-black tracking-tight leading-none">Daily Closing Ritual</h2>
-            <p className="text-emerald-400 text-xs font-bold uppercase tracking-widest mt-1">Z-Report Generation</p>
+            <p className="text-emerald-400 text-xs font-bold uppercase tracking-widest mt-1">Z-Report & Stock Audit</p>
           </div>
         </div>
-        <button onClick={onClose} className="p-4 hover:bg-white/10 rounded-full transition-colors">
-          <X size={32} />
-        </button>
+        <button onClick={onClose} className="p-4 hover:bg-white/10 rounded-full transition-colors"><X size={32} /></button>
       </header>
 
       <div className="flex-1 overflow-y-auto p-4 md:p-8 scrollbar-hide">
         <div className="max-w-4xl mx-auto space-y-8">
           
-          {/* Summary Dashboard */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-white p-6 rounded-[2.5rem] border border-slate-200 shadow-sm">
                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Cash in Hand</p>
                <h4 className="text-3xl font-black text-emerald-600">₦{summary.cash.toLocaleString()}</h4>
-               <div className="flex items-center gap-1 mt-2 text-[10px] font-bold text-slate-400">
-                  <Banknote size={12} /> Actual Physical Cash
-               </div>
             </div>
             <div className="bg-white p-6 rounded-[2.5rem] border border-slate-200 shadow-sm">
-               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Bank Transfers</p>
+               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Transfers</p>
                <h4 className="text-3xl font-black text-blue-600">₦{summary.transfer.toLocaleString()}</h4>
-               <div className="flex items-center gap-1 mt-2 text-[10px] font-bold text-slate-400">
-                  <Landmark size={12} /> Confirm alerts in App
-               </div>
             </div>
             <div className="bg-white p-6 rounded-[2.5rem] border border-slate-200 shadow-sm">
-               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Expenses (Runnings)</p>
+               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Expenses</p>
                <h4 className="text-3xl font-black text-rose-600">₦{summary.expenses.toLocaleString()}</h4>
-               <div className="flex items-center gap-1 mt-2 text-[10px] font-bold text-slate-400">
-                  <TrendingDown size={12} /> Money spent today
-               </div>
             </div>
           </div>
 
           <div className="bg-emerald-900 rounded-[3rem] p-10 text-white flex flex-col md:flex-row items-center justify-between gap-8 shadow-2xl relative overflow-hidden">
              <div className="absolute right-[-20px] top-[-20px] opacity-10"><History size={180} /></div>
              <div className="relative z-10 space-y-2 text-center md:text-left">
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-400">Net Take-Home After Expenses</p>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-400">Net Take-Home</p>
                 <h3 className="text-6xl font-black tracking-tighter">₦{summary.netTakeHome.toLocaleString()}</h3>
                 <div className="inline-flex items-center gap-2 bg-emerald-800 px-4 py-1.5 rounded-full text-[10px] font-black uppercase">
                    <TrendingUp size={12} /> Today's Gain: ₦{summary.interest.toLocaleString()}
                 </div>
              </div>
-             <div className="relative z-10 w-full md:w-auto flex flex-col gap-2">
-                <div className="bg-white/10 p-4 rounded-3xl backdrop-blur-md border border-white/10 text-center">
-                   <p className="text-[10px] font-black uppercase text-emerald-400 mb-1">Total Sales Count</p>
-                   <p className="text-3xl font-black">{sales.length}</p>
-                </div>
-             </div>
           </div>
 
-          {/* Checklist Form */}
+          {/* STOCK AUDIT PREVIEW */}
+          <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
+            <h3 className="text-xl font-black text-slate-800 flex items-center gap-3">
+              <ClipboardCheck size={24} className="text-indigo-600" /> Stock Audit Summary
+            </h3>
+            <div className="overflow-x-auto rounded-2xl border border-slate-100">
+               <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 border-b">
+                    <tr>
+                      <th className="px-4 py-3 font-black uppercase text-slate-400">Product</th>
+                      <th className="px-4 py-3 font-black uppercase text-slate-400 text-center">Start</th>
+                      <th className="px-4 py-3 font-black uppercase text-slate-400 text-center">Added</th>
+                      <th className="px-4 py-3 font-black uppercase text-slate-400 text-center">Sold</th>
+                      <th className="px-4 py-3 font-black uppercase text-slate-400 text-center">Expected</th>
+                      <th className="px-4 py-3 font-black uppercase text-slate-400 text-center">Actual</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {snapshots.slice(0, 15).map(snap => {
+                      const expected = snap.starting_qty + snap.added_qty - snap.sold_qty;
+                      const product = products.find(p => p.id === snap.product_id);
+                      const actual = product?.stock_qty || 0;
+                      const hasDiscrepancy = expected !== actual;
+
+                      return (
+                        <tr key={snap.id} className={`border-b last:border-0 ${hasDiscrepancy ? 'bg-rose-50' : 'hover:bg-slate-50'}`}>
+                          <td className="px-4 py-3 font-bold truncate max-w-[120px]">{snap.product_name}</td>
+                          <td className="px-4 py-3 text-center">{snap.starting_qty}</td>
+                          <td className="px-4 py-3 text-center text-emerald-600">+{snap.added_qty}</td>
+                          <td className="px-4 py-3 text-center text-rose-600">-{snap.sold_qty}</td>
+                          <td className="px-4 py-3 text-center font-bold text-slate-400">{expected}</td>
+                          <td className="px-4 py-3 text-center font-black">{actual} {hasDiscrepancy && <AlertTriangle size={12} className="inline ml-1 text-rose-500" />}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+               </table>
+               {snapshots.length > 15 && (
+                 <p className="text-center py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Showing Top 15 - See Stock Audit Page for full report</p>
+               )}
+            </div>
+          </div>
+
           <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-8">
             <h3 className="text-xl font-black text-slate-800 flex items-center gap-3">
                <div className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center"><CheckCircle2 size={18} className="text-slate-400" /></div>
@@ -231,86 +253,44 @@ const ClosingReport: React.FC<ClosingReportProps> = ({ onClose, currentUser, onL
             </h3>
 
             <div className="space-y-6">
-              {/* Step 1: Backup */}
               <div className={`p-6 rounded-[2rem] border-2 transition-all ${backupDone ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-100'}`}>
                 <div className="flex items-start gap-4">
                   <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${backupDone ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-400'}`}>
                     {backupDone ? <CheckCircle2 size={24} /> : <span className="font-black">1</span>}
                   </div>
                   <div className="flex-1">
-                    <h4 className={`font-black text-lg ${backupDone ? 'text-emerald-900' : 'text-slate-800'}`}>Mandatory Data Backup</h4>
-                    <p className="text-sm text-slate-500 font-medium mb-4">Send a secure backup to your own WhatsApp before closing. This protects your data if this phone is lost tonight.</p>
-                    <button 
-                      onClick={handleBackup}
-                      className={`flex items-center gap-2 px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${backupDone ? 'bg-emerald-100 text-emerald-700' : 'bg-emerald-600 text-white shadow-lg active:scale-95'}`}
-                    >
-                      <MessageSquare size={18} /> {backupDone ? 'Backup Sent to WhatsApp' : 'Step 1: Backup to WhatsApp'}
+                    <h4 className="font-black text-lg">Mandatory Data Backup</h4>
+                    <p className="text-sm text-slate-500 font-medium mb-4">Send a secure backup to your own WhatsApp before closing.</p>
+                    <button onClick={handleBackup} className={`flex items-center gap-2 px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest ${backupDone ? 'bg-emerald-100 text-emerald-700' : 'bg-emerald-600 text-white shadow-lg'}`}>
+                      <MessageSquare size={18} /> {backupDone ? 'Backup Sent' : 'Step 1: Backup to WhatsApp'}
                     </button>
                   </div>
                 </div>
               </div>
 
-              {/* Notes Field */}
               <div className="p-6 rounded-[2rem] bg-slate-50 border border-slate-100 space-y-4">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-slate-400 shadow-sm"><FileText size={20} /></div>
                   <h4 className="font-black text-slate-800">Shop Handover Notes</h4>
                 </div>
                 <textarea 
-                  placeholder="Type anything important that happened today... (e.g., 'Soldier came to buy fuel', 'Electricity issues')"
+                  placeholder="Important events from today..."
                   className="w-full p-6 bg-white border border-slate-200 rounded-3xl outline-none focus:ring-2 focus:ring-emerald-500 font-medium text-sm min-h-[120px] resize-none"
                   value={closingNotes}
                   onChange={(e) => setClosingNotes(e.target.value)}
                 />
               </div>
 
-              {/* Step 2: Finalize */}
-              <div className={`p-6 rounded-[2rem] border-2 transition-all ${!backupDone ? 'opacity-40 grayscale' : 'bg-white border-emerald-100 shadow-xl'}`}>
-                <div className="flex items-start gap-4">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${!backupDone ? 'bg-slate-200 text-slate-400' : 'bg-emerald-600 text-white animate-pulse'}`}>
-                    <span className="font-black">2</span>
-                  </div>
-                  <div className="flex-1 space-y-6">
-                    <div>
-                      <h4 className="font-black text-lg text-slate-800">Finalize & Print Summary</h4>
-                      <p className="text-sm text-slate-500 font-medium">Verify your totals and notes. Finalizing will generate the Z-Report and secure the terminal.</p>
-                    </div>
-                    
-                    <div className="flex flex-col sm:flex-row gap-4 pt-4 border-t border-slate-50">
-                       <button 
-                         disabled={!backupDone || isFinalizing}
-                         onClick={handleFinalize}
-                         className="flex-[2] py-5 bg-slate-900 text-white rounded-[2rem] font-black text-xl shadow-2xl flex items-center justify-center gap-3 hover:bg-black transition-all active:scale-[0.98] disabled:opacity-50"
-                       >
-                         {isFinalizing ? <Loader2 className="animate-spin" size={24} /> : <Lock size={24} />}
-                         Finalize Closing Ritual
-                       </button>
-                       {BluetoothPrintService.isConnected() && (
-                         <button 
-                           onClick={async () => {
-                             setIsPrinting(true);
-                             await BluetoothPrintService.printZReport(summary, settings, closingNotes);
-                             setIsPrinting(false);
-                           }}
-                           className="flex-1 py-5 bg-emerald-50 text-emerald-600 border border-emerald-100 rounded-[2rem] font-black text-sm uppercase tracking-widest flex items-center justify-center gap-2"
-                         >
-                           {isPrinting ? <Loader2 className="animate-spin" size={18} /> : <Printer size={18} />}
-                           Print Z-Report
-                         </button>
-                       )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
+              <button 
+                disabled={!backupDone || isFinalizing}
+                onClick={handleFinalize}
+                className="w-full py-5 bg-slate-900 text-white rounded-[2rem] font-black text-xl shadow-2xl flex items-center justify-center gap-3 active:scale-[0.98] disabled:opacity-50"
+              >
+                {isFinalizing ? <Loader2 className="animate-spin" size={24} /> : <Lock size={24} />}
+                Finalize Closing Ritual
+              </button>
             </div>
           </div>
-
-          <div className="flex items-center justify-center gap-4 py-10 opacity-40">
-             <AlertTriangle size={16} />
-             <p className="text-[10px] font-black uppercase tracking-widest">Only Oga or Manager should perform the closing ritual</p>
-          </div>
-
         </div>
       </div>
     </div>

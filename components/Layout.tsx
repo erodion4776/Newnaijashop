@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { 
   LayoutDashboard, 
@@ -22,7 +23,8 @@ import {
   ShieldAlert as ShieldIcon,
   Lightbulb,
   Moon,
-  Zap
+  Zap,
+  ClipboardCheck
 } from 'lucide-react';
 import { View, Staff } from '../types';
 import ClosingReport from './ClosingReport';
@@ -82,6 +84,7 @@ const Layout: React.FC<LayoutProps> = ({
     { id: 'transfer-station', label: 'Transfer Station', icon: Landmark, restrict: false },
     { id: 'inventory', label: 'Inventory', icon: Package, restrict: false },
     { id: 'inventory-ledger', label: 'Inventory Ledger', icon: ClipboardList, restrict: true },
+    { id: 'stock-audit', label: 'Stock Audit', icon: ClipboardCheck, restrict: true },
     { id: 'debts', label: 'Debt Tracker', icon: Users, restrict: true },
     { id: 'staff-management', label: 'Manage Staff', icon: UserCog, restrict: true },
     { id: 'security-backups', label: 'Security & Backup', icon: Database, restrict: true },

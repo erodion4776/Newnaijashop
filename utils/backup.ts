@@ -8,6 +8,7 @@ export const generateBackupData = async () => {
   const debts = await db.debts.toArray();
   const staff = await db.staff.toArray();
   const logs = await db.inventory_logs.toArray();
+  const snapshots = await db.stock_snapshots.toArray();
   const settings = await db.settings.get('app_settings');
 
   const bundle = {
@@ -16,9 +17,10 @@ export const generateBackupData = async () => {
     debts,
     staff,
     logs,
+    snapshots,
     settings,
     timestamp: Date.now(),
-    version: '3.0'
+    version: '3.1'
   };
 
   const jsonString = JSON.stringify(bundle);
@@ -32,19 +34,21 @@ export const restoreFromBackup = async (compressedData: string) => {
     
     const data = JSON.parse(jsonString);
 
-    await (db as any).transaction('rw', [db.products, db.sales, db.debts, db.staff, db.inventory_logs, db.settings], async () => {
+    await (db as any).transaction('rw', [db.products, db.sales, db.debts, db.staff, db.inventory_logs, db.settings, db.stock_snapshots], async () => {
       await db.products.clear();
       await db.sales.clear();
       await db.debts.clear();
       await db.staff.clear();
       await db.inventory_logs.clear();
       await db.settings.clear();
+      await db.stock_snapshots.clear();
 
       if (data.products) await db.products.bulkAdd(data.products);
       if (data.sales) await db.sales.bulkAdd(data.sales);
       if (data.debts) await db.debts.bulkAdd(data.debts);
       if (data.staff) await db.staff.bulkAdd(data.staff);
       if (data.logs) await db.inventory_logs.bulkAdd(data.logs);
+      if (data.snapshots) await db.stock_snapshots.bulkAdd(data.snapshots);
       if (data.settings) await db.settings.put(data.settings);
     });
     return true;

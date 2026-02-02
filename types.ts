@@ -23,6 +23,17 @@ export interface InventoryLog {
   performed_by: string;
 }
 
+export interface StockSnapshot {
+  id?: number;
+  date: string; // YYYY-MM-DD
+  product_id: number;
+  product_name: string;
+  starting_qty: number;
+  added_qty: number;
+  sold_qty: number;
+  closing_qty?: number;
+}
+
 export interface AuditEntry {
   id?: number;
   action: string;
@@ -141,6 +152,6 @@ export interface Settings {
   isSubscribed?: boolean;
 }
 
-export type View = 'landing' | 'setup' | 'dashboard' | 'pos' | 'inventory' | 'inventory-ledger' | 'debts' | 'settings' | 'staff-management' | 'activity-log' | 'security-backups' | 'transfer-station' | 'expense-tracker' | 'audit-trail' | 'customer-wallets' | 'business-hub' | 'activation';
+export type View = 'landing' | 'setup' | 'dashboard' | 'pos' | 'inventory' | 'inventory-ledger' | 'debts' | 'settings' | 'staff-management' | 'activity-log' | 'security-backups' | 'transfer-station' | 'expense-tracker' | 'audit-trail' | 'customer-wallets' | 'business-hub' | 'activation' | 'stock-audit';
 
 export type SyncStatus = 'offline' | 'connecting' | 'live' | 'reconnecting' | 'failed';
