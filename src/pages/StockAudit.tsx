@@ -1,8 +1,6 @@
-
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, initializeDailyStock } from '../db/db';
-// Fix: Added missing Plus and Minus icons to the imports from lucide-react.
 import { 
   ClipboardCheck, 
   Calendar, 
@@ -10,17 +8,18 @@ import {
   AlertTriangle, 
   CheckCircle2, 
   ArrowUp, 
-  ArrowDown,
-  Package,
-  History,
-  X,
-  Filter,
-  RefreshCw,
-  Loader2,
-  TrendingDown,
-  Info,
-  Plus,
-  Minus
+  ArrowDown, 
+  Package, 
+  History, 
+  X, 
+  Filter, 
+  RefreshCw, 
+  Loader2, 
+  TrendingDown, 
+  Info, 
+  Plus, 
+  Minus, 
+  Shield 
 } from 'lucide-react';
 import { StockSnapshot, Product } from '../types';
 
@@ -29,6 +28,7 @@ const StockAudit: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showDiscrepanciesOnly, setShowDiscrepanciesOnly] = useState(false);
   const [isInitializing, setIsInitializing] = useState(false);
+  const [hasInitializedToday, setHasInitializedToday] = useState(false);
 
   // Use Dexie hooks to react to changes in snapshots and products
   const snapshots = useLiveQuery(
@@ -38,6 +38,18 @@ const StockAudit: React.FC = () => {
 
   const products = useLiveQuery(() => db.products.toArray()) || [];
 
+  // Check if today's audit has been initialized
+  useEffect(() => {
+    const checkInitialization = async () => {
+      const today = new Date().toISOString().split('T')[0];
+      if (selectedDate === today) {
+        const count = await db.stock_snapshots.where('date').equals(today).count();
+        setHasInitializedToday(count > 0);
+      }
+    };
+    checkInitialization();
+  }, [selectedDate, snapshots.length]);
+
   const handleManualInit = async () => {
     setIsInitializing(true);
     try {
@@ -45,10 +57,41 @@ const StockAudit: React.FC = () => {
       if (count === 0) {
         alert("No products found in inventory to track. Please add products first.");
       } else {
-        alert(`Audit initialized with ${count} items!`);
+        alert(`✅ Audit initialized with ${count} items!`);
+        setHasInitializedToday(true);
       }
     } catch (err) {
-      alert("Failed to initialize audit.");
+      console.error("Initialization error:", err);
+      alert("Failed to initialize audit. Please try again.");
+    } finally {
+      setIsInitializing(false);
+    }
+  };
+
+  const handleCloseDayAudit = async () => {
+    if (!confirm("Close today's audit? This will lock the closing stock values.")) return;
+    
+    setIsInitializing(true);
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const todaySnapshots = await db.stock_snapshots.where('date').equals(today).toArray();
+      
+      // Update all snapshots with closing_qty from current product stock
+      await (db as any).transaction('rw', [db.stock_snapshots], async () => {
+        for (const snapshot of todaySnapshots) {
+          const product = products.find(p => p.id === snapshot.product_id);
+          if (product) {
+            await db.stock_snapshots.update(snapshot.id!, {
+              closing_qty: product.stock_qty
+            });
+          }
+        }
+      });
+      
+      alert(`✅ Audit closed! ${todaySnapshots.length} items locked with closing values.`);
+    } catch (err) {
+      console.error("Close audit error:", err);
+      alert("Failed to close audit.");
     } finally {
       setIsInitializing(false);
     }
@@ -59,8 +102,8 @@ const StockAudit: React.FC = () => {
       const matchesSearch = snap.product_name.toLowerCase().includes(searchTerm.toLowerCase());
       
       const expected = Number(snap.starting_qty || 0) + Number(snap.added_qty || 0) - Number(snap.sold_qty || 0);
-      const isToday = snap.date === new Date().toISOString().split('T')[0];
-      const actual = isToday
+      const isTodayCurrent = snap.date === new Date().toISOString().split('T')[0];
+      const actual = isTodayCurrent
         ? (products.find(p => p.id === snap.product_id)?.stock_qty || 0)
         : (snap.closing_qty !== undefined ? snap.closing_qty : 0);
       
@@ -72,23 +115,37 @@ const StockAudit: React.FC = () => {
   }, [snapshots, searchTerm, showDiscrepanciesOnly, products]);
 
   const stats = useMemo(() => {
+    let totalExpected = 0;
+    let totalActual = 0;
     let issues = 0;
-    const isToday = selectedDate === new Date().toISOString().split('T')[0];
+    const isTodayCurrent = selectedDate === new Date().toISOString().split('T')[0];
 
     snapshots.forEach(snap => {
       const expected = Number(snap.starting_qty || 0) + Number(snap.added_qty || 0) - Number(snap.sold_qty || 0);
-      const actual = isToday
+      const actual = isTodayCurrent
         ? (products.find(p => p.id === snap.product_id)?.stock_qty || 0)
         : (snap.closing_qty !== undefined ? snap.closing_qty : 0);
+      
+      totalExpected += expected;
+      totalActual += actual;
       
       if (expected !== actual) issues++;
     });
 
-    return { total: snapshots.length, issues };
+    return { 
+      total: snapshots.length, 
+      issues,
+      totalExpected,
+      totalActual,
+      variance: totalActual - totalExpected
+    };
   }, [snapshots, products, selectedDate]);
+
+  const isToday = selectedDate === new Date().toISOString().split('T')[0];
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
+      {/* Header Section */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h3 className="text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
@@ -110,51 +167,135 @@ const StockAudit: React.FC = () => {
         </div>
       </div>
 
-      {/* Summary Row */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* Action Buttons for Today */}
+      {isToday && (
+        <div className="bg-gradient-to-r from-emerald-50 to-blue-50 border border-emerald-200 rounded-[2rem] p-6 flex flex-col md:flex-row items-center gap-4">
+          <div className="flex-1 space-y-2">
+            <div className="flex items-center gap-2">
+              <Shield size={20} className="text-emerald-600" />
+              <h4 className="font-black text-slate-800 uppercase text-xs tracking-widest">Daily Audit Controls</h4>
+            </div>
+            <p className="text-sm text-slate-600 font-medium">
+              {hasInitializedToday 
+                ? "✅ Today's audit is active. Close it at end of day to lock values." 
+                : "⚠️ Start today's audit to begin tracking stock movements."}
+            </p>
+          </div>
+          <div className="flex gap-2">
+            {!hasInitializedToday ? (
+              <button 
+                onClick={handleManualInit}
+                disabled={isInitializing}
+                className="px-6 py-3 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl hover:bg-emerald-700 transition-all flex items-center gap-2 disabled:opacity-50"
+              >
+                {isInitializing ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+                Start Today's Audit
+              </button>
+            ) : (
+              <button 
+                onClick={handleCloseDayAudit}
+                disabled={isInitializing}
+                className="px-6 py-3 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl hover:bg-blue-700 transition-all flex items-center gap-2 disabled:opacity-50"
+              >
+                {isInitializing ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+                Close Day & Lock Values
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex items-center gap-4">
            <div className="w-12 h-12 bg-slate-50 text-slate-400 rounded-2xl flex items-center justify-center shadow-inner">
               <Package size={24} />
            </div>
            <div>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Items Tracked Today</p>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Items Tracked</p>
               <p className="text-2xl font-black text-slate-800">{stats.total}</p>
            </div>
         </div>
 
-        <div className={`bg-white p-6 rounded-[2rem] border transition-all shadow-sm flex items-center gap-4 ${stats.issues > 0 ? 'border-rose-100' : 'border-slate-100'}`}>
-           <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-inner ${stats.issues > 0 ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
-              {stats.issues > 0 ? <AlertTriangle size={24} /> : <CheckCircle2 size={24} />}
+        <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex items-center gap-4">
+           <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center shadow-inner">
+              <ArrowUp size={24} />
            </div>
            <div>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Stock Discrepancies</p>
-              <p className={`text-2xl font-black ${stats.issues > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
-                {stats.issues === 0 ? 'Perfect Sync' : `${stats.issues} Discrepancies`}
-              </p>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Expected Stock</p>
+              <p className="text-2xl font-black text-blue-600 tabular-nums">{stats.totalExpected}</p>
            </div>
         </div>
 
+        <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex items-center gap-4">
+           <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center shadow-inner">
+              <CheckCircle2 size={24} />
+           </div>
+           <div>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Actual Stock</p>
+              <p className="text-2xl font-black text-emerald-600 tabular-nums">{stats.totalActual}</p>
+           </div>
+        </div>
+
+        <div className={`p-6 rounded-[2rem] border transition-all shadow-sm flex items-center gap-4 ${stats.issues > 0 ? 'bg-rose-50 border-rose-100' : 'bg-white border-slate-100'}`}>
+           <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-inner ${stats.issues > 0 ? 'bg-rose-100 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
+              {stats.issues > 0 ? <AlertTriangle size={24} /> : <CheckCircle2 size={24} />}
+           </div>
+           <div>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Discrepancies</p>
+              <p className={`text-2xl font-black ${stats.issues > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                {stats.issues === 0 ? 'Perfect ✓' : stats.issues}
+              </p>
+           </div>
+        </div>
+      </div>
+
+      {/* Variance Alert */}
+      {stats.variance !== 0 && stats.total > 0 && (
+        <div className={`p-6 rounded-[2rem] border-2 flex items-center gap-4 ${stats.variance > 0 ? 'bg-amber-50 border-amber-200' : 'bg-rose-50 border-rose-200'}`}>
+          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${stats.variance > 0 ? 'bg-amber-100 text-amber-600' : 'bg-rose-100 text-rose-600'}`}>
+            {stats.variance > 0 ? <ArrowUp size={24} /> : <ArrowDown size={24} />}
+          </div>
+          <div className="flex-1">
+            <h4 className="font-black text-slate-800 uppercase text-xs tracking-widest mb-1">
+              {stats.variance > 0 ? 'Surplus Detected' : 'Stock Shortage'}
+            </h4>
+            <p className="text-sm text-slate-600 font-medium">
+              {stats.variance > 0 
+                ? `You have ${Math.abs(stats.variance)} extra units. Items may have been added without logging.`
+                : `You are missing ${Math.abs(stats.variance)} units. Items may have been removed without logging.`
+              }
+            </p>
+          </div>
+          <div className="text-3xl font-black tabular-nums">
+            {stats.variance > 0 ? '+' : ''}{stats.variance}
+          </div>
+        </div>
+      )}
+
+      {/* Search and Filter Controls */}
+      <div className="flex flex-col md:flex-row gap-4">
+        <div className="relative flex-1">
+          <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+          <input 
+            type="text" 
+            placeholder="Search items by name..." 
+            className="w-full pl-14 pr-6 h-16 bg-white border border-slate-200 rounded-[2rem] outline-none shadow-sm font-medium transition-all focus:ring-2 focus:ring-emerald-500"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
+        
         <button 
           onClick={() => setShowDiscrepanciesOnly(!showDiscrepanciesOnly)}
-          className={`p-6 rounded-[2rem] border font-black text-xs uppercase tracking-widest transition-all flex items-center justify-center gap-3 ${showDiscrepanciesOnly ? 'bg-slate-900 text-white border-slate-900 shadow-lg' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 shadow-sm'}`}
+          className={`px-6 py-4 rounded-[2rem] border font-black text-xs uppercase tracking-widest transition-all flex items-center justify-center gap-3 whitespace-nowrap ${showDiscrepanciesOnly ? 'bg-slate-900 text-white border-slate-900 shadow-lg' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 shadow-sm'}`}
         >
           <Filter size={18} />
-          {showDiscrepanciesOnly ? 'Showing Discrepancies' : 'Show Only Discrepancies'}
+          {showDiscrepanciesOnly ? 'Show All' : 'Only Errors'}
         </button>
       </div>
 
-      <div className="relative">
-        <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-        <input 
-          type="text" 
-          placeholder="Search items by name..." 
-          className="w-full pl-14 pr-6 h-16 bg-white border border-slate-200 rounded-[2rem] outline-none shadow-sm font-medium transition-all focus:ring-2 focus:ring-emerald-500"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-        />
-      </div>
-
-      {/* Main Table */}
+      {/* Main Audit Table */}
       <div className="bg-white rounded-[2.5rem] border border-slate-200 overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-left">
@@ -177,7 +318,7 @@ const StockAudit: React.FC = () => {
                     </div>
                     <div className="space-y-2">
                        <p className="text-slate-400 font-black uppercase tracking-widest text-xs">No audit data for {selectedDate}</p>
-                       {selectedDate === new Date().toISOString().split('T')[0] && (
+                       {isToday && !hasInitializedToday && (
                          <button 
                            onClick={handleManualInit}
                            disabled={isInitializing}
@@ -199,8 +340,8 @@ const StockAudit: React.FC = () => {
               ) : (
                 filteredSnapshots.map(snap => {
                   const expected = Number(snap.starting_qty || 0) + Number(snap.added_qty || 0) - Number(snap.sold_qty || 0);
-                  const isToday = snap.date === new Date().toISOString().split('T')[0];
-                  const actual = isToday
+                  const isTodayCurrent = snap.date === new Date().toISOString().split('T')[0];
+                  const actual = isTodayCurrent
                     ? (products.find(p => p.id === snap.product_id)?.stock_qty || 0)
                     : (snap.closing_qty !== undefined ? snap.closing_qty : 0);
                   
@@ -213,7 +354,7 @@ const StockAudit: React.FC = () => {
                          <p className="font-black text-slate-800">{snap.product_name}</p>
                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">SKU: #{snap.product_id}</p>
                       </td>
-                      <td className="px-6 py-6 text-center font-bold text-slate-500">{snap.starting_qty}</td>
+                      <td className="px-6 py-6 text-center font-bold text-slate-500 tabular-nums">{snap.starting_qty}</td>
                       <td className="px-6 py-6 text-center">
                          <span className="text-emerald-600 font-black flex items-center justify-center gap-1 tabular-nums">
                             <Plus size={12}/> {snap.added_qty}
@@ -249,6 +390,7 @@ const StockAudit: React.FC = () => {
         </div>
       </div>
 
+      {/* Help Information */}
       <div className="bg-amber-50 rounded-[2rem] border border-amber-100 p-8 flex flex-col md:flex-row items-center gap-6 shadow-sm">
          <div className="w-14 h-14 bg-white text-amber-600 rounded-2xl flex items-center justify-center shadow-sm shrink-0 border border-amber-200">
             <Info size={28} />
@@ -256,7 +398,9 @@ const StockAudit: React.FC = () => {
          <div className="flex-1 text-center md:text-left space-y-1">
             <h4 className="font-black text-slate-800 uppercase text-xs tracking-widest">How the Audit Works</h4>
             <p className="text-sm text-slate-600 font-medium leading-relaxed">
-              Every morning, the terminal records your "Starting Stock". Throughout the day, sales and restocks are tracked automatically. At closing, your "Actual Stock" should match the "Expected Stock". Discrepancies usually mean items were removed or added without being logged in the terminal.
+              <strong>Morning:</strong> Click "Start Today's Audit" to capture your opening stock. 
+              <strong> During Day:</strong> All sales and restocks are tracked automatically. 
+              <strong> Evening:</strong> Click "Close Day & Lock Values" to save your closing stock. Discrepancies reveal items removed/added without logging.
             </p>
          </div>
       </div>
