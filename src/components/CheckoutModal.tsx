@@ -74,8 +74,8 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
   ].filter((v, i, a) => a.indexOf(v) === i && v >= total).slice(0, 3);
 
   /**
-   * handleCompleteSale Implementation
-   * Uses sequential async logic for database reliability
+   * FIXED: handleCompleteSale Implementation
+   * Uses proper Dexie transaction with stock validation
    */
   const handleCompleteSale = async () => {
     if (!paymentMethod) {
@@ -110,43 +110,61 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
       let lowItems: string[] = [];
 
-      // STRICT INSTRUCTION: Loop through items sequentially in a single Dexie transaction
+      // Critical: Use a proper Dexie transaction with error handling
+      // Fix: Cast db to any because TypeScript may not correctly identify the transaction method on the extended class.
       await (db as any).transaction('rw', [db.sales, db.products, db.inventory_logs], async () => {
-        // 1. Record the Sale
+        // 1. Record the Sale first
         await db.sales.add(saleData);
         
         // 2. Process each item for stock deduction sequentially
         for (const item of cart) {
-          // CHECKPOINT: Skip if stock was already subtracted during a 'Park' event
-          if (!item.isStockAlreadyDeducted) {
-            const product = await db.products.get(item.productId);
-            if (product) {
-              const currentStock = Number(product.stock_qty || 0);
-              const soldQty = Number(item.quantity || 0);
-              const newStock = Math.max(0, currentStock - soldQty);
-              
-              // Force database update sequentially
-              await db.products.update(item.productId, { stock_qty: newStock });
-              
-              // Create an inventory log for the audit trail
-              await db.inventory_logs.add({
-                product_id: item.productId,
-                product_name: product.name,
-                quantity_changed: -soldQty,
-                old_stock: currentStock,
-                new_stock: newStock,
-                type: 'Sale',
-                timestamp: Date.now(),
-                performed_by: currentUser?.name || 'Staff'
-              });
+          // Get the current product state from database
+          const product = await db.products.get(item.productId);
+          
+          if (!product) {
+            console.error(`Product ${item.productId} not found in database`);
+            continue;
+          }
 
-              if (newStock <= Number(product.low_stock_threshold || 5)) {
-                lowItems.push(product.name);
-              }
+          // CHECKPOINT: Skip if stock was already subtracted during a 'Park' event
+          if (item.isStockAlreadyDeducted) {
+            console.log(`Stock already deducted for ${item.name} - skipping`);
+            
+            // Still check for low stock alert
+            if (product.stock_qty <= Number(product.low_stock_threshold || 5)) {
+              lowItems.push(product.name);
             }
-          } else {
-             // LOGGING: Stock was already removed during parking, acknowledging safety check
-             console.log('Stock skipping deduction: Flag detected for', item.name);
+            continue;
+          }
+
+          // Calculate new stock level
+          const currentStock = Number(product.stock_qty || 0);
+          const soldQty = Number(item.quantity || 0);
+          const newStock = Math.max(0, currentStock - soldQty);
+          
+          // Validate we have enough stock
+          if (currentStock < soldQty) {
+            throw new Error(`Insufficient stock for ${product.name}. Available: ${currentStock}, Required: ${soldQty}`);
+          }
+          
+          // Update product stock - this is the critical operation
+          await db.products.update(item.productId, { stock_qty: newStock });
+          
+          // Create an inventory log for the audit trail
+          await db.inventory_logs.add({
+            product_id: item.productId,
+            product_name: product.name,
+            quantity_changed: -soldQty,
+            old_stock: currentStock,
+            new_stock: newStock,
+            type: 'Sale',
+            timestamp: Date.now(),
+            performed_by: currentUser?.name || 'Staff'
+          });
+
+          // Check for low stock alert
+          if (newStock <= Number(product.low_stock_threshold || 5)) {
+            lowItems.push(product.name);
           }
         }
       });
@@ -163,7 +181,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
       
     } catch (error) {
       console.error("Critical Transaction Error:", error);
-      alert('Error: Transaction failed. Inventory remains unchanged.');
+      alert(`Error: ${error instanceof Error ? error.message : 'Transaction failed. Inventory remains unchanged.'}`);
       setIsProcessing(false);
     }
   };
@@ -382,7 +400,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
         <div className="px-8 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-center gap-2 opacity-30">
            <Zap size={12} className="text-emerald-600" />
-           <span className="text-[8px] font-black uppercase tracking-widest">Terminal Transaction Engine v3.1</span>
+           <span className="text-[8px] font-black uppercase tracking-widest">Terminal Transaction Engine v3.2</span>
         </div>
       </div>
     </div>

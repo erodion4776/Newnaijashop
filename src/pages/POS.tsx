@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
@@ -195,7 +194,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
   };
 
   /**
-   * handleParkSale Implementation
+   * FIXED: handleParkSale Implementation
    * Wrapped in Dexie transaction with sequential async loop logic
    */
   const confirmParkOrder = async () => {
@@ -210,29 +209,41 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
         const itemsToSave: SaleItem[] = [];
         
         for (const item of cart) {
+          // Get current product state from database
+          const product = await db.products.get(item.productId);
+          
+          if (!product) {
+            console.error(`Product ${item.productId} not found`);
+            continue;
+          }
+
           // Only deduct stock if it wasn't already deducted during a previous park-edit cycle
           if (!item.isStockAlreadyDeducted) {
-            const product = await db.products.get(item.productId);
-            if (product) {
-              const oldStock = Number(product.stock_qty || 0);
-              const soldQty = Number(item.quantity || 0);
-              const newStock = Math.max(0, oldStock - soldQty);
-              
-              // Physically subtract from database
-              await db.products.update(item.productId, { stock_qty: newStock });
-              
-              // Log the movement for the Admin
-              await db.inventory_logs.add({
-                product_id: item.productId,
-                product_name: product.name,
-                quantity_changed: -soldQty,
-                old_stock: oldStock,
-                new_stock: newStock,
-                type: 'Adjustment',
-                timestamp: Date.now(),
-                performed_by: `Parking: ${currentUser?.name || 'Staff'}`
-              });
+            const oldStock = Number(product.stock_qty || 0);
+            const soldQty = Number(item.quantity || 0);
+            
+            // Validate sufficient stock
+            if (oldStock < soldQty) {
+              throw new Error(`Insufficient stock for ${product.name}. Available: ${oldStock}, Required: ${soldQty}`);
             }
+            
+            const newStock = Math.max(0, oldStock - soldQty);
+            
+            // Physically subtract from database
+            await db.products.update(item.productId, { stock_qty: newStock });
+            
+            // Log the movement for the Admin
+            await db.inventory_logs.add({
+              product_id: item.productId,
+              product_name: product.name,
+              quantity_changed: -soldQty,
+              old_stock: oldStock,
+              new_stock: newStock,
+              type: 'Adjustment',
+              timestamp: Date.now(),
+              performed_by: `Parking: ${currentUser?.name || 'Staff'}`
+            });
+            
             // Mark item to prevent double-deduction during final checkout
             itemsToSave.push({ ...item, isStockAlreadyDeducted: true });
           } else {
@@ -241,6 +252,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
           }
         }
 
+        // Save parked order with properly flagged items
         await db.parked_orders.add({
           customerName: parkingCustomerName,
           items: itemsToSave,
@@ -257,8 +269,8 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
       setShowMobileCart(false);
       alert('Order parked & stock secured!');
     } catch (err) {
-      console.error(err);
-      alert('Failed to park order');
+      console.error("Park order error:", err);
+      alert(`Failed to park order: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
   };
 
