@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, initializeDailyStock } from '../db/db';
@@ -68,27 +69,37 @@ const StockAudit: React.FC = () => {
     }
   };
 
+  const updateCountedValue = async (snapshotId: number, newValue: string) => {
+    const val = newValue === '' ? undefined : Number(newValue);
+    try {
+      await db.stock_snapshots.update(snapshotId, { closing_qty: val });
+    } catch (err) {
+      console.error("Failed to update counted value:", err);
+    }
+  };
+
   const handleCloseDayAudit = async () => {
-    if (!confirm("Close today's audit? This will lock the closing stock values.")) return;
+    if (!confirm("Close today's audit? This will lock current product quantities as counted values for any items you haven't manually counted yet.")) return;
     
     setIsInitializing(true);
     try {
       const today = new Date().toISOString().split('T')[0];
       const todaySnapshots = await db.stock_snapshots.where('date').equals(today).toArray();
       
-      // Update all snapshots with closing_qty from current product stock
       await (db as any).transaction('rw', [db.stock_snapshots], async () => {
         for (const snapshot of todaySnapshots) {
-          const product = products.find(p => p.id === snapshot.product_id);
-          if (product) {
-            await db.stock_snapshots.update(snapshot.id!, {
-              closing_qty: product.stock_qty
-            });
+          if (snapshot.closing_qty === undefined) {
+            const product = products.find(p => p.id === snapshot.product_id);
+            if (product) {
+              await db.stock_snapshots.update(snapshot.id!, {
+                closing_qty: product.stock_qty
+              });
+            }
           }
         }
       });
       
-      alert(`✅ Audit closed! ${todaySnapshots.length} items locked with closing values.`);
+      alert(`✅ Audit closed! All items locked with closing values.`);
     } catch (err) {
       console.error("Close audit error:", err);
       alert("Failed to close audit.");
@@ -103,9 +114,9 @@ const StockAudit: React.FC = () => {
       
       const expected = Number(snap.starting_qty || 0) + Number(snap.added_qty || 0) - Number(snap.sold_qty || 0);
       const isTodayCurrent = snap.date === new Date().toISOString().split('T')[0];
-      const actual = isTodayCurrent
-        ? (products.find(p => p.id === snap.product_id)?.stock_qty || 0)
-        : (snap.closing_qty !== undefined ? snap.closing_qty : 0);
+      const actual = snap.closing_qty !== undefined 
+        ? snap.closing_qty 
+        : (isTodayCurrent ? (products.find(p => p.id === snap.product_id)?.stock_qty || 0) : 0);
       
       const hasDiscrepancy = expected !== actual;
 
@@ -122,9 +133,9 @@ const StockAudit: React.FC = () => {
 
     snapshots.forEach(snap => {
       const expected = Number(snap.starting_qty || 0) + Number(snap.added_qty || 0) - Number(snap.sold_qty || 0);
-      const actual = isTodayCurrent
-        ? (products.find(p => p.id === snap.product_id)?.stock_qty || 0)
-        : (snap.closing_qty !== undefined ? snap.closing_qty : 0);
+      const actual = snap.closing_qty !== undefined 
+        ? snap.closing_qty 
+        : (isTodayCurrent ? (products.find(p => p.id === snap.product_id)?.stock_qty || 0) : 0);
       
       totalExpected += expected;
       totalActual += actual;
@@ -177,7 +188,7 @@ const StockAudit: React.FC = () => {
             </div>
             <p className="text-sm text-slate-600 font-medium">
               {hasInitializedToday 
-                ? "✅ Today's audit is active. Close it at end of day to lock values." 
+                ? "✅ Today's audit is active. Count items and enter values below." 
                 : "⚠️ Start today's audit to begin tracking stock movements."}
             </p>
           </div>
@@ -306,7 +317,7 @@ const StockAudit: React.FC = () => {
                 <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Restocked (+)</th>
                 <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Sold (-)</th>
                 <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Expected</th>
-                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Actual Closing</th>
+                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Actual Count</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -341,9 +352,9 @@ const StockAudit: React.FC = () => {
                 filteredSnapshots.map(snap => {
                   const expected = Number(snap.starting_qty || 0) + Number(snap.added_qty || 0) - Number(snap.sold_qty || 0);
                   const isTodayCurrent = snap.date === new Date().toISOString().split('T')[0];
-                  const actual = isTodayCurrent
-                    ? (products.find(p => p.id === snap.product_id)?.stock_qty || 0)
-                    : (snap.closing_qty !== undefined ? snap.closing_qty : 0);
+                  const actual = snap.closing_qty !== undefined 
+                    ? snap.closing_qty 
+                    : (isTodayCurrent ? (products.find(p => p.id === snap.product_id)?.stock_qty || 0) : 0);
                   
                   const hasDiscrepancy = expected !== actual;
                   const diff = actual - expected;
@@ -370,9 +381,13 @@ const StockAudit: React.FC = () => {
                       </td>
                       <td className="px-8 py-6 text-right">
                          <div className="flex flex-col items-end">
-                            <span className={`text-xl font-black tabular-nums ${hasDiscrepancy ? 'text-rose-600' : 'text-emerald-600'}`}>
-                              {actual}
-                            </span>
+                            <input 
+                              type="number" 
+                              className={`w-24 px-3 py-2 bg-slate-50 border-2 rounded-xl text-right font-black text-lg outline-none transition-all ${hasDiscrepancy ? 'border-rose-300 text-rose-600 focus:border-rose-500' : 'border-slate-100 text-emerald-600 focus:border-emerald-500'}`}
+                              value={snap.closing_qty === undefined ? '' : snap.closing_qty}
+                              onChange={(e) => updateCountedValue(snap.id!, e.target.value)}
+                              placeholder={isTodayCurrent ? (products.find(p => p.id === snap.product_id)?.stock_qty || 0).toString() : '0'}
+                            />
                             {hasDiscrepancy && (
                               <div className="flex items-center gap-1 text-[9px] font-black uppercase text-rose-500 mt-1">
                                 <AlertTriangle size={10} /> 
@@ -396,11 +411,11 @@ const StockAudit: React.FC = () => {
             <Info size={28} />
          </div>
          <div className="flex-1 text-center md:text-left space-y-1">
-            <h4 className="font-black text-slate-800 uppercase text-xs tracking-widest">How the Audit Works</h4>
+            <h4 className="font-black text-slate-800 uppercase text-xs tracking-widest">Manual Counting Instructions</h4>
             <p className="text-sm text-slate-600 font-medium leading-relaxed">
-              <strong>Morning:</strong> Click "Start Today's Audit" to capture your opening stock. 
-              <strong> During Day:</strong> All sales and restocks are tracked automatically. 
-              <strong> Evening:</strong> Click "Close Day & Lock Values" to save your closing stock. Discrepancies reveal items removed/added without logging.
+              <strong>1. Count:</strong> Physically count items on your shelves. 
+              <strong> 2. Enter:</strong> Type the number in the "Actual Count" field. 
+              <strong> 3. Audit:</strong> The terminal will highlight discrepancies in red. Missing units often indicate sales made outside the terminal or errors in restock entry.
             </p>
          </div>
       </div>

@@ -21,7 +21,8 @@ export class NaijaShopDB extends Dexie {
   constructor() {
     super('NaijaShopDB');
     
-    (this as any).version(29).stores({
+    // CRITICAL: Database version incremented to 31 as per instructions
+    (this as any).version(31).stores({
       products: '++id, name, category, barcode',
       sales: '++id, sale_id, timestamp, payment_method, staff_name',
       debts: '++id, customer_name, phone, status',
@@ -38,11 +39,8 @@ export class NaijaShopDB extends Dexie {
     });
 
     // REAL-TIME SNAPSHOT HOOKS
-    // Triggered whenever a sale is recorded
     this.sales.hook('creating', (primKey, obj, transaction) => {
       const today = new Date().toISOString().split('T')[0];
-      // Note: We use transaction.on('complete') or async updates. 
-      // In Dexie hooks, we must be careful with async.
       transaction.on('complete', () => {
         obj.items.forEach(async (item) => {
           const snapshot = await db.stock_snapshots.where({ date: today, product_id: item.productId }).first();
@@ -53,10 +51,7 @@ export class NaijaShopDB extends Dexie {
       });
     });
 
-    // Triggered whenever inventory is adjusted (Restock or Adjustment)
     this.inventory_logs.hook('creating', (primKey, obj, transaction) => {
-      // Only track positive movements (Restocks or positive Adjustments)
-      // Negative adjustments are usually errors/theft handled by Expected vs Actual gap
       if (obj.type === 'Restock' || (obj.type === 'Adjustment' && obj.quantity_changed > 0)) {
         const today = new Date().toISOString().split('T')[0];
         transaction.on('complete', async () => {
@@ -119,6 +114,5 @@ export const initSettings = async () => {
       receipt_footer: 'Thanks for your patronage! No refund after payment.'
     });
   }
-  // Auto-initialize daily stock on every app load/settings check
   await initializeDailyStock();
 };
