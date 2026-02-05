@@ -1,4 +1,3 @@
-
 import { Dexie } from 'dexie';
 import type { Table } from 'dexie';
 import { Product, Sale, Debt, Settings, ParkedOrder, InventoryLog, Staff, Expense, AuditEntry, CustomerWallet, WalletTransaction, UsedReference, StockSnapshot } from '../types';
@@ -21,8 +20,8 @@ export class NaijaShopDB extends Dexie {
   constructor() {
     super('NaijaShopDB');
     
-    // CRITICAL: Database version incremented to 31 as per instructions
-    (this as any).version(31).stores({
+    // CRITICAL: Database version incremented to 32 as per instructions
+    (this as any).version(32).stores({
       products: '++id, name, category, barcode',
       sales: '++id, sale_id, timestamp, payment_method, staff_name',
       debts: '++id, customer_name, phone, status',
