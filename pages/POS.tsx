@@ -62,6 +62,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
   
   const [editingParkedOrder, setEditingParkedOrder] = useState<ParkedOrder | null>(null);
   const [editingCart, setEditingCart] = useState<SaleItem[]>([]);
+  const [editSearchTerm, setEditSearchTerm] = useState('');
   
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -100,6 +101,16 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
     
     return filtered.filter(p => p.stock_qty > 0);
   }, [products, selectedCategory, searchTerm]);
+
+  // DERIVED: Search for items INSIDE the edit modal
+  const editModalSearchResults = useMemo(() => {
+    if (!editSearchTerm.trim()) return [];
+    const term = editSearchTerm.toLowerCase();
+    return products.filter(p => 
+      p.name.toLowerCase().includes(term) || 
+      p.barcode?.includes(term)
+    ).slice(0, 5); // Performance/UI limit
+  }, [products, editSearchTerm]);
 
   const cartSummary = useMemo(() => {
     const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
@@ -265,6 +276,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
   const editParkedOrder = (order: ParkedOrder) => {
     setEditingParkedOrder(order);
     setEditingCart([...order.items]);
+    setEditSearchTerm('');
   };
 
   const deleteParkedOrder = async (orderId: number) => {
@@ -277,19 +289,76 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
     }
   };
 
+  /**
+   * SMART STOCK ENGINE: Handles reconciliation of stock during modal edits
+   */
   const saveEditedParkedOrder = async () => {
     if (!editingParkedOrder?.id) return;
     try {
-      const newTotal = editingCart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-      await db.parked_orders.update(editingParkedOrder.id, {
-        items: editingCart,
-        total: newTotal
+      await (db as any).transaction('rw', [db.products, db.inventory_logs, db.parked_orders], async () => {
+        const originalItems = editingParkedOrder.items;
+        const newItems = editingCart;
+
+        // 1. Create maps for easy diffing
+        const originalMap: Record<number, number> = {};
+        originalItems.forEach(i => originalMap[i.productId] = (originalMap[i.productId] || 0) + i.quantity);
+
+        const newMap: Record<number, number> = {};
+        // Fix: Use i.productId instead of undefined variable 'pid'
+        newItems.forEach(i => newMap[i.productId] = (newMap[i.productId] || 0) + i.quantity);
+
+        // 2. Identify all Product IDs involved
+        const allProductIds = Array.from(new Set([
+          ...originalItems.map(i => i.productId),
+          ...newItems.map(i => i.productId)
+        ]));
+
+        // 3. Reconcile differences
+        for (const pid of allProductIds) {
+          const oldQty = originalMap[pid] || 0;
+          const newQty = newMap[pid] || 0;
+          const diff = newQty - oldQty; // Positive means we added items, negative means we removed items
+
+          if (diff !== 0) {
+            const product = await db.products.get(pid);
+            if (!product) continue;
+
+            const currentStock = Number(product.stock_qty || 0);
+            const updatedStock = currentStock - diff;
+
+            if (updatedStock < 0) {
+              throw new Error(`Insufficient stock for ${product.name}. Available: ${currentStock}, Needs: ${diff}`);
+            }
+
+            await db.products.update(pid, { stock_qty: updatedStock });
+
+            await db.inventory_logs.add({
+              product_id: pid,
+              product_name: product.name,
+              quantity_changed: -diff,
+              old_stock: currentStock,
+              new_stock: updatedStock,
+              type: 'Adjustment',
+              timestamp: Date.now(),
+              performed_by: `Parked Order Updated: ${currentUser?.name || 'Staff'}`
+            });
+          }
+        }
+
+        // 4. Update the actual parked order record
+        const newTotal = newItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+        await db.parked_orders.update(editingParkedOrder.id!, {
+          items: newItems.map(i => ({ ...i, isStockAlreadyDeducted: true })),
+          total: newTotal
+        });
       });
+
       setEditingParkedOrder(null);
       setEditingCart([]);
-      alert('Parked order updated!');
+      setEditSearchTerm('');
+      alert('Parked order and inventory updated!');
     } catch (err) {
-      alert('Failed to update order');
+      alert(`Update failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
   };
 
@@ -605,25 +674,106 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
                 <h3 className="text-2xl font-black text-slate-900 tracking-tight">Modify Saved Order</h3>
                 <p className="text-xs text-amber-600 font-black uppercase tracking-widest mt-1">{editingParkedOrder.customerName}</p>
               </div>
-              <button onClick={() => { setEditingParkedOrder(null); setEditingCart([]); }} className="p-4 bg-slate-50 rounded-full text-slate-400"><X size={24} /></button>
+              <button onClick={() => { setEditingParkedOrder(null); setEditingCart([]); setEditSearchTerm(''); }} className="p-4 bg-slate-50 rounded-full text-slate-400"><X size={24} /></button>
             </div>
-            <div className="flex-1 overflow-y-auto p-8 space-y-4 scrollbar-hide">
-              {editingCart.map((item, idx) => (
-                <div key={idx} className="bg-slate-50 rounded-[2rem] p-5 flex items-center gap-4 border border-slate-100 shadow-sm">
-                  <div className="flex-1 min-w-0">
-                    <h4 className="font-bold text-sm text-slate-800 truncate">{item.name}</h4>
-                    <p className="text-[10px] text-slate-500 font-black uppercase tracking-tighter">₦{item.price.toLocaleString()}</p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <button onClick={() => { const u = [...editingCart]; if(u[idx].quantity > 1) u[idx].quantity--; else u.splice(idx,1); setEditingCart(u); }} className="w-10 h-10 bg-white rounded-xl flex items-center justify-center border border-slate-200 shadow-inner"><Minus size={16}/></button>
-                    <span className="w-6 text-center font-black text-lg">{item.quantity}</span>
-                    <button onClick={() => { const u = [...editingCart]; u[idx].quantity++; setEditingCart(u); }} className="w-10 h-10 bg-white rounded-xl flex items-center justify-center border border-slate-200 shadow-inner"><Plus size={16}/></button>
-                  </div>
+            
+            <div className="flex-1 overflow-y-auto p-8 space-y-8 scrollbar-hide">
+              {/* CURRENT ITEMS SECTION */}
+              <div className="space-y-4">
+                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Current Items In Order</h4>
+                {editingCart.length === 0 ? (
+                  <p className="text-center text-slate-400 font-black uppercase tracking-widest py-4 border border-dashed rounded-[2rem]">Order list is empty</p>
+                ) : (
+                  editingCart.map((item, idx) => (
+                    <div key={idx} className="bg-slate-50 rounded-[2rem] p-5 flex items-center gap-4 border border-slate-100 shadow-sm animate-in slide-in-from-left-2">
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-bold text-sm text-slate-800 truncate">{item.name}</h4>
+                        <p className="text-[10px] text-slate-500 font-black uppercase tracking-tighter">₦{item.price.toLocaleString()}</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <button onClick={() => { 
+                          const u = [...editingCart]; 
+                          if(u[idx].quantity > 1) {
+                            u[idx].quantity--; 
+                          } else {
+                            u.splice(idx,1); 
+                          }
+                          setEditingCart(u); 
+                        }} className="w-10 h-10 bg-white rounded-xl flex items-center justify-center border border-slate-200 shadow-inner active:scale-90 transition-all"><Minus size={16}/></button>
+                        <span className="w-6 text-center font-black text-lg">{item.quantity}</span>
+                        <button onClick={() => { 
+                          const product = products.find(p => p.id === item.productId);
+                          if(product && product.stock_qty <= 0) { alert('No more stock available in inventory'); return; }
+                          
+                          const u = [...editingCart]; 
+                          u[idx].quantity++; 
+                          setEditingCart(u); 
+                        }} className="w-10 h-10 bg-white rounded-xl flex items-center justify-center border border-slate-200 shadow-inner active:scale-90 transition-all"><Plus size={16}/></button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* ADD MORE ITEMS SECTION */}
+              <div className="space-y-4 pt-4 border-t border-slate-100">
+                <h4 className="text-[10px] font-black text-indigo-600 uppercase tracking-widest ml-1">Add more items to this order</h4>
+                <div className="relative">
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                  <input 
+                    type="text" 
+                    placeholder="Search inventory..." 
+                    className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500"
+                    value={editSearchTerm}
+                    onChange={e => setEditSearchTerm(e.target.value)}
+                  />
                 </div>
-              ))}
-              {editingCart.length === 0 && <p className="text-center text-slate-400 font-black uppercase tracking-widest py-10">Order list is empty</p>}
+                
+                {editModalSearchResults.length > 0 && (
+                  <div className="space-y-2 max-h-48 overflow-y-auto scrollbar-hide border border-slate-100 rounded-2xl p-2 bg-slate-50/50">
+                    {editModalSearchResults.map(product => (
+                      <div key={product.id} className="bg-white p-3 rounded-xl flex items-center justify-between border border-slate-100 shadow-sm animate-in fade-in zoom-in duration-200">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-bold text-sm text-slate-800 truncate">{product.name}</p>
+                          <p className="text-[10px] font-black text-emerald-600">₦{product.price.toLocaleString()} • {product.stock_qty} left</p>
+                        </div>
+                        <button 
+                          onClick={() => {
+                            if(product.stock_qty <= 0) { alert('Out of stock'); return; }
+                            const existingIdx = editingCart.findIndex(i => i.productId === product.id);
+                            if (existingIdx !== -1) {
+                              const u = [...editingCart];
+                              u[existingIdx].quantity++;
+                              setEditingCart(u);
+                            } else {
+                              setEditingCart([...editingCart, {
+                                productId: product.id!,
+                                name: product.name,
+                                price: product.price,
+                                quantity: 1,
+                                isStockAlreadyDeducted: true
+                              }]);
+                            }
+                            setEditSearchTerm('');
+                          }}
+                          className="w-10 h-10 bg-indigo-600 text-white rounded-xl flex items-center justify-center shadow-lg active:scale-90 transition-all ml-4"
+                        >
+                          <Plus size={18} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
+
             <div className="p-8 border-t bg-slate-50 shrink-0">
+              <div className="flex justify-between items-center mb-6 px-2">
+                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">New Order Total</span>
+                 <span className="text-2xl font-black text-emerald-600 tracking-tighter">
+                   ₦{editingCart.reduce((sum, item) => sum + (item.price * item.quantity), 0).toLocaleString()}
+                 </span>
+              </div>
               <button onClick={async () => { if(editingCart.length === 0) await db.parked_orders.delete(editingParkedOrder.id!); else await saveEditedParkedOrder(); setEditingParkedOrder(null); }} className="w-full py-5 bg-indigo-600 text-white rounded-[2rem] font-black text-sm uppercase tracking-widest shadow-xl shadow-indigo-200 active:scale-95 transition-all">Update Stored Order</button>
             </div>
           </div>
