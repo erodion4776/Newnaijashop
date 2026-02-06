@@ -1,4 +1,3 @@
-
 import { Dexie } from 'dexie';
 import type { Table } from 'dexie';
 import { Product, Sale, Debt, Settings, ParkedOrder, InventoryLog, Staff, Expense, AuditEntry, CustomerWallet, WalletTransaction, UsedReference, StockSnapshot } from '../types';
@@ -21,7 +20,8 @@ export class NaijaShopDB extends Dexie {
   constructor() {
     super('NaijaShopDB');
     
-    (this as any).version(28).stores({
+    // CRITICAL: Database version bumped to 35 to force schema re-indexing
+    (this as any).version(35).stores({
       products: '++id, name, category, barcode',
       sales: '++id, sale_id, timestamp, payment_method, staff_name',
       debts: '++id, customer_name, phone, status',
@@ -40,20 +40,24 @@ export class NaijaShopDB extends Dexie {
     // REAL-TIME SNAPSHOT HOOKS
     this.sales.hook('creating', (primKey, obj, transaction) => {
       const today = new Date().toISOString().split('T')[0];
-      obj.items.forEach(async (item) => {
-        const snapshot = await this.stock_snapshots.where({ date: today, product_id: item.productId }).first();
-        if (snapshot && snapshot.id) {
-          await this.stock_snapshots.update(snapshot.id, { sold_qty: snapshot.sold_qty + item.quantity });
-        }
+      transaction.on('complete', () => {
+        obj.items.forEach(async (item) => {
+          const snapshot = await db.stock_snapshots.where({ date: today, product_id: item.productId }).first();
+          if (snapshot && snapshot.id) {
+            await db.stock_snapshots.update(snapshot.id, { sold_qty: (snapshot.sold_qty || 0) + item.quantity });
+          }
+        });
       });
     });
 
     this.inventory_logs.hook('creating', (primKey, obj, transaction) => {
       if (obj.type === 'Restock' || (obj.type === 'Adjustment' && obj.quantity_changed > 0)) {
         const today = new Date().toISOString().split('T')[0];
-        this.stock_snapshots.where({ date: today, product_id: obj.product_id }).first().then(snapshot => {
+        transaction.on('complete', async () => {
+          const snapshot = await db.stock_snapshots.where({ date: today, product_id: obj.product_id }).first();
           if (snapshot && snapshot.id) {
-            this.stock_snapshots.update(snapshot.id, { added_qty: snapshot.added_qty + Math.abs(obj.quantity_changed) });
+            const addedAmount = Math.abs(obj.quantity_changed);
+            await db.stock_snapshots.update(snapshot.id, { added_qty: (snapshot.added_qty || 0) + addedAmount });
           }
         });
       }
@@ -65,25 +69,29 @@ export const db: NaijaShopDB = new NaijaShopDB();
 
 /**
  * Ensures today's stock records are prepared.
- * Run during Admin login or app init.
  */
 export const initializeDailyStock = async () => {
   const today = new Date().toISOString().split('T')[0];
-  const existing = await db.stock_snapshots.where('date').equals(today).first();
+  const existingCount = await db.stock_snapshots.where('date').equals(today).count();
   
-  if (!existing) {
+  if (existingCount === 0) {
     const allProducts = await db.products.toArray();
+    if (allProducts.length === 0) return 0;
+
     const snapshots: StockSnapshot[] = allProducts.map(p => ({
       date: today,
       product_id: p.id!,
       product_name: p.name,
       starting_qty: p.stock_qty,
       added_qty: 0,
-      sold_qty: 0
+      sold_qty: 0,
+      closing_qty: undefined
     }));
+    
     await db.stock_snapshots.bulkAdd(snapshots);
-    console.log(`[SNAPSHOT] Initialized ${snapshots.length} stock records for ${today}`);
+    return snapshots.length;
   }
+  return existingCount;
 };
 
 export const initSettings = async () => {
@@ -104,6 +112,5 @@ export const initSettings = async () => {
       receipt_footer: 'Thanks for your patronage! No refund after payment.'
     });
   }
-  // Trigger daily stock initialization
   await initializeDailyStock();
 };

@@ -1,5 +1,4 @@
 import React, { useState, useEffect, ReactNode, Component } from 'react';
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, initSettings } from './db/db';
 import { View, Staff, SaleItem, Product } from './types';
@@ -18,50 +17,30 @@ import Settings from './pages/Settings';
 import ExpenseTracker from './pages/ExpenseTracker';
 import AuditTrail from './pages/AuditTrail';
 import ActivationPage from './pages/ActivationPage';
+import AffiliatePortal from './pages/AffiliatePortal';
 import SetupShop from './pages/SetupShop';
 import LandingPage from './pages/LandingPage';
 import MasterAdminHub from './pages/MasterAdminHub';
-import AffiliatePortal from './pages/AffiliatePortal';
+import StockAudit from './pages/StockAudit';
 import SupportChat from './components/SupportChat';
 import { 
   AlertTriangle,
   ShieldAlert,
-  CheckCircle2
+  Loader2
 } from 'lucide-react';
 
 const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-9987-b4ed4c0e3c36.png";
 const MASTER_RECOVERY_PIN = "9999";
 
-// Unified License Logic
-export const getLicenseStatus = (settings: any, now: number) => {
-  if (settings?.isSubscribed) {
-    const totalPeriod = 365 * 24 * 60 * 60 * 1000;
-    const remaining = (settings.license_expiry || 0) - now;
-    const totalMs = Math.max(0, remaining);
-    return {
-      label: 'Pro License',
-      days: Math.floor(totalMs / (24 * 60 * 60 * 1000)),
-      hours: Math.floor((totalMs % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000)),
-      minutes: Math.floor((totalMs % (60 * 60 * 1000)) / (60 * 1000)),
-      totalMs,
-      totalPeriod,
-      isSubscribed: true
-    };
-  }
-  
+export const getTrialRemainingTime = (installationDate: number) => {
   const trialPeriod = 30 * 24 * 60 * 60 * 1000;
-  const expiry = (settings?.installationDate || now) + trialPeriod;
-  const remaining = expiry - now;
-  const totalMs = Math.max(0, remaining);
-  return {
-    label: 'Free Trial',
-    days: Math.floor(totalMs / (24 * 60 * 60 * 1000)),
-    hours: Math.floor((totalMs % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000)),
-    minutes: Math.floor((totalMs % (60 * 60 * 1000)) / (60 * 1000)),
-    totalMs,
-    totalPeriod: trialPeriod,
-    isSubscribed: false
-  };
+  const expiry = installationDate + trialPeriod;
+  const remaining = expiry - Date.now();
+  if (remaining <= 0) return { days: 0, hours: 0, minutes: 0, totalMs: 0 };
+  const days = Math.floor(remaining / (24 * 60 * 60 * 1000));
+  const hours = Math.floor((remaining % (24 * 60 * 60 * 1000)) / (60 * 1000));
+  const minutes = Math.floor((remaining % (60 * 1000)) / (60 * 1000));
+  return { days, hours, minutes, totalMs: remaining };
 };
 
 interface ErrorBoundaryProps { children?: ReactNode; }
@@ -95,19 +74,19 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 }
 
 const AppContent: React.FC = () => {
-  const location = useLocation();
-  const [currentView, setCurrentView] = useState<View>('dashboard');
+  const [currentView, setCurrentView] = useState<View>('landing');
   const [isInitialized, setIsInitialized] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
   const [currentUser, setCurrentUser] = useState<Staff | null>(null);
   const [loginPassword, setLoginPassword] = useState('');
   const [selectedStaffId, setSelectedStaffId] = useState<number | ''>('');
   const [isStaffLock, setIsStaffLock] = useState(localStorage.getItem('isStaffLock') === 'true');
+  const [isMasterView, setIsMasterView] = useState(window.location.pathname.includes('master-control'));
   
   const [cart, setCart] = useState<SaleItem[]>([]);
   const [parkTrigger, setParkTrigger] = useState(0);
-
   const [now, setNow] = useState(Date.now());
+
   const settings = useLiveQuery(() => db.settings.get('app_settings'));
   const staffList = useLiveQuery(() => db.staff.toArray()) || [];
 
@@ -117,6 +96,8 @@ const AppContent: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('session')) setCurrentView('activation');
     setTimeout(() => setShowSplash(false), 2000);
   }, []);
 
@@ -135,52 +116,6 @@ const AppContent: React.FC = () => {
     setCurrentView('pos');
   };
 
-  const handlePaystackPayment = async () => {
-    if (!(window as any).PaystackPop) {
-      alert("Payment system is loading, please wait 2 seconds and try again.");
-      return;
-    }
-
-    const paystackKey = (import.meta as any).env.VITE_PAYSTACK_PUBLIC_KEY;
-    if (!paystackKey) {
-      console.error("Paystack Public Key missing in env.");
-      alert("System Configuration Error: Payment key not found.");
-      return;
-    }
-
-    const currentSettings = await db.settings.get('app_settings');
-    const terminalId = currentSettings?.terminal_id || 'UNKNOWN';
-    const refCode = currentSettings?.referral_code_used || 'NONE';
-    const userEmail = currentSettings?.email || 'customer@naijashop.pos';
-
-    console.log('Starting Paystack for email:', userEmail);
-
-    try {
-      const handler = (window as any).PaystackPop.setup({
-        key: paystackKey,
-        email: userEmail,
-        amount: 1000000, 
-        currency: 'NGN',
-        ref: 'NS-TRIAL-' + Math.floor((Math.random() * 1000000000) + 1),
-        metadata: {
-          terminal_id: terminalId,
-          referral_code: refCode,
-          custom_fields: [
-            { display_name: "Terminal ID", variable_name: "terminal_id", value: terminalId },
-            { display_name: "Referrer", variable_name: "referrer", value: refCode }
-          ]
-        },
-        callback: (response: any) => {
-          window.location.href = '/activation?session=' + response.reference;
-        }
-      });
-      handler.openIframe();
-    } catch (err) {
-      console.error("Paystack setup failed:", err);
-      alert("Could not start payment gateway. Please check your internet connection.");
-    }
-  };
-
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const staff = staffList.find(s => s.id === Number(selectedStaffId));
@@ -197,7 +132,7 @@ const AppContent: React.FC = () => {
   if (showSplash || !isInitialized) {
     return (
       <div className="min-h-screen bg-emerald-900 flex flex-col items-center justify-center p-6 text-center">
-        <div className="w-32 h-32 bg-white rounded-[2.5rem] p-6 flex items-center justify-center shadow-2xl animate-pulse mb-8">
+        <div className="w-32 h-32 bg-white rounded-[2.5rem] p-6 flex items-center justify-center shadow-2xl animate-pulse-soft mb-8">
           <img src={LOGO_URL} className="w-full h-full object-contain" alt="Logo" />
         </div>
         <h1 className="text-white text-4xl font-black tracking-tighter">NaijaShop POS</h1>
@@ -205,95 +140,86 @@ const AppContent: React.FC = () => {
     );
   }
 
-  if (location.pathname === '/master-control') return <MasterAdminHub />;
+  if (isMasterView) return <MasterAdminHub />;
 
-  const license = getLicenseStatus(settings, now);
-  // Lockout logic: Expired trial AND not subscribed
-  /* Fix: Changed property 'remainingMs' to 'totalMs' on the license object as 'remainingMs' does not exist on its type. */
-  const isExpired = (license.totalMs <= 0) && !license.isSubscribed;
+  const s = settings as any;
+  const isLicensed = settings?.license_expiry && settings.license_expiry > now;
+  const trial = s?.installationDate ? getTrialRemainingTime(s.installationDate) : { totalMs: 999999, days: 30, hours: 0, minutes: 0 };
+  const isTrialExpired = s?.installationDate && (trial.totalMs <= 0) && !s.isSubscribed && !isLicensed;
 
-  if (isExpired && location.pathname !== '/activation') {
+  if (isTrialExpired && currentView !== 'activation') {
     return (
       <div className="min-h-screen bg-emerald-950 flex items-center justify-center p-6">
         <div className="bg-white p-12 rounded-[3.5rem] text-center space-y-8">
           <ShieldAlert size={48} className="mx-auto text-emerald-600"/>
-          <h2 className="text-3xl font-black">License Expired</h2>
-          <p>Please subscribe to continue managing your business.</p>
-          <button onClick={handlePaystackPayment} className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-xl">Renew License Now</button>
-          <Navigate to="/activation" />
+          <h2 className="text-3xl font-black">Trial Expired</h2>
+          <p>Please subscribe to continue.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (isInitialized && (!settings?.is_setup_complete || staffList.length === 0)) {
+    if (currentView === 'landing') return <LandingPage onStartTrial={() => setCurrentView('setup')} />;
+    return <SetupShop onComplete={() => window.location.reload()} />;
+  }
+
+  if (!currentUser && currentView !== 'activation') {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
+        <div className="w-full max-sm:px-4 max-w-sm space-y-10">
+          <div className="text-center flex flex-col items-center">
+             <div className="w-24 h-24 bg-white rounded-[2rem] p-4 shadow-2xl border border-slate-100 mb-6">
+                <img src={LOGO_URL} className="w-full h-full object-contain" alt="Logo" />
+             </div>
+             <h1 className="text-4xl font-black text-slate-900 tracking-tight">{settings?.shop_name || 'NaijaShop'}</h1>
+          </div>
+          <div className="bg-white p-10 rounded-[3rem] shadow-2xl border border-slate-200">
+            <form onSubmit={handleLoginSubmit} className="space-y-6">
+              <select required className="w-full px-5 py-4 bg-slate-50 border rounded-2xl font-bold" value={selectedStaffId} onChange={(e) => setSelectedStaffId(Number(e.target.value))}>
+                <option value="">Select Account</option>
+                {staffList.map(s => <option key={s.id} value={s.id!}>{s.name} ({s.role})</option>)}
+              </select>
+              <input required type="password" placeholder="PIN" className="w-full px-5 py-4 bg-slate-50 border rounded-2xl font-bold" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} />
+              <button type="submit" className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-xl shadow-xl">Unlock Terminal</button>
+            </form>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <Routes>
-      <Route path="/affiliate" element={<AffiliatePortal />} />
-      <Route path="/activation" element={<ActivationPage sessionRef={new URLSearchParams(location.search).get('session') || ''} onActivated={() => window.location.href = '/'} />} />
-      <Route path="/setup" element={<SetupShop onComplete={() => window.location.reload()} />} />
-      <Route path="*" element={
-        !settings?.is_setup_complete || staffList.length === 0 ? (
-          <LandingPage onStartTrial={() => window.location.href = '/setup'} />
-        ) : (
-          !currentUser ? (
-            <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
-              <div className="w-full max-sm:px-4 max-w-sm space-y-10">
-                <div className="text-center flex flex-col items-center">
-                   <div className="w-24 h-24 bg-white rounded-[2rem] p-4 shadow-2xl border border-slate-100 mb-6">
-                      <img src={LOGO_URL} className="w-full h-full object-contain" alt="Logo" />
-                   </div>
-                   <h1 className="text-4xl font-black text-slate-900 tracking-tight">{settings?.shop_name || 'NaijaShop'}</h1>
-                </div>
-                <div className="bg-white p-10 rounded-[3rem] shadow-2xl border border-slate-200">
-                  <form onSubmit={handleLoginSubmit} className="space-y-6">
-                    <select required className="w-full px-5 py-4 bg-slate-50 border rounded-2xl font-bold" value={selectedStaffId} onChange={(e) => setSelectedStaffId(Number(e.target.value))}>
-                      <option value="">Select Account</option>
-                      {staffList.map(s => <option key={s.id} value={s.id!}>{s.name} ({s.role})</option>)}
-                    </select>
-                    <input required type="password" placeholder="PIN" className="w-full px-5 py-4 bg-slate-50 border rounded-2xl font-bold" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} />
-                    <button type="submit" className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-xl shadow-xl">Unlock Terminal</button>
-                  </form>
-                </div>
-                <div className="mt-8 flex items-center justify-center gap-2 text-slate-400">
-                  <CheckCircle2 size={14} />
-                  <span className="text-[10px] font-black uppercase tracking-widest">Hardware ID: {settings?.terminal_id || 'Generating...'}</span>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <>
-              <Layout 
-                activeView={currentView} setView={setCurrentView} 
-                shopName={settings?.shop_name || 'NaijaShop'} currentUser={currentUser} 
-                isStaffLock={isStaffLock} toggleStaffLock={(v) => { setIsStaffLock(v); localStorage.setItem('isStaffLock', String(v)); }}
-                adminPin={settings?.admin_pin || ''} onLogout={() => setCurrentUser(null)}
-                trialRemaining={license} isSubscribed={license.isSubscribed}
-                onSubscribe={handlePaystackPayment}
-              >
-                {currentView === 'dashboard' && <Dashboard currentUser={currentUser} setView={setCurrentView} isStaffLock={isStaffLock} trialRemaining={license} isSubscribed={license.isSubscribed} onSubscribe={handlePaystackPayment} />}
-                {currentView === 'pos' && <POS setView={setCurrentView} currentUser={currentUser} cart={cart} setCart={setCart} parkTrigger={parkTrigger} />}
-                {currentView === 'activity-log' && <ActivityLog currentUser={currentUser} />}
-                {currentView === 'inventory' && <Inventory setView={setCurrentView} currentUser={currentUser} isStaffLock={isStaffLock} />}
-                {currentView === 'settings' && <Settings currentUser={currentUser} onSubscribe={handlePaystackPayment} />}
-                {currentView === 'business-hub' && <BusinessHub />}
-                {currentView === 'audit-trail' && <AuditTrail />}
-                {currentView === 'expense-tracker' && <ExpenseTracker currentUser={currentUser} isStaffLock={isStaffLock} />}
-                {currentView === 'transfer-station' && <TransferStation setView={setCurrentView} />}
-                {currentView === 'inventory-ledger' && <InventoryLedger />}
-                {currentView === 'debts' && <Debts />}
-                {currentView === 'staff-management' && <StaffManagement />}
-                {currentView === 'security-backups' && <SecurityBackups currentUser={currentUser} />}
-              </Layout>
-              <SupportChat 
-                currentUser={currentUser} cart={cart} onClearCart={() => setCart([])}
-                onNavigate={setCurrentView} onAddToCart={handleAddToCart}
-                onParkOrder={() => { setCurrentView('pos'); setParkTrigger(prev => prev + 1); }}
-              />
-            </>
-          )
-        )
-      } />
-    </Routes>
+    <>
+      <Layout 
+        activeView={currentView} setView={setCurrentView} 
+        shopName={settings?.shop_name || 'NaijaShop'} currentUser={currentUser} 
+        isStaffLock={isStaffLock} toggleStaffLock={(v) => { setIsStaffLock(v); localStorage.setItem('isStaffLock', String(v)); }}
+        adminPin={settings?.admin_pin || ''} onLogout={() => setCurrentUser(null)}
+        trialRemaining={{...trial, label: s?.isSubscribed ? 'Pro License' : 'Free Trial', totalPeriod: s?.isSubscribed ? 365 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000}} isSubscribed={s?.isSubscribed}
+      >
+        {currentView === 'dashboard' && <Dashboard currentUser={currentUser} setView={setCurrentView} isStaffLock={isStaffLock} trialRemaining={{...trial, label: s?.isSubscribed ? 'Pro License' : 'Free Trial', totalPeriod: s?.isSubscribed ? 365 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000}} isSubscribed={s?.isSubscribed} />}
+        {currentView === 'pos' && <POS setView={setCurrentView} currentUser={currentUser} cart={cart} setCart={setCart} parkTrigger={parkTrigger} />}
+        {currentView === 'activity-log' && <ActivityLog currentUser={currentUser} />}
+        {currentView === 'inventory' && <Inventory setView={setCurrentView} currentUser={currentUser} isStaffLock={isStaffLock} />}
+        {currentView === 'settings' && <Settings currentUser={currentUser} />}
+        {currentView === 'business-hub' && <BusinessHub />}
+        {currentView === 'audit-trail' && <AuditTrail />}
+        {currentView === 'expense-tracker' && <ExpenseTracker currentUser={currentUser} isStaffLock={isStaffLock} />}
+        {currentView === 'transfer-station' && <TransferStation setView={setCurrentView} />}
+        {currentView === 'inventory-ledger' && <InventoryLedger />}
+        {currentView === 'stock-audit' && <StockAudit />}
+        {currentView === 'debts' && <Debts />}
+        {currentView === 'staff-management' && <StaffManagement />}
+        {currentView === 'security-backups' && <SecurityBackups currentUser={currentUser} />}
+        {currentView === 'activation' && <ActivationPage sessionRef={new URLSearchParams(window.location.search).get('session') || ''} onActivated={() => window.location.href = '/'} />}
+      </Layout>
+      <SupportChat 
+        currentUser={currentUser} cart={cart} onClearCart={() => setCart([])}
+        onNavigate={setCurrentView} onAddToCart={handleAddToCart}
+        onParkOrder={() => { setCurrentView('pos'); setParkTrigger(prev => prev + 1); }}
+      />
+    </>
   );
 };
 

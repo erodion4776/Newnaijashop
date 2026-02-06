@@ -20,7 +20,7 @@ export class NaijaShopDB extends Dexie {
   constructor() {
     super('NaijaShopDB');
     
-    // CRITICAL: Database version incremented to 32 as per instructions
+    // CRITICAL: Database version incremented to 32
     (this as any).version(32).stores({
       products: '++id, name, category, barcode',
       sales: '++id, sale_id, timestamp, payment_method, staff_name',
@@ -69,7 +69,6 @@ export const db: NaijaShopDB = new NaijaShopDB();
 
 /**
  * Ensures today's stock records are prepared.
- * Captures current stock as the 'Starting Qty' for the day.
  */
 export const initializeDailyStock = async () => {
   const today = new Date().toISOString().split('T')[0];
@@ -85,11 +84,11 @@ export const initializeDailyStock = async () => {
       product_name: p.name,
       starting_qty: p.stock_qty,
       added_qty: 0,
-      sold_qty: 0
+      sold_qty: 0,
+      closing_qty: p.stock_qty // Initial guess matches start
     }));
     
     await db.stock_snapshots.bulkAdd(snapshots);
-    console.log(`[SNAPSHOT] Initialized ${snapshots.length} stock records for ${today}`);
     return snapshots.length;
   }
   return existingCount;
