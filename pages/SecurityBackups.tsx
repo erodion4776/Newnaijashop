@@ -1,5 +1,4 @@
-
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
   Database, 
   Download, 
@@ -12,7 +11,8 @@ import {
   AlertTriangle,
   RefreshCw,
   Zap,
-  MessageSquare
+  MessageSquare,
+  FileUp
 } from 'lucide-react';
 import { Staff } from '../types';
 import { generateBackupData, restoreFromBackup, downloadBackupFile, performAutoSnapshot } from '../utils/backup';
@@ -21,6 +21,7 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
   const [isProcessing, setIsProcessing] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
   const [importString, setImportString] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const showSuccess = (msg: string) => {
     setSuccess(msg);
@@ -42,12 +43,12 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
     setIsProcessing(false);
   };
 
-  const handleRestore = async () => {
-    if (!importString.trim()) return;
+  const executeRestore = async (data: string) => {
+    if (!data.trim()) return;
     if (!confirm("RESTORE WARNING: This will overwrite ALL current local data with the backup contents. Proceed?")) return;
     
     setIsProcessing(true);
-    const result = await restoreFromBackup(importString.trim());
+    const result = await restoreFromBackup(data.trim());
     setIsProcessing(false);
     
     if (result) {
@@ -56,6 +57,43 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
     } else {
       alert("Restore Failed. The backup data may be invalid.");
     }
+  };
+
+  const handleRestore = async () => {
+    await executeRestore(importString);
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const extension = file.name.split('.').pop()?.toLowerCase();
+    if (extension !== 'nshop' && extension !== 'json') {
+      alert('Invalid file format. Please upload a valid .nshop backup file.');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
+    setIsProcessing(true);
+    const reader = new FileReader();
+    
+    reader.onload = async (event) => {
+      const content = event.target?.result as string;
+      if (content) {
+        setImportString(content);
+        // Auto-Trigger recovery after file is read
+        await executeRestore(content);
+      }
+      setIsProcessing(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    };
+
+    reader.onerror = () => {
+      alert("Error reading file.");
+      setIsProcessing(false);
+    };
+
+    reader.readAsText(file);
   };
 
   const snapshotTs = localStorage.getItem('naijashop_snapshot_ts');
@@ -108,19 +146,45 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
              <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl"><Upload size={24} /></div>
              <h3 className="text-xl font-black text-slate-800">Restore System</h3>
           </div>
-          <textarea 
-            placeholder="Paste your backup code here..."
-            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-mono text-[10px] outline-none focus:ring-2 focus:ring-indigo-500 h-24"
-            value={importString}
-            onChange={e => setImportString(e.target.value)}
-          />
-          <button 
-            onClick={handleRestore}
-            disabled={isProcessing || !importString}
-            className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black flex items-center justify-center gap-3 hover:bg-black transition-all active:scale-95"
-          >
-            <Zap size={20} /> Perform Recovery
-          </button>
+
+          <div className="space-y-4">
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              className="hidden" 
+              accept=".nshop, .json"
+              onChange={handleFileUpload} 
+            />
+            <button 
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isProcessing}
+              className="w-full py-4 bg-slate-100 text-slate-700 rounded-2xl font-black flex items-center justify-center gap-3 hover:bg-slate-200 transition-all active:scale-95"
+            >
+              {isProcessing ? <Loader2 size={20} className="animate-spin" /> : <FileUp size={20} />} 
+              Upload .nshop File
+            </button>
+
+            <div className="flex items-center gap-4 py-2">
+              <div className="h-px bg-slate-100 flex-1" />
+              <span className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em]">OR</span>
+              <div className="h-px bg-slate-100 flex-1" />
+            </div>
+
+            <textarea 
+              placeholder="Paste your backup code here..."
+              className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-mono text-[10px] outline-none focus:ring-2 focus:ring-indigo-500 h-24"
+              value={importString}
+              onChange={e => setImportString(e.target.value)}
+            />
+            
+            <button 
+              onClick={handleRestore}
+              disabled={isProcessing || !importString}
+              className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black flex items-center justify-center gap-3 hover:bg-black transition-all active:scale-95"
+            >
+              <Zap size={20} /> Perform Recovery
+            </button>
+          </div>
         </div>
       </div>
 
