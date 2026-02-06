@@ -63,12 +63,12 @@ const Typewriter = () => {
   }, [displayText, isDeleting, index, typingSpeed]);
 
   return (
-    <span className="text-emerald-600 inline-block min-w-[200px]">
+    <span className="text-emerald-600 block sm:inline-block min-w-[280px]">
       {displayText}
       <motion.span 
         animate={{ opacity: [0, 1, 0] }} 
         transition={{ repeat: Infinity, duration: 0.8 }}
-        className="inline-block w-1 h-12 bg-emerald-600 ml-1 align-middle"
+        className="inline-block w-1 h-8 sm:h-12 bg-emerald-600 ml-1 align-middle"
       />
     </span>
   );
@@ -132,19 +132,19 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
     <div className="min-h-screen bg-slate-50 font-sans text-[#0f172a] selection:bg-emerald-100">
       
       {/* Sticky Navbar */}
-      <nav className="fixed top-0 left-0 right-0 z-[100] bg-white/80 backdrop-blur-xl border-b border-slate-100 h-20">
-        <div className="max-w-7xl mx-auto px-6 h-full flex items-center justify-between">
+      <nav className="fixed top-0 left-0 right-0 z-[100] bg-white/90 backdrop-blur-xl border-b border-slate-100 py-4 lg:py-5 shadow-sm">
+        <div className="max-w-7xl mx-auto px-6 lg:px-12 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <img src={LOGO_URL} alt="NaijaShop Logo" className="w-10 h-10 object-contain" />
-            <span className="text-xl font-black tracking-tighter text-emerald-600 uppercase">NaijaShop</span>
+            <img src={LOGO_URL} alt="NaijaShop Logo" className="w-10 h-10 lg:w-12 lg:h-12 object-contain" />
+            <span className="text-xl lg:text-2xl font-black tracking-tighter text-emerald-600 uppercase">NaijaShop</span>
           </div>
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-4 lg:gap-8">
             <button onClick={onStartTrial} className="hidden md:block text-sm font-black text-slate-500 uppercase tracking-widest hover:text-emerald-600 transition-colors">Login</button>
             <motion.button 
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={onStartTrial}
-              className="bg-[#059669] text-white px-8 py-3 rounded-full font-black text-xs uppercase tracking-widest shadow-xl shadow-emerald-600/20"
+              className="bg-[#059669] text-white px-5 py-3 lg:px-8 lg:py-4 h-11 lg:h-14 rounded-full font-black text-[10px] lg:text-xs uppercase tracking-widest shadow-xl shadow-emerald-600/20 flex items-center justify-center whitespace-nowrap"
             >
               Get Started
             </motion.button>
@@ -153,7 +153,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
       </nav>
 
       {/* Hero Section */}
-      <section className="relative pt-40 pb-20 lg:pt-56 lg:pb-40 overflow-hidden">
+      <section className="relative pt-32 pb-20 lg:pt-48 lg:pb-40 mt-16 overflow-hidden">
         <div className="absolute inset-0 z-0">
           <img 
             src="https://i.ibb.co/qFD5Jyn9/IMG-20260125-230827.png" 
@@ -169,23 +169,25 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
               initial={{ opacity: 0, x: -50 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.8 }}
-              className="flex-1 text-center lg:text-left space-y-8"
+              className="flex-1 text-center lg:text-left space-y-10"
             >
-              <div className="inline-flex items-center gap-2 bg-emerald-100 text-emerald-700 px-4 py-2 rounded-full font-black text-[10px] uppercase tracking-widest">
-                <WifiOff size={14} /> 100% Offline Technology
+              <div className="mt-4 lg:mt-0">
+                <div className="inline-flex items-center gap-2 bg-emerald-100 text-emerald-700 px-5 py-2.5 rounded-full font-black text-[10px] uppercase tracking-widest mb-8 lg:mb-10">
+                  <WifiOff size={14} /> 100% Offline Technology
+                </div>
+                <h1 className="text-4xl lg:text-7xl font-black tracking-tighter leading-tight lg:leading-[0.95] text-[#0f172a]">
+                  The POS That Helps You... <br className="hidden lg:block" />
+                  <Typewriter />
+                </h1>
+                <p className="text-lg lg:text-xl text-slate-500 font-medium leading-relaxed max-w-xl mx-auto lg:mx-0 mt-8 lg:mt-10">
+                  The only terminal built for Nigerian traders. Prevent staff theft, track real profit, and manage inventory without ever needing data.
+                </p>
               </div>
-              <h1 className="text-5xl lg:text-7xl font-black tracking-tighter leading-[0.95] text-[#0f172a]">
-                The POS That Helps You... <br />
-                <Typewriter />
-              </h1>
-              <p className="text-xl text-slate-500 font-medium leading-relaxed max-w-xl">
-                The only terminal built for Nigerian traders. Prevent staff theft, track real profit, and manage inventory without ever needing data.
-              </p>
-              <div className="flex flex-col sm:flex-row items-center gap-4">
+              <div className="flex flex-col sm:flex-row items-center gap-4 justify-center lg:justify-start pt-4">
                 <motion.button 
                   whileHover={{ y: -5 }}
                   onClick={onStartTrial}
-                  className="bg-[#059669] text-white px-10 py-6 rounded-[2rem] font-black text-lg shadow-2xl shadow-emerald-900/20 flex items-center justify-center gap-3"
+                  className="w-full sm:w-auto bg-[#059669] text-white px-10 py-6 rounded-[2rem] font-black text-lg shadow-2xl shadow-emerald-900/20 flex items-center justify-center gap-3"
                 >
                   Start Free Trial <ArrowRight />
                 </motion.button>
@@ -196,7 +198,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
               initial={{ opacity: 0, scale: 0.8 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 1 }}
-              className="flex-1 relative"
+              className="flex-1 relative w-full"
             >
               <motion.div 
                 animate={{ y: [0, -20, 0] }}
@@ -240,7 +242,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
                 <div className="aspect-square rounded-[2.5rem] overflow-hidden mb-8">
                   <img src={card.img} alt={card.title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
                 </div>
-                <div className="px-6 pb-6 space-y-2">
+                <div className="px-6 pb-6 space-y-2 text-center md:text-left">
                   <h3 className="text-2xl font-black tracking-tight">{card.title}</h3>
                   <p className="text-slate-500 font-medium leading-relaxed">{card.desc}</p>
                 </div>
@@ -378,27 +380,27 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
         </div>
         <div className="max-w-7xl mx-auto px-6 relative z-10">
           <div className="flex flex-col lg:flex-row items-center gap-16">
-            <motion.div {...fadeInUp} className="flex-1 space-y-8">
+            <motion.div {...fadeInUp} className="flex-1 space-y-8 text-center lg:text-left">
               <div className="inline-flex items-center gap-2 bg-amber-200 text-amber-900 px-4 py-2 rounded-full font-black text-[10px] uppercase tracking-widest">
                 <CircleDollarSign size={14} /> Affiliate Army
               </div>
-              <h2 className="text-5xl lg:text-6xl font-black tracking-tighter leading-none text-slate-900">
+              <h2 className="text-4xl lg:text-6xl font-black tracking-tighter leading-none text-slate-900">
                 Earn ₦2,000 for <br /> Every Referral
               </h2>
-              <p className="text-xl text-slate-600 font-medium leading-relaxed max-w-xl">
+              <p className="text-xl text-slate-600 font-medium leading-relaxed max-w-xl mx-auto lg:mx-0">
                 You don't even need to own a shop to make money with NaijaShop. Join our affiliate army today and start earning weekly payouts.
               </p>
               
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 pt-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 pt-4 text-left">
                 {[
                   { icon: <UserPlus className="text-amber-600" />, title: "Register", desc: "Go to our Affiliate Portal and get your unique code." },
                   { icon: <Zap className="text-amber-600" />, title: "Share", desc: "Tell shop owners about the POS that works without data." },
                   { icon: <Coins className="text-amber-600" />, title: "Get Paid", desc: "When they subscribe, we send ₦2,000 to your bank account instantly." }
                 ].map((step, i) => (
                   <div key={i} className="space-y-3">
-                    <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-lg shadow-amber-900/5">{step.icon}</div>
-                    <h4 className="font-black text-slate-900">{step.title}</h4>
-                    <p className="text-xs text-slate-500 font-medium leading-relaxed">{step.desc}</p>
+                    <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-lg shadow-amber-900/5 mx-auto lg:mx-0">{step.icon}</div>
+                    <h4 className="font-black text-slate-900 text-center lg:text-left">{step.title}</h4>
+                    <p className="text-xs text-slate-500 font-medium leading-relaxed text-center lg:text-left">{step.desc}</p>
                   </div>
                 ))}
               </div>
@@ -408,11 +410,11 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                   onClick={handleMarketerClick}
-                  className="bg-amber-500 text-white px-10 py-6 rounded-[2rem] font-black text-lg shadow-2xl shadow-amber-900/20 hover:bg-amber-600 transition-all flex items-center gap-3"
+                  className="bg-amber-500 text-white px-10 py-6 rounded-[2rem] font-black text-lg shadow-2xl shadow-amber-900/20 hover:bg-amber-600 transition-all flex items-center gap-3 mx-auto lg:mx-0"
                 >
                   Become a Marketer Now <ArrowRight />
                 </motion.button>
-                <p className="mt-4 flex items-center gap-2 text-amber-800 font-black text-[10px] uppercase tracking-widest">
+                <p className="mt-4 flex items-center justify-center lg:justify-start gap-2 text-amber-800 font-black text-[10px] uppercase tracking-widest">
                   <Gift size={14} /> Plus, the shop you refer gets 1 Month Extra free!
                 </p>
               </div>
@@ -422,7 +424,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
               initial={{ opacity: 0, scale: 0.9 }}
               whileInView={{ opacity: 1, scale: 1 }}
               viewport={{ once: true }}
-              className="flex-1"
+              className="flex-1 w-full"
             >
               <div className="bg-white p-4 rounded-[4rem] shadow-[0_40px_100px_rgba(146,64,14,0.15)] border-8 border-[#fef3c7]">
                 <img 
@@ -447,35 +449,41 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
             {...fadeInUp}
             className="bg-white rounded-[3rem] overflow-hidden shadow-2xl border border-slate-200"
           >
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-900 text-white">
-                  <th className="p-8 font-black uppercase text-xs tracking-widest">Feature</th>
-                  <th className="p-8 font-black uppercase text-xs tracking-widest opacity-50">Standard POS</th>
-                  <th className="p-8 font-black uppercase text-xs tracking-widest text-emerald-400">NaijaShop</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {[
-                  { f: "Data Usage", o: "High Cost", n: "₦0 (100% Offline)" },
-                  { f: "Profit Tracking", o: "Manual / None", n: "Automatic Interest" },
-                  { f: "Staff Security", o: "Weak", n: "Secret Audit Logs" },
-                  { f: "Pricing", o: "Monthly Fees", n: "One-time / Yearly" }
-                ].map((row, i) => (
-                  <tr key={i} className="hover:bg-slate-50 transition-colors">
-                    <td className="p-8 font-black text-slate-900">{row.f}</td>
-                    <td className="p-8 text-slate-400 font-medium flex items-center gap-2">
-                      <div className="w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center text-slate-400"><Minus size={12} /></div>
-                      {row.o}
-                    </td>
-                    <td className="p-8 text-emerald-700 font-black flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 shadow-sm"><Check size={14} /></div>
-                      {row.n}
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse min-w-[600px]">
+                <thead>
+                  <tr className="bg-slate-900 text-white">
+                    <th className="p-8 font-black uppercase text-xs tracking-widest">Feature</th>
+                    <th className="p-8 font-black uppercase text-xs tracking-widest opacity-50">Standard POS</th>
+                    <th className="p-8 font-black uppercase text-xs tracking-widest text-emerald-400">NaijaShop</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {[
+                    { f: "Data Usage", o: "High Cost", n: "₦0 (100% Offline)" },
+                    { f: "Profit Tracking", o: "Manual / None", n: "Automatic Interest" },
+                    { f: "Staff Security", o: "Weak", n: "Secret Audit Logs" },
+                    { f: "Pricing", o: "Monthly Fees", n: "One-time / Yearly" }
+                  ].map((row, i) => (
+                    <tr key={i} className="hover:bg-slate-50 transition-colors">
+                      <td className="p-8 font-black text-slate-900">{row.f}</td>
+                      <td className="p-8 text-slate-400 font-medium">
+                        <div className="flex items-center gap-2">
+                          <div className="w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 shrink-0"><Minus size={12} /></div>
+                          {row.o}
+                        </div>
+                      </td>
+                      <td className="p-8 text-emerald-700 font-black">
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 shadow-sm shrink-0"><Check size={14} /></div>
+                          {row.n}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </motion.div>
         </div>
       </section>
