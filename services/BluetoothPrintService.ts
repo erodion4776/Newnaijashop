@@ -1,15 +1,11 @@
-
 import { Sale, Settings } from '../types';
 
 class BluetoothPrintService {
-  // Fix: Use any because BluetoothDevice is not defined in standard TypeScript DOM types
   private device: any = null;
-  // Fix: Use any because BluetoothRemoteGATTCharacteristic is not defined in standard TypeScript DOM types
   private characteristic: any = null;
   private isConnecting = false;
 
   public isSupported(): boolean {
-    // Fix: Cast navigator to any to avoid "Property 'bluetooth' does not exist" error
     return 'bluetooth' in (navigator as any);
   }
 
@@ -21,14 +17,38 @@ class BluetoothPrintService {
     return this.device?.name || 'Unknown Printer';
   }
 
+  /**
+   * Attempts to connect to a new printer or resume a previous connection.
+   */
   public async connect(): Promise<boolean> {
     if (this.isConnecting) return false;
     this.isConnecting = true;
 
     try {
-      // Standard UUID for many thermal printers and generic serial services
-      // Fix: Cast navigator to any to access the Web Bluetooth API
-      const device = await (navigator as any).bluetooth.requestDevice({
+      const nav = navigator as any;
+
+      // Try to find previously paired devices first (Auto-connect logic)
+      if (nav.bluetooth.getDevices) {
+        const pairedDevices = await nav.bluetooth.getDevices();
+        if (pairedDevices.length > 0) {
+          const lastId = localStorage.getItem('last_printer_id');
+          const autoDevice = pairedDevices.find((d: any) => d.id === lastId) || pairedDevices[0];
+          
+          try {
+            const server = await autoDevice.gatt?.connect();
+            if (server) {
+              await this.setupService(autoDevice, server);
+              this.isConnecting = false;
+              return true;
+            }
+          } catch (e) {
+            console.warn("Auto-reconnect failed, falling back to manual selection");
+          }
+        }
+      }
+
+      // Manual Request
+      const device = await nav.bluetooth.requestDevice({
         filters: [
           { services: ['000018f0-0000-1000-8000-00805f9b34fb'] },
           { namePrefix: 'Printer' },
@@ -41,22 +61,11 @@ class BluetoothPrintService {
       const server = await device.gatt?.connect();
       if (!server) throw new Error("GATT Server not found");
 
-      const service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
-      // Look for the write characteristic
-      const characteristics = await service.getCharacteristics();
-      // Fix: characteristics is inferred as any array, but explicit casting ensures safety
-      this.characteristic = characteristics.find((c: any) => c.properties.write || c.properties.writeWithoutResponse) || null;
-
-      if (!this.characteristic) throw new Error("Write characteristic not found");
-
-      this.device = device;
+      await this.setupService(device, server);
       
-      device.addEventListener('gattserverdisconnected', () => {
-        this.device = null;
-        this.characteristic = null;
-        console.warn("Printer Disconnected");
-      });
-
+      // Save for auto-connect
+      localStorage.setItem('last_printer_id', device.id);
+      
       return true;
     } catch (err) {
       console.error("Bluetooth Connection Error:", err);
@@ -66,10 +75,23 @@ class BluetoothPrintService {
     }
   }
 
+  private async setupService(device: any, server: any) {
+    const service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
+    const characteristics = await service.getCharacteristics();
+    this.characteristic = characteristics.find((c: any) => c.properties.write || c.properties.writeWithoutResponse) || null;
+
+    if (!this.characteristic) throw new Error("Write characteristic not found");
+
+    this.device = device;
+    device.addEventListener('gattserverdisconnected', () => {
+      this.device = null;
+      this.characteristic = null;
+      console.warn("Printer Disconnected");
+    });
+  }
+
   private async writeBuffer(buffer: Uint8Array) {
     if (!this.characteristic) return;
-    
-    // Chunk size for reliable Bluetooth transmission
     const CHUNK_SIZE = 20;
     for (let i = 0; i < buffer.length; i += CHUNK_SIZE) {
       const chunk = buffer.slice(i, i + CHUNK_SIZE);
@@ -78,37 +100,40 @@ class BluetoothPrintService {
   }
 
   public async printReceipt(sale: Sale, settings: Settings): Promise<void> {
-    if (!this.isConnected()) throw new Error("Printer not connected");
+    // Logic: Auto-connect if disconnected
+    if (!this.isConnected()) {
+      await this.connect();
+    }
 
     const encoder = new TextEncoder();
     const commands: number[] = [
-      0x1B, 0x40, // Initialize
+      0x1B, 0x40, // ESC @ - Initialize/Wake Up (Reset Buffer)
       0x1B, 0x61, 0x01, // Center align
       0x1B, 0x45, 0x01, // Bold ON
     ];
 
-    // Shop Header
-    const shopName = `${settings.shop_name}\n`;
+    // Narrow formatting: 32 chars max
+    const shopName = `${settings.shop_name.substring(0, 31)}\n`;
     commands.push(...Array.from(encoder.encode(shopName)));
     commands.push(0x1B, 0x45, 0x00); // Bold OFF
     
     if (settings.shop_address) {
-      commands.push(...Array.from(encoder.encode(`${settings.shop_address}\n`)));
+      commands.push(...Array.from(encoder.encode(`${settings.shop_address.substring(0, 31)}\n`)));
     }
     
-    commands.push(...Array.from(encoder.encode(`Receipt: #${sale.sale_id.substring(0, 8)}\n`)));
-    commands.push(...Array.from(encoder.encode(`Date: ${new Date(sale.timestamp).toLocaleString()}\n`)));
-    commands.push(...Array.from(encoder.encode("--------------------------------\n")));
+    commands.push(...Array.from(encoder.encode(`ID: ${sale.sale_id.substring(0, 12)}\n`)));
+    commands.push(...Array.from(encoder.encode(`Date: ${new Date(sale.timestamp).toLocaleDateString()}\n`)));
+    commands.push(...Array.from(encoder.encode("--------------------------------\n"))); // 32 dashes
 
-    // Items Table Header
+    // Items Table Header (32 chars)
+    // ITEM(14) QTY(4) PRICE(14)
     commands.push(0x1B, 0x61, 0x00); // Left align
-    commands.push(...Array.from(encoder.encode("ITEM         QTY     PRICE\n")));
+    commands.push(...Array.from(encoder.encode("ITEM           QTY         PRICE\n")));
     
-    // Items
     for (const item of sale.items) {
-      const name = item.name.substring(0, 12).padEnd(13, ' ');
-      const qty = item.quantity.toString().padEnd(8, ' ');
-      const price = (item.price * item.quantity).toLocaleString();
+      const name = item.name.substring(0, 14).padEnd(15, ' ');
+      const qty = item.quantity.toString().padEnd(4, ' ');
+      const price = (item.price * item.quantity).toLocaleString().padStart(13, ' ');
       commands.push(...Array.from(encoder.encode(`${name}${qty}${price}\n`)));
     }
 
@@ -123,56 +148,46 @@ class BluetoothPrintService {
     // Footer
     commands.push(0x1B, 0x61, 0x01, 0x0A); // Center & Feed
     if (settings.receipt_footer) {
-      commands.push(...Array.from(encoder.encode(`${settings.receipt_footer}\n`)));
+      const footer = settings.receipt_footer.length > 32 ? settings.receipt_footer.substring(0, 31) : settings.receipt_footer;
+      commands.push(...Array.from(encoder.encode(`${footer}\n`)));
     }
-    commands.push(...Array.from(encoder.encode("Powered by NaijaShop POS\n\n\n\n\n")));
+    commands.push(...Array.from(encoder.encode("NaijaShop POS - Offline First\n\n\n\n")));
     
-    // Cut paper (Partial)
+    // Cut
     commands.push(0x1D, 0x56, 0x41, 0x00);
 
     await this.writeBuffer(new Uint8Array(commands));
   }
 
   public async printZReport(summary: any, settings: Settings | undefined, notes: string): Promise<void> {
-    if (!this.isConnected()) throw new Error("Printer not connected");
+    if (!this.isConnected()) await this.connect();
 
     const encoder = new TextEncoder();
     const commands: number[] = [
-      0x1B, 0x40, // Initialize
+      0x1B, 0x40, // ESC @ - Initialize
       0x1B, 0x61, 0x01, // Center
       0x1B, 0x45, 0x01, // Bold ON
     ];
 
     commands.push(...Array.from(encoder.encode("DAILY Z-REPORT\n")));
-    commands.push(...Array.from(encoder.encode(`${settings?.shop_name || 'NAIJASHOP'}\n`)));
+    commands.push(...Array.from(encoder.encode(`${settings?.shop_name.substring(0, 31) || 'NAIJASHOP'}\n`)));
     commands.push(0x1B, 0x45, 0x00); // Bold OFF
     
     commands.push(...Array.from(encoder.encode(`DATE: ${new Date().toLocaleDateString()}\n`)));
     commands.push(...Array.from(encoder.encode("--------------------------------\n")));
     
     commands.push(0x1B, 0x61, 0x00); // Left
-    commands.push(...Array.from(encoder.encode(`CASH IN HAND:  N${summary.cash.toLocaleString()}\n`)));
-    commands.push(...Array.from(encoder.encode(`BANK TRANSFERS: N${summary.transfer.toLocaleString()}\n`)));
-    commands.push(...Array.from(encoder.encode(`POS SALES:      N${summary.pos.toLocaleString()}\n`)));
-    commands.push(...Array.from(encoder.encode(`TOTAL REVENUE:  N${summary.totalSales.toLocaleString()}\n`)));
+    commands.push(...Array.from(encoder.encode(`CASH:      N${summary.cash.toLocaleString().padStart(18, ' ')}\n`)));
+    commands.push(...Array.from(encoder.encode(`TRANSFER:  N${summary.transfer.toLocaleString().padStart(18, ' ')}\n`)));
+    commands.push(...Array.from(encoder.encode(`TOTAL:     N${summary.totalSales.toLocaleString().padStart(18, ' ')}\n`)));
     
     commands.push(...Array.from(encoder.encode("--------------------------------\n")));
-    commands.push(...Array.from(encoder.encode(`TOTAL EXPENSES: N${summary.expenses.toLocaleString()}\n`)));
-    
     commands.push(0x1B, 0x45, 0x01); // Bold ON
-    commands.push(...Array.from(encoder.encode(`NET TAKE-HOME:  N${summary.netTakeHome.toLocaleString()}\n`)));
-    commands.push(...Array.from(encoder.encode(`EST. PROFIT:    N${summary.interest.toLocaleString()}\n`)));
+    commands.push(...Array.from(encoder.encode(`NET:       N${summary.netTakeHome.toLocaleString().padStart(18, ' ')}\n`)));
     commands.push(0x1B, 0x45, 0x00); // Bold OFF
     
-    if (notes) {
-      commands.push(...Array.from(encoder.encode("--------------------------------\n")));
-      commands.push(...Array.from(encoder.encode(`NOTES: ${notes}\n`)));
-    }
+    commands.push(...Array.from(encoder.encode("\nTERMINAL SECURED\n\n\n\n")));
     
-    commands.push(...Array.from(encoder.encode("\nTERMINAL SECURED FOR NIGHT\n")));
-    commands.push(...Array.from(encoder.encode("--------------------------------\n\n\n\n\n")));
-    
-    // Cut
     commands.push(0x1D, 0x56, 0x41, 0x00);
 
     await this.writeBuffer(new Uint8Array(commands));
