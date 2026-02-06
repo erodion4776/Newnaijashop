@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, getLocalDateString } from '../db/db';
 import { 
@@ -10,30 +10,26 @@ import {
   History, 
   RefreshCw, 
   Loader2, 
-  Play,
-  Shield,
   Info,
   TrendingUp,
   Package,
   ArrowRight
 } from 'lucide-react';
-import { StockSnapshot, Product } from '../types';
+import { StockSnapshot, Product, Sale, InventoryLog } from '../types';
 
 const StockAudit: React.FC = () => {
-  // Use robust local date helper instead of UTC toISOString
   const todayStr = useMemo(() => getLocalDateString(), []);
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
   const [searchTerm, setSearchTerm] = useState('');
-  const [isSyncing, setIsSyncing] = useState(false);
 
-  // Derive time boundaries for the selected date as LOCAL time
+  // Define time boundaries for the selected date in local time
   const timeRange = useMemo(() => {
     const start = new Date(`${selectedDate}T00:00:00`);
     const end = new Date(`${selectedDate}T23:59:59.999`);
     return { start: start.getTime(), end: end.getTime() };
   }, [selectedDate]);
 
-  // Reactive data streams
+  // LIVE DATA STREAMS: Watching all relevant tables for instant UI updates
   const products = useLiveQuery(() => db.products.toArray()) || [];
   const snapshots = useLiveQuery(() => db.stock_snapshots.where('date').equals(selectedDate).toArray(), [selectedDate]) || [];
   const salesOnDate = useLiveQuery(() => db.sales.where('timestamp').between(timeRange.start, timeRange.end).toArray(), [selectedDate]) || [];
@@ -42,126 +38,100 @@ const StockAudit: React.FC = () => {
   const isToday = selectedDate === todayStr;
 
   /**
-   * Proactive Product Sync
-   * Detects new products and calculates their true starting stock for today's audit.
-   */
-  const syncTodayAudit = async () => {
-    if (!isToday || products.length === 0) return;
-    setIsSyncing(true);
-    try {
-      const allProducts = await db.products.toArray();
-      const existingSnapshots = await db.stock_snapshots.where('date').equals(selectedDate).toArray();
-      const snapshotProductIds = new Set(existingSnapshots.map(s => s.product_id));
-
-      const newSnapshots: StockSnapshot[] = [];
-      
-      for (const product of allProducts) {
-        if (!snapshotProductIds.has(product.id!)) {
-          // Calculate movements for today to back-calculate starting qty
-          const soldToday = salesOnDate.reduce((acc, s) => {
-            const qty = s.items.filter(i => i.productId === product.id).reduce((sum, i) => sum + Number(i.quantity), 0);
-            return acc + qty;
-          }, 0);
-
-          const addedToday = logsOnDate.reduce((acc, l) => {
-            if (l.product_id === product.id && (l.type === 'Restock' || l.type === 'Initial Stock')) {
-              return acc + Number(l.quantity_changed);
-            }
-            return acc;
-          }, 0);
-
-          // Starting = Current - Added + Sold
-          const starting = Number(product.stock_qty || 0) - Number(addedToday) + Number(soldToday);
-
-          newSnapshots.push({
-            date: selectedDate,
-            product_id: product.id!,
-            product_name: product.name,
-            starting_qty: starting,
-            added_qty: 0,
-            sold_qty: 0,
-            closing_qty: undefined
-          });
-        }
-      }
-
-      if (newSnapshots.length > 0) {
-        await db.stock_snapshots.bulkAdd(newSnapshots);
-      }
-    } finally {
-      // Small artificial delay for UI feedback
-      setTimeout(() => setIsSyncing(false), 600);
-    }
-  };
-
-  useEffect(() => {
-    if (isToday) syncTodayAudit();
-  }, [selectedDate, isToday, products.length]);
-
-  /**
-   * Main Audit Logic
-   * Merges products and snapshots with LIVE calculations from sales and logs.
+   * DYNAMIC AUDIT ENGINE
+   * Merges current product state with historical logs to calculate opening and movement values
    */
   const auditRows = useMemo(() => {
     return products.map(product => {
+      // Find the saved snapshot for this product on the selected date (mainly for Actual count/history)
       const snapshot = snapshots.find(s => s.product_id === product.id);
-      if (!snapshot) return null;
-
-      // Dynamic Movement Calculation
-      const soldCount = salesOnDate.reduce((acc, s) => {
-        const qty = s.items.filter(i => i.productId === product.id).reduce((sum, i) => sum + Number(i.quantity), 0);
-        return acc + qty;
+      
+      // Calculate dynamic movements specifically for this product on the selected date
+      const soldQty = salesOnDate.reduce((sum, sale) => {
+        const item = sale.items.find(i => i.productId === product.id);
+        return sum + (item ? Number(item.quantity) : 0);
       }, 0);
 
-      const addedCount = logsOnDate.reduce((acc, l) => {
-        if (l.product_id === product.id && (l.type === 'Restock' || l.type === 'Initial Stock')) {
-          return acc + Number(l.quantity_changed);
+      const addedQty = logsOnDate.reduce((sum, log) => {
+        if (log.product_id === product.id && (log.type === 'Restock' || log.type === 'Initial Stock')) {
+          return sum + Number(log.quantity_changed);
         }
-        return acc;
+        return sum;
       }, 0);
 
-      const starting = Number(snapshot.starting_qty || 0);
-      const expected = starting + addedCount - soldCount;
-      const actual = snapshot.closing_qty !== undefined ? Number(snapshot.closing_qty) : expected;
-      const hasDiscrepancy = expected !== actual;
+      let starting: number;
+      let expected: number;
+
+      if (isToday) {
+        // FORMULA: Starting = Current - Added Today + Sold Today
+        // This calculates exactly what was on the shelf at 12:00 AM today
+        starting = Number(product.stock_qty || 0) - addedQty + soldQty;
+        expected = Number(product.stock_qty || 0); // Expected should always match current inventory today
+      } else {
+        // For history, rely on the locked starting quantity from the snapshot
+        starting = Number(snapshot?.starting_qty || 0);
+        expected = starting + addedQty - soldQty;
+      }
+
+      const actual = snapshot?.closing_qty;
+      const hasDiscrepancy = actual !== undefined && actual !== expected;
+      const diff = actual !== undefined ? actual - expected : 0;
 
       return {
-        id: snapshot.id!,
+        id: snapshot?.id, // ID from snapshot for updating Actual count
+        productId: product.id,
         name: product.name,
-        productId: product.id!,
         starting,
-        added: addedCount,
-        sold: soldCount,
+        added: addedQty,
+        sold: soldQty,
         expected,
-        actual: snapshot.closing_qty,
+        actual,
         hasDiscrepancy,
-        diff: actual - expected
+        diff
       };
-    }).filter(Boolean).filter(row => 
-      row!.name.toLowerCase().includes(searchTerm.toLowerCase())
+    }).filter(row => 
+      row.name.toLowerCase().includes(searchTerm.toLowerCase())
     );
-  }, [products, snapshots, salesOnDate, logsOnDate, searchTerm]);
+  }, [products, snapshots, salesOnDate, logsOnDate, selectedDate, isToday, searchTerm]);
 
-  const updateActualCount = async (snapshotId: number, value: string) => {
+  /**
+   * Actual Count Update Handler
+   * If a snapshot doesn't exist yet for today (first time counting), we create it.
+   */
+  const updateActualCount = async (productRow: any, value: string) => {
     const numericVal = value === '' ? undefined : Number(value);
+    
     try {
-      await db.stock_snapshots.update(snapshotId, { closing_qty: numericVal });
+      if (productRow.id) {
+        // Update existing snapshot
+        await db.stock_snapshots.update(productRow.id, { closing_qty: numericVal });
+      } else {
+        // Create new snapshot for today to store this actual count
+        await db.stock_snapshots.add({
+          date: selectedDate,
+          product_id: productRow.productId,
+          product_name: productRow.name,
+          starting_qty: productRow.starting,
+          added_qty: productRow.added,
+          sold_qty: productRow.sold,
+          closing_qty: numericVal
+        });
+      }
     } catch (err) {
       console.error("Update error:", err);
     }
   };
 
   const stats = useMemo(() => {
-    const rows = auditRows as any[];
     return {
-      total: rows.length,
-      issues: rows.filter(r => r.hasDiscrepancy).length
+      total: auditRows.length,
+      issues: auditRows.filter(r => r.hasDiscrepancy).length
     };
   }, [auditRows]);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-20">
-      {/* HEADER CARD */}
+      {/* HEADER */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm">
         <div className="flex items-center gap-4">
           <div className="w-14 h-14 bg-emerald-50 text-emerald-600 rounded-[1.5rem] flex items-center justify-center shadow-inner">
@@ -169,20 +139,11 @@ const StockAudit: React.FC = () => {
           </div>
           <div>
             <h2 className="text-2xl font-black text-slate-800 tracking-tight">Stock Audit Hub</h2>
-            <p className="text-sm text-slate-400 font-bold uppercase tracking-widest">Verify physical inventory</p>
+            <p className="text-sm text-slate-400 font-bold uppercase tracking-widest">Digital vs Physical Reconciliation</p>
           </div>
         </div>
+        
         <div className="flex items-center gap-3 w-full md:w-auto">
-          {isToday && (
-            <button 
-              onClick={syncTodayAudit}
-              disabled={isSyncing}
-              className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl hover:bg-indigo-100 transition-all disabled:opacity-50"
-              title="Refresh Audit Data"
-            >
-              <RefreshCw size={24} className={isSyncing ? 'animate-spin' : ''} />
-            </button>
-          )}
           <div className="flex-1 bg-slate-50 p-2 pl-4 rounded-2xl border border-slate-200 flex items-center gap-3">
             <Calendar size={18} className="text-slate-400" />
             <input 
@@ -197,83 +158,93 @@ const StockAudit: React.FC = () => {
       </div>
 
       {/* DASHBOARD STATS */}
-      {snapshots.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm flex items-center gap-5">
-            <div className="w-12 h-12 bg-slate-50 text-slate-400 rounded-2xl flex items-center justify-center shadow-inner">
-              <Package size={24} />
-            </div>
-            <div>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Items Audited</p>
-              <p className="text-2xl font-black text-slate-800">{stats.total}</p>
-            </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm flex items-center gap-5">
+          <div className="w-12 h-12 bg-slate-50 text-slate-400 rounded-2xl flex items-center justify-center shadow-inner">
+            <Package size={24} />
           </div>
-          <div className={`bg-white p-6 rounded-[2.5rem] border shadow-sm flex items-center gap-5 ${stats.issues > 0 ? 'border-rose-100 bg-rose-50/50' : 'border-slate-100'}`}>
-            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-inner ${stats.issues > 0 ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-600'}`}>
-              <AlertTriangle size={24} />
-            </div>
-            <div>
-              <p className={`text-[10px] font-black uppercase tracking-widest mb-1 ${stats.issues > 0 ? 'text-rose-600' : 'text-slate-400'}`}>Issues Found</p>
-              <p className={`text-2xl font-black ${stats.issues > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
-                {stats.issues === 0 ? 'Balanced' : `${stats.issues} Discrepancies`}
-              </p>
-            </div>
-          </div>
-          <div className="bg-emerald-600 p-6 rounded-[2.5rem] shadow-lg flex items-center gap-5 relative overflow-hidden">
-            <div className="absolute right-[-10px] top-[-10px] opacity-10"><TrendingUp size={100} /></div>
-            <div className="w-12 h-12 bg-white/20 text-white rounded-2xl flex items-center justify-center shadow-inner">
-              <RefreshCw size={24} />
-            </div>
-            <div className="text-white relative z-10">
-              <p className="text-[10px] font-black uppercase tracking-widest mb-1">Real-Time Mode</p>
-              <p className="text-sm font-bold opacity-80">Synced with POS</p>
-            </div>
+          <div>
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Items In Audit</p>
+            <p className="text-2xl font-black text-slate-800">{stats.total}</p>
           </div>
         </div>
-      )}
+        
+        <div className={`bg-white p-6 rounded-[2.5rem] border shadow-sm flex items-center gap-5 ${stats.issues > 0 ? 'border-rose-100 bg-rose-50/50' : 'border-slate-100'}`}>
+          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-inner ${stats.issues > 0 ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-600'}`}>
+            <AlertTriangle size={24} />
+          </div>
+          <div>
+            <p className={`text-[10px] font-black uppercase tracking-widest mb-1 ${stats.issues > 0 ? 'text-rose-600' : 'text-slate-400'}`}>Integrity Issues</p>
+            <p className={`text-2xl font-black ${stats.issues > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+              {stats.issues === 0 ? 'Clean Audit' : `${stats.issues} Discrepancies`}
+            </p>
+          </div>
+        </div>
 
-      {/* SEARCH AND FILTERS */}
-      {snapshots.length > 0 && (
-        <div className="relative">
-          <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" size={22} />
-          <input 
-            type="text" 
-            placeholder="Search audit ledger..." 
-            className="w-full pl-14 pr-6 h-16 bg-white border border-slate-200 rounded-[2rem] outline-none shadow-sm font-bold text-lg focus:ring-4 focus:ring-emerald-500/10 transition-all"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+        <div className="bg-emerald-600 p-6 rounded-[2.5rem] shadow-lg flex items-center gap-5 relative overflow-hidden">
+          <div className="absolute right-[-10px] top-[-10px] opacity-10"><TrendingUp size={100} /></div>
+          <div className="w-12 h-12 bg-white/20 text-white rounded-2xl flex items-center justify-center shadow-inner">
+            <RefreshCw size={24} className="animate-pulse" />
+          </div>
+          <div className="text-white relative z-10">
+            <p className="text-[10px] font-black uppercase tracking-widest mb-1">Live Sync</p>
+            <p className="text-sm font-bold opacity-80">Connected to Inventory</p>
+          </div>
         </div>
-      )}
+      </div>
+
+      {/* SEARCH */}
+      <div className="relative">
+        <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" size={22} />
+        <input 
+          type="text" 
+          placeholder="Filter audit ledger by product name..." 
+          className="w-full pl-14 pr-6 h-16 bg-white border border-slate-200 rounded-[2rem] outline-none shadow-sm font-bold text-lg focus:ring-4 focus:ring-emerald-500/10 transition-all"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+        />
+      </div>
 
       {/* AUDIT TABLE */}
-      {snapshots.length > 0 ? (
-        <div className="bg-white rounded-[3rem] border border-slate-100 shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead className="bg-slate-50/50 border-b border-slate-100">
+      <div className="bg-white rounded-[3rem] border border-slate-100 shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead className="bg-slate-50/50 border-b border-slate-100">
+              <tr>
+                <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Product</th>
+                <th className="px-6 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Starting (12AM)</th>
+                <th className="px-6 py-6 text-[10px] font-black text-emerald-600 uppercase tracking-widest text-center">Restocked (+)</th>
+                <th className="px-6 py-6 text-[10px] font-black text-rose-600 uppercase tracking-widest text-center">Sold (-)</th>
+                <th className="px-6 py-6 text-[10px] font-black text-slate-800 uppercase tracking-widest text-center">Digital Stock</th>
+                <th className="px-8 py-6 text-[10px] font-black text-indigo-600 uppercase tracking-widest text-right">Physical Count</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {auditRows.length === 0 ? (
                 <tr>
-                  <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Product</th>
-                  <th className="px-6 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Starting</th>
-                  <th className="px-6 py-6 text-[10px] font-black text-emerald-600 uppercase tracking-widest text-center">Added (+)</th>
-                  <th className="px-6 py-6 text-[10px] font-black text-rose-600 uppercase tracking-widest text-center">Sold (-)</th>
-                  <th className="px-6 py-6 text-[10px] font-black text-slate-800 uppercase tracking-widest text-center">Expected</th>
-                  <th className="px-8 py-6 text-[10px] font-black text-indigo-600 uppercase tracking-widest text-right">Actual Closing</th>
+                  <td colSpan={6} className="py-20 text-center text-slate-400 font-bold uppercase text-xs tracking-widest">
+                    No products found matching search.
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {auditRows.map(row => (
-                  <tr key={row!.id} className={`hover:bg-slate-50/50 transition-colors ${row!.hasDiscrepancy ? 'bg-rose-50/30' : ''}`}>
+              ) : (
+                auditRows.map(row => (
+                  <tr key={row.productId} className={`hover:bg-slate-50/50 transition-colors ${row.hasDiscrepancy ? 'bg-rose-50/30' : ''}`}>
                     <td className="px-8 py-6">
-                      <p className="font-black text-slate-800">{row!.name}</p>
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">SKU: #{row!.productId}</p>
+                      <p className="font-black text-slate-800">{row.name}</p>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">SKU: #{row.productId}</p>
                     </td>
-                    <td className="px-6 py-6 text-center font-bold text-slate-500 tabular-nums">{row!.starting}</td>
-                    <td className="px-6 py-6 text-center font-black text-emerald-600 tabular-nums">+{row!.added}</td>
-                    <td className="px-6 py-6 text-center font-black text-rose-600 tabular-nums">-{row!.sold}</td>
+                    <td className="px-6 py-6 text-center font-bold text-slate-500 tabular-nums">
+                      {row.starting}
+                    </td>
+                    <td className="px-6 py-6 text-center font-black text-emerald-600 tabular-nums">
+                      +{row.added}
+                    </td>
+                    <td className="px-6 py-6 text-center font-black text-rose-600 tabular-nums">
+                      -{row.sold}
+                    </td>
                     <td className="px-6 py-6 text-center">
                       <span className="px-4 py-1.5 bg-slate-100 rounded-full font-black text-slate-900 text-sm tabular-nums">
-                        {row!.expected}
+                        {row.expected}
                       </span>
                     </td>
                     <td className="px-8 py-6 text-right">
@@ -281,47 +252,29 @@ const StockAudit: React.FC = () => {
                         <input 
                           type="number"
                           className={`w-24 px-4 py-2 border-2 rounded-2xl text-right font-black outline-none transition-all ${
-                            row!.hasDiscrepancy 
+                            row.hasDiscrepancy 
                               ? 'border-rose-400 bg-rose-50 text-rose-600 shadow-lg shadow-rose-200' 
                               : 'border-slate-100 bg-slate-50 text-emerald-600 focus:border-emerald-500'
                           }`}
-                          value={row!.actual ?? ''}
-                          onChange={(e) => updateActualCount(row!.id, e.target.value)}
-                          placeholder={String(row!.expected)}
+                          value={row.actual ?? ''}
+                          onChange={(e) => updateActualCount(row, e.target.value)}
+                          placeholder={String(row.expected)}
                         />
-                        {row!.hasDiscrepancy && (
+                        {row.hasDiscrepancy && (
                           <span className="text-[9px] font-black uppercase text-rose-500 flex items-center gap-1">
                             <AlertTriangle size={10} /> 
-                            {row!.diff > 0 ? `+${row!.diff}` : row!.diff} UNITS DIFF
+                            {row.diff > 0 ? `+${row.diff}` : row.diff} UNITS DIFF
                           </span>
                         )}
                       </div>
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      ) : (
-        <div className="py-40 text-center bg-white border border-dashed border-slate-200 rounded-[4rem] space-y-6">
-           <div className="w-24 h-24 bg-slate-50 rounded-full flex items-center justify-center mx-auto text-slate-200">
-             <History size={64} />
-           </div>
-           <div className="space-y-2 px-6">
-              <p className="text-slate-400 font-black uppercase tracking-widest text-sm">No Audit Record Found</p>
-              <p className="text-slate-300 font-medium max-w-xs mx-auto">There is no stock snapshot data for {selectedDate}. If this is today, the hub will sync automatically.</p>
-              {isToday && (
-                <button 
-                  onClick={syncTodayAudit}
-                  className="mt-6 px-10 py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-sm uppercase tracking-widest shadow-xl flex items-center justify-center gap-2 mx-auto"
-                >
-                  <RefreshCw size={18} /> Sync Audit Ledger
-                </button>
+                ))
               )}
-           </div>
+            </tbody>
+          </table>
         </div>
-      )}
+      </div>
 
       {/* FOOTER INFO */}
       <div className="bg-amber-50 rounded-[3rem] border border-amber-100 p-10 flex flex-col md:flex-row items-center gap-8 shadow-sm">
@@ -329,10 +282,10 @@ const StockAudit: React.FC = () => {
           <Info size={32} />
         </div>
         <div className="text-center md:text-left flex-1">
-          <h4 className="font-black text-slate-900 uppercase text-sm tracking-widest mb-2">How Audit Hub Works</h4>
+          <h4 className="font-black text-slate-900 uppercase text-sm tracking-widest mb-2">Audit Hub Logic</h4>
           <p className="text-slate-600 font-medium leading-relaxed">
-            The Terminal uses the formula: <b>Opening Stock + Today's Restocks - Today's Sales = Expected Closing</b>. 
-            If your physical count is different (red rows), it means stock was lost, stolen, or moved without recording it in the POS.
+            Starting Stock represents your opening balance at 12:00 AM. Digital Stock updates live as you make sales or restock. 
+            If your physical shelf count doesn't match the digital total, the row turns red to alert you of potential leakage.
           </p>
         </div>
       </div>
