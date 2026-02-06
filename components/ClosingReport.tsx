@@ -1,5 +1,4 @@
-
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   Lock, 
   Moon, 
@@ -20,10 +19,10 @@ import {
   ClipboardCheck
 } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '../db/db';
+import { db, getLocalDateString } from '../db/db';
 import { generateBackupData } from '../utils/backup';
 import BluetoothPrintService from '../services/BluetoothPrintService';
-import { Staff, Settings, StockSnapshot } from '../types';
+import { Staff, Settings } from '../types';
 
 interface ClosingReportProps {
   onClose: () => void;
@@ -39,23 +38,23 @@ const ClosingReport: React.FC<ClosingReportProps> = ({ onClose, currentUser, onL
   const [closingNotes, setClosingNotes] = useState('');
   const [isPrinting, setIsPrinting] = useState(false);
 
-  // Today's Date String for Snapshots
-  const todayDate = new Date().toISOString().split('T')[0];
+  // Robust local date logic
+  const todayDate = useMemo(() => getLocalDateString(), []);
 
-  // Fetch today's data
-  const todayStart = new Date().setHours(0, 0, 0, 0);
-  const todayEnd = new Date().setHours(23, 59, 59, 999);
+  // Fetch today's data in local time boundaries
+  const todayStart = useMemo(() => new Date(`${todayDate}T00:00:00`).getTime(), [todayDate]);
+  const todayEnd = useMemo(() => new Date(`${todayDate}T23:59:59.999`).getTime(), [todayDate]);
 
   const sales = useLiveQuery(() => 
     db.sales.where('timestamp').between(todayStart, todayEnd).toArray()
-  ) || [];
+  , [todayStart, todayEnd]) || [];
 
   const expenses = useLiveQuery(() => 
     db.expenses.where('timestamp').between(todayStart, todayEnd).toArray()
-  ) || [];
+  , [todayStart, todayEnd]) || [];
 
   const products = useLiveQuery(() => db.products.toArray()) || [];
-  const snapshots = useLiveQuery(() => db.stock_snapshots.where('date').equals(todayDate).toArray()) || [];
+  const snapshots = useLiveQuery(() => db.stock_snapshots.where('date').equals(todayDate).toArray(), [todayDate]) || [];
 
   const summary = useMemo(() => {
     const stats = {
@@ -106,7 +105,7 @@ const ClosingReport: React.FC<ClosingReportProps> = ({ onClose, currentUser, onL
     
     try {
       await (db as any).transaction('rw', [db.audit_trail, db.stock_snapshots, db.products], async () => {
-        // 1. Log Closure
+        // 1. Log Closure in Audit Trail
         await db.audit_trail.add({
           action: 'Daily Shop Closing',
           details: `Total Sales: ₦${summary.totalSales.toLocaleString()} | Expenses: ₦${summary.expenses.toLocaleString()} | Notes: ${closingNotes || 'None'}`,
@@ -114,7 +113,7 @@ const ClosingReport: React.FC<ClosingReportProps> = ({ onClose, currentUser, onL
           timestamp: Date.now()
         });
 
-        // 2. Finalize Stock Snapshots
+        // 2. Finalize Stock Snapshots - Store Actual Closing based on current digital stock
         for (const p of products) {
           await db.stock_snapshots
             .where({ date: todayDate, product_id: p.id })
@@ -136,7 +135,7 @@ const ClosingReport: React.FC<ClosingReportProps> = ({ onClose, currentUser, onL
         setIsFinalizing(false);
       }, 1000);
     } catch (err) {
-      alert("Closing failed. Please retry.");
+      alert("Closing failed. Please try again.");
       setIsFinalizing(false);
     }
   };
@@ -168,7 +167,7 @@ const ClosingReport: React.FC<ClosingReportProps> = ({ onClose, currentUser, onL
           <div className="p-3 bg-white/10 rounded-2xl backdrop-blur-md"><Moon size={32} /></div>
           <div>
             <h2 className="text-3xl font-black tracking-tight leading-none">Daily Closing Ritual</h2>
-            <p className="text-emerald-400 text-xs font-bold uppercase tracking-widest mt-1">Z-Report & Stock Audit</p>
+            <p className="text-emerald-400 text-xs font-bold uppercase tracking-widest mt-1">Z-Report & Audit Sync</p>
           </div>
         </div>
         <button onClick={onClose} className="p-4 hover:bg-white/10 rounded-full transition-colors"><X size={32} /></button>
@@ -222,8 +221,8 @@ const ClosingReport: React.FC<ClosingReportProps> = ({ onClose, currentUser, onL
                   </thead>
                   <tbody>
                     {snapshots.slice(0, 15).map(snap => {
-                      const expected = snap.starting_qty + snap.added_qty - snap.sold_qty;
                       const product = products.find(p => p.id === snap.product_id);
+                      const expected = Number(snap.starting_qty || 0) + Number(snap.added_qty || 0) - Number(snap.sold_qty || 0);
                       const actual = product?.stock_qty || 0;
                       const hasDiscrepancy = expected !== actual;
 
@@ -241,7 +240,7 @@ const ClosingReport: React.FC<ClosingReportProps> = ({ onClose, currentUser, onL
                   </tbody>
                </table>
                {snapshots.length > 15 && (
-                 <p className="text-center py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Showing Top 15 - See Stock Audit Page for full report</p>
+                 <p className="text-center py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Showing Top 15 - Full report in Audit Hub</p>
                )}
             </div>
           </div>
@@ -259,7 +258,7 @@ const ClosingReport: React.FC<ClosingReportProps> = ({ onClose, currentUser, onL
                     {backupDone ? <CheckCircle2 size={24} /> : <span className="font-black">1</span>}
                   </div>
                   <div className="flex-1">
-                    <h4 className="font-black text-lg">Mandatory Data Backup</h4>
+                    <h4 className="font-black text-lg">Data Backup</h4>
                     <p className="text-sm text-slate-500 font-medium mb-4">Send a secure backup to your own WhatsApp before closing.</p>
                     <button onClick={handleBackup} className={`flex items-center gap-2 px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest ${backupDone ? 'bg-emerald-100 text-emerald-700' : 'bg-emerald-600 text-white shadow-lg'}`}>
                       <MessageSquare size={18} /> {backupDone ? 'Backup Sent' : 'Step 1: Backup to WhatsApp'}
@@ -271,10 +270,10 @@ const ClosingReport: React.FC<ClosingReportProps> = ({ onClose, currentUser, onL
               <div className="p-6 rounded-[2rem] bg-slate-50 border border-slate-100 space-y-4">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-slate-400 shadow-sm"><FileText size={20} /></div>
-                  <h4 className="font-black text-slate-800">Shop Handover Notes</h4>
+                  <h4 className="font-black text-slate-800">Handover Notes</h4>
                 </div>
                 <textarea 
-                  placeholder="Important events from today..."
+                  placeholder="Record any important shop events from today..."
                   className="w-full p-6 bg-white border border-slate-200 rounded-3xl outline-none focus:ring-2 focus:ring-emerald-500 font-medium text-sm min-h-[120px] resize-none"
                   value={closingNotes}
                   onChange={(e) => setClosingNotes(e.target.value)}

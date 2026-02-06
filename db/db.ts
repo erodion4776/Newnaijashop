@@ -2,6 +2,16 @@ import { Dexie } from 'dexie';
 import type { Table } from 'dexie';
 import { Product, Sale, Debt, Settings, ParkedOrder, InventoryLog, Staff, Expense, AuditEntry, CustomerWallet, WalletTransaction, UsedReference, StockSnapshot } from '../types';
 
+/**
+ * Robust helper to get YYYY-MM-DD in local time
+ */
+export const getLocalDateString = (date = new Date()) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 export class NaijaShopDB extends Dexie {
   products!: Table<Product>;
   sales!: Table<Sale>;
@@ -20,8 +30,8 @@ export class NaijaShopDB extends Dexie {
   constructor() {
     super('NaijaShopDB');
     
-    // CRITICAL: Database version bumped to 35 to force schema re-indexing
-    (this as any).version(35).stores({
+    // CRITICAL: Database version bumped to 36
+    (this as any).version(36).stores({
       products: '++id, name, category, barcode',
       sales: '++id, sale_id, timestamp, payment_method, staff_name',
       debts: '++id, customer_name, phone, status',
@@ -37,9 +47,9 @@ export class NaijaShopDB extends Dexie {
       stock_snapshots: '++id, date, product_id, [date+product_id]'
     });
 
-    // REAL-TIME SNAPSHOT HOOKS
+    // REAL-TIME SNAPSHOT HOOKS - Now using local date logic
     this.sales.hook('creating', (primKey, obj, transaction) => {
-      const today = new Date().toISOString().split('T')[0];
+      const today = getLocalDateString();
       transaction.on('complete', () => {
         obj.items.forEach(async (item) => {
           const snapshot = await db.stock_snapshots.where({ date: today, product_id: item.productId }).first();
@@ -52,7 +62,7 @@ export class NaijaShopDB extends Dexie {
 
     this.inventory_logs.hook('creating', (primKey, obj, transaction) => {
       if (obj.type === 'Restock' || (obj.type === 'Adjustment' && obj.quantity_changed > 0)) {
-        const today = new Date().toISOString().split('T')[0];
+        const today = getLocalDateString();
         transaction.on('complete', async () => {
           const snapshot = await db.stock_snapshots.where({ date: today, product_id: obj.product_id }).first();
           if (snapshot && snapshot.id) {
@@ -68,10 +78,10 @@ export class NaijaShopDB extends Dexie {
 export const db: NaijaShopDB = new NaijaShopDB();
 
 /**
- * Ensures today's stock records are prepared.
+ * Ensures today's stock records are prepared using local time.
  */
 export const initializeDailyStock = async () => {
-  const today = new Date().toISOString().split('T')[0];
+  const today = getLocalDateString();
   const existingCount = await db.stock_snapshots.where('date').equals(today).count();
   
   if (existingCount === 0) {
