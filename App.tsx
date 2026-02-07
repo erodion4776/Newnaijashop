@@ -32,7 +32,8 @@ import {
 
 const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-9987-b4ed4c0e3c36.png";
 const MASTER_RECOVERY_PIN = "9999";
-const PAYSTACK_PUBLIC_KEY = "pk_live_f001150495f27092c42d3d34d35e07663f707f15";
+// Updated to use Netlify environment variables with the existing key as a fallback
+const PAYSTACK_PUBLIC_KEY = (import.meta as any).env.VITE_PAYSTACK_PUBLIC_KEY || "pk_live_f001150495f27092c42d3d34d35e07663f707f15";
 
 export const getTrialRemainingTime = (installationDate: number) => {
   const trialPeriod = 30 * 24 * 60 * 60 * 1000;
