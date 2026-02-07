@@ -63,6 +63,9 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
   const [editingParkedOrder, setEditingParkedOrder] = useState<ParkedOrder | null>(null);
   const [editingCart, setEditingCart] = useState<SaleItem[]>([]);
   const [editSearchTerm, setEditSearchTerm] = useState('');
+
+  // Track if current cart belongs to a loaded parked order for final cleanup
+  const [activeParkedId, setActiveParkedId] = useState<number | null>(null);
   
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -193,6 +196,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
     if (confirm('Clear all items from cart?')) {
       setCart([]);
       setDiscountValue(0);
+      setActiveParkedId(null);
     }
   };
 
@@ -212,6 +216,11 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
     
     try {
       await (db as any).transaction('rw', [db.products, db.inventory_logs, db.parked_orders], async () => {
+        // If we are "re-parking" a loaded order, delete the old version first
+        if (activeParkedId) {
+          await db.parked_orders.delete(activeParkedId);
+        }
+
         const itemsToSave: SaleItem[] = [];
         
         for (const item of cart) {
@@ -257,6 +266,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
       setParkingCustomerName('');
       setShowParkModal(false);
       setShowMobileCart(false);
+      setActiveParkedId(null);
       alert('Order parked & stock secured!');
     } catch (err) {
       console.error("Park order error:", err);
@@ -269,6 +279,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
       if (!confirm('Current cart will be replaced. Continue?')) return;
     }
     setCart([...order.items]);
+    setActiveParkedId(order.id || null);
     setShowParkedOrders(false);
     setShowMobileCart(true);
   };
@@ -283,6 +294,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
     if (!confirm('Delete this parked order?')) return;
     try {
       await db.parked_orders.delete(orderId);
+      if (activeParkedId === orderId) setActiveParkedId(null);
       alert('Order deleted');
     } catch (err) {
       alert('Failed to delete order');
@@ -304,7 +316,6 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
         originalItems.forEach(i => originalMap[i.productId] = (originalMap[i.productId] || 0) + i.quantity);
 
         const newMap: Record<number, number> = {};
-        // Fix: Use i.productId instead of undefined variable 'pid'
         newItems.forEach(i => newMap[i.productId] = (newMap[i.productId] || 0) + i.quantity);
 
         // 2. Identify all Product IDs involved
@@ -371,11 +382,22 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
     }
   };
 
-  const handleCheckoutComplete = (sale: any, lowItems: string[]) => {
+  const handleCheckoutComplete = async (sale: any, lowItems: string[]) => {
+    // CRITICAL: Cleanup parked order record if checkout was successful
+    if (activeParkedId) {
+      try {
+        await db.parked_orders.delete(activeParkedId);
+      } catch (e) {
+        console.error("Cleanup parked order failed", e);
+      }
+    }
+
     setCart([]);
     setDiscountValue(0);
+    setActiveParkedId(null);
     setShowCheckout(false);
     setShowMobileCart(false);
+    
     if (lowItems.length > 0) {
       alert(`Sale completed! ⚠️ Low stock: ${lowItems.join(', ')}`);
     } else {
