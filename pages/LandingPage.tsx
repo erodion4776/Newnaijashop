@@ -206,11 +206,13 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
                 className="relative z-20"
               >
                 <div className="absolute -inset-10 bg-emerald-500/20 blur-[120px] rounded-full" />
-                <img 
-                  src="https://i.ibb.co/G49dWgYg/20260207-062946-0000.png" 
-                  alt="NaijaShop App Mockup" 
-                  className="w-full max-w-lg mx-auto drop-shadow-[0_50px_50px_rgba(0,0,0,0.2)]"
-                />
+                <a href="https://ibb.co/XrDW7m0m" target="_blank" rel="noopener noreferrer">
+                  <img 
+                    src="https://i.ibb.co/G49dWgYg/20260207-062946-0000.png" 
+                    alt="20260207-062946-0000" 
+                    className="w-full max-w-lg mx-auto drop-shadow-[0_50px_50px_rgba(0,0,0,0.2)]"
+                  />
+                </a>
               </motion.div>
             </motion.div>
           </div>

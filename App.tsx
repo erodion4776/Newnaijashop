@@ -1,5 +1,6 @@
 import React, { useState, useEffect, ReactNode, Component } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { useLocation } from 'react-router-dom';
 import { db, initSettings } from './db/db';
 import { View, Staff, SaleItem, Product } from './types';
 import Layout from './components/Layout';
@@ -74,6 +75,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 }
 
 const AppContent: React.FC = () => {
+  const location = useLocation();
   const [currentView, setCurrentView] = useState<View>('landing');
   const [isInitialized, setIsInitialized] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
@@ -87,6 +89,7 @@ const AppContent: React.FC = () => {
   const [parkTrigger, setParkTrigger] = useState(0);
   const [now, setNow] = useState(Date.now());
 
+  const isAffiliateView = location.pathname.includes('affiliate');
   const settings = useLiveQuery(() => db.settings.get('app_settings'));
   const staffList = useLiveQuery(() => db.staff.toArray()) || [];
 
@@ -141,6 +144,7 @@ const AppContent: React.FC = () => {
   }
 
   if (isMasterView) return <MasterAdminHub />;
+  if (isAffiliateView) return <AffiliatePortal />;
 
   const s = settings as any;
   const isLicensed = settings?.license_expiry && settings.license_expiry > now;
