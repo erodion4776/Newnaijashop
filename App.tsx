@@ -32,6 +32,7 @@ import {
 
 const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-9987-b4ed4c0e3c36.png";
 const MASTER_RECOVERY_PIN = "9999";
+const PAYSTACK_PUBLIC_KEY = "pk_live_f001150495f27092c42d3d34d35e07663f707f15";
 
 export const getTrialRemainingTime = (installationDate: number) => {
   const trialPeriod = 30 * 24 * 60 * 60 * 1000;
@@ -119,6 +120,29 @@ const AppContent: React.FC = () => {
     setCurrentView('pos');
   };
 
+  const handleStartSubscription = () => {
+    if (!settings?.email) {
+      alert("Please update your business email in Settings before subscribing.");
+      setCurrentView('settings');
+      return;
+    }
+
+    const handler = (window as any).PaystackPop.setup({
+      key: PAYSTACK_PUBLIC_KEY,
+      email: settings.email,
+      amount: 10000 * 100, // ₦10,000 in kobo
+      currency: "NGN",
+      callback: (response: any) => {
+        // Success: Redirect to activation view with reference
+        window.location.href = `/?session=${response.reference}`;
+      },
+      onClose: () => {
+        console.log("Payment window closed.");
+      }
+    });
+    handler.openIframe();
+  };
+
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const staff = staffList.find(s => s.id === Number(selectedStaffId));
@@ -158,6 +182,12 @@ const AppContent: React.FC = () => {
           <ShieldAlert size={48} className="mx-auto text-emerald-600"/>
           <h2 className="text-3xl font-black">Trial Expired</h2>
           <p>Please subscribe to continue.</p>
+          <button 
+            onClick={handleStartSubscription}
+            className="w-full py-5 bg-emerald-600 text-white rounded-2xl font-black text-xl shadow-xl"
+          >
+            Activate Terminal (₦10,000)
+          </button>
         </div>
       </div>
     );
@@ -195,29 +225,32 @@ const AppContent: React.FC = () => {
 
   return (
     <>
-      <Layout 
-        activeView={currentView} setView={setCurrentView} 
-        shopName={settings?.shop_name || 'NaijaShop'} currentUser={currentUser} 
-        isStaffLock={isStaffLock} toggleStaffLock={(v) => { setIsStaffLock(v); localStorage.setItem('isStaffLock', String(v)); }}
-        adminPin={settings?.admin_pin || ''} onLogout={() => setCurrentUser(null)}
-        trialRemaining={{...trial, label: s?.isSubscribed ? 'Pro License' : 'Free Trial', totalPeriod: s?.isSubscribed ? 365 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000}} isSubscribed={s?.isSubscribed}
-      >
-        {currentView === 'dashboard' && <Dashboard currentUser={currentUser} setView={setCurrentView} isStaffLock={isStaffLock} trialRemaining={{...trial, label: s?.isSubscribed ? 'Pro License' : 'Free Trial', totalPeriod: s?.isSubscribed ? 365 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000}} isSubscribed={s?.isSubscribed} />}
-        {currentView === 'pos' && <POS setView={setCurrentView} currentUser={currentUser} cart={cart} setCart={setCart} parkTrigger={parkTrigger} />}
-        {currentView === 'activity-log' && <ActivityLog currentUser={currentUser} />}
-        {currentView === 'inventory' && <Inventory setView={setCurrentView} currentUser={currentUser} isStaffLock={isStaffLock} />}
-        {currentView === 'settings' && <Settings currentUser={currentUser} />}
-        {currentView === 'business-hub' && <BusinessHub />}
-        {currentView === 'audit-trail' && <AuditTrail />}
-        {currentView === 'expense-tracker' && <ExpenseTracker currentUser={currentUser} isStaffLock={isStaffLock} />}
-        {currentView === 'transfer-station' && <TransferStation setView={setCurrentView} />}
-        {currentView === 'inventory-ledger' && <InventoryLedger />}
-        {currentView === 'stock-audit' && <StockAudit />}
-        {currentView === 'debts' && <Debts />}
-        {currentView === 'staff-management' && <StaffManagement />}
-        {currentView === 'security-backups' && <SecurityBackups currentUser={currentUser} />}
-        {currentView === 'activation' && <ActivationPage sessionRef={new URLSearchParams(window.location.search).get('session') || ''} onActivated={() => window.location.href = '/'} />}
-      </Layout>
+      <ErrorBoundary>
+        <Layout 
+          activeView={currentView} setView={setCurrentView} 
+          shopName={settings?.shop_name || 'NaijaShop'} currentUser={currentUser} 
+          isStaffLock={isStaffLock} toggleStaffLock={(v) => { setIsStaffLock(v); localStorage.setItem('isStaffLock', String(v)); }}
+          adminPin={settings?.admin_pin || ''} onLogout={() => setCurrentUser(null)}
+          trialRemaining={{...trial, label: s?.isSubscribed ? 'Pro License' : 'Free Trial', totalPeriod: s?.isSubscribed ? 365 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000}} isSubscribed={s?.isSubscribed}
+          onSubscribe={handleStartSubscription}
+        >
+          {currentView === 'dashboard' && <Dashboard currentUser={currentUser} setView={setCurrentView} isStaffLock={isStaffLock} trialRemaining={{...trial, label: s?.isSubscribed ? 'Pro License' : 'Free Trial', totalPeriod: s?.isSubscribed ? 365 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000}} isSubscribed={s?.isSubscribed} onSubscribe={handleStartSubscription} />}
+          {currentView === 'pos' && <POS setView={setCurrentView} currentUser={currentUser} cart={cart} setCart={setCart} parkTrigger={parkTrigger} />}
+          {currentView === 'activity-log' && <ActivityLog currentUser={currentUser} />}
+          {currentView === 'inventory' && <Inventory setView={setCurrentView} currentUser={currentUser} isStaffLock={isStaffLock} />}
+          {currentView === 'settings' && <Settings currentUser={currentUser} onSubscribe={handleStartSubscription} />}
+          {currentView === 'business-hub' && <BusinessHub />}
+          {currentView === 'audit-trail' && <AuditTrail />}
+          {currentView === 'expense-tracker' && <ExpenseTracker currentUser={currentUser} isStaffLock={isStaffLock} />}
+          {currentView === 'transfer-station' && <TransferStation setView={setCurrentView} />}
+          {currentView === 'inventory-ledger' && <InventoryLedger />}
+          {currentView === 'stock-audit' && <StockAudit />}
+          {currentView === 'debts' && <Debts />}
+          {currentView === 'staff-management' && <StaffManagement />}
+          {currentView === 'security-backups' && <SecurityBackups currentUser={currentUser} />}
+          {currentView === 'activation' && <ActivationPage sessionRef={new URLSearchParams(window.location.search).get('session') || ''} onActivated={() => window.location.href = '/'} />}
+        </Layout>
+      </ErrorBoundary>
       <SupportChat 
         currentUser={currentUser} cart={cart} onClearCart={() => setCart([])}
         onNavigate={setCurrentView} onAddToCart={handleAddToCart}
