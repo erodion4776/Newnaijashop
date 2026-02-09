@@ -95,8 +95,8 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
   const y = useMotionValue(0);
   const mouseXSpring = useSpring(x);
   const mouseYSpring = useSpring(y);
-  const rotateX = useTransform(mouseYSpring, [-0.5, 0.5], ["10deg", "-10deg"]);
-  const rotateY = useTransform(mouseXSpring, [-0.5, 0.5], ["-10deg", "10deg"]);
+  const rotateXMouse = useTransform(mouseYSpring, [-0.5, 0.5], ["10deg", "-10deg"]);
+  const rotateYMouse = useTransform(mouseXSpring, [-0.5, 0.5], ["-10deg", "10deg"]);
 
   const handleMouseMove = (e: React.MouseEvent) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -228,21 +228,22 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 1 }}
               className="flex-1 relative w-full flex flex-col items-center"
-              style={{ perspective: 1000 }}
+              style={{ perspective: 1200 }}
             >
               <motion.div 
                 style={{ 
-                  rotateX: /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ? 0 : rotateX, 
-                  rotateY: /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ? 0 : rotateY, 
-                  transformStyle: "preserve-3d" 
+                  transformStyle: "preserve-3d",
+                  willChange: "transform"
                 }}
                 animate={{ 
-                  y: [0, -20, 0],
-                  rotateY: /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ? [0, 5, -5, 0] : undefined
+                  y: [0, -25, 0],
+                  rotateX: [0, 5, 0, -5, 0],
+                  rotateY: [0, 10, 0, -10, 0]
                 }}
                 transition={{ 
-                  y: { repeat: Infinity, duration: 4, ease: "easeInOut" },
-                  rotateY: { repeat: Infinity, duration: 8, ease: "easeInOut" }
+                  y: { repeat: Infinity, duration: 5, ease: "easeInOut" },
+                  rotateX: { repeat: Infinity, duration: 10, ease: "linear" },
+                  rotateY: { repeat: Infinity, duration: 10, ease: "linear" }
                 }}
                 className="relative z-20 w-full max-w-lg"
               >
@@ -251,22 +252,22 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
                 
                 <div className="relative overflow-hidden rounded-[3rem] shadow-[0_50px_100px_rgba(0,0,0,0.3)] bg-white border-4 border-slate-100">
                   <img 
-                    src="https://i.ibb.co/W4XQSpqw/IMG-20260125-230934.png" 
+                    src="https://i.ibb.co/SDk9PXFt/20260207-062946-0000.png" 
                     alt="NaijaShop App Display" 
                     className="w-full h-auto object-cover"
                   />
                 </div>
               </motion.div>
               
-              {/* Dynamic 3D Shadow */}
+              {/* Synchronized Dynamic 3D Shadow */}
               <motion.div 
                 animate={{ 
-                  scale: [1, 0.8, 1],
-                  opacity: [0.2, 0.1, 0.2]
+                  scale: [1.1, 0.8, 1.1],
+                  opacity: [0.3, 0.1, 0.3]
                 }}
                 transition={{ 
                   repeat: Infinity, 
-                  duration: 4, 
+                  duration: 5, 
                   ease: "easeInOut" 
                 }}
                 className="w-48 h-8 bg-black/20 blur-xl rounded-[100%] mt-12 z-10"
