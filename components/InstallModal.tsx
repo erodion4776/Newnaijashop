@@ -1,16 +1,36 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Download, CheckCircle, Zap, ShieldCheck, X, Share, PlusSquare, ArrowUp, Smartphone } from 'lucide-react';
 
 const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-9987-b4ed4c0e3c36.png";
 
 interface InstallModalProps {
-  onInstall: () => void;
   onClose: () => void;
   isAfterSetup?: boolean;
 }
 
-const InstallModal: React.FC<InstallModalProps> = ({ onInstall, onClose, isAfterSetup }) => {
+const InstallModal: React.FC<InstallModalProps> = ({ onClose, isAfterSetup }) => {
   const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+  useEffect(() => {
+    const promptEvent = (window as any).deferredPrompt;
+    if (!promptEvent) {
+      console.log('ℹ️ Install event missing - button will show fallback alert');
+    }
+  }, []);
+
+  const handleInstallClick = async () => {
+    const promptEvent = (window as any).deferredPrompt;
+    if (promptEvent) {
+      promptEvent.prompt(); // Show the official browser install box
+      const { outcome } = await promptEvent.userChoice;
+      console.log(`User response to install: ${outcome}`);
+      (window as any).deferredPrompt = null; // Clear it after use
+      onClose(); // Close our custom modal
+    } else {
+      // Fallback for iOS or if prompt is missing/already used
+      alert('Oga, to install: Tap the "Share" button at the bottom of your browser and select "Add to Home Screen".');
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-emerald-950/98 backdrop-blur-3xl animate-in fade-in duration-500">
@@ -84,7 +104,8 @@ const InstallModal: React.FC<InstallModalProps> = ({ onInstall, onClose, isAfter
           <div className="pt-6 space-y-4">
             {!isIOS && (
               <button 
-                onClick={onInstall}
+                type="button"
+                onClick={handleInstallClick}
                 className="w-full py-6 bg-emerald-600 text-white rounded-[2.5rem] font-black text-xl shadow-[0_20px_40px_rgba(5,150,105,0.3)] hover:bg-emerald-700 transition-all active:scale-[0.98] flex items-center justify-center gap-3"
               >
                 <Download size={24} />
@@ -93,6 +114,7 @@ const InstallModal: React.FC<InstallModalProps> = ({ onInstall, onClose, isAfter
             )}
             
             <button 
+              type="button"
               onClick={onClose}
               className="w-full py-4 text-slate-400 font-black text-xs uppercase tracking-[0.2em] hover:text-slate-600 transition-colors"
             >
