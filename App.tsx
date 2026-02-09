@@ -24,6 +24,7 @@ import LandingPage from './pages/LandingPage';
 import MasterAdminHub from './pages/MasterAdminHub';
 import StockAudit from './pages/StockAudit';
 import SupportChat from './components/SupportChat';
+import InstallModal from './components/InstallModal';
 import { 
   AlertTriangle,
   ShieldAlert,
@@ -101,6 +102,10 @@ const AppContent: React.FC = () => {
   const [newPin, setNewPin] = useState('');
   const [confirmNewPin, setConfirmNewPin] = useState('');
 
+  // Install States
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [showInstallAfterSetup, setShowInstallAfterSetup] = useState(false);
+
   const [cart, setCart] = useState<SaleItem[]>([]);
   const [parkTrigger, setParkTrigger] = useState(0);
   const [now, setNow] = useState(Date.now());
@@ -118,6 +123,14 @@ const AppContent: React.FC = () => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('session')) setCurrentView('activation');
     setTimeout(() => setShowSplash(false), 2000);
+
+    // Capture PWA Install Event
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
   }, []);
 
   useEffect(() => {
@@ -169,6 +182,20 @@ const AppContent: React.FC = () => {
       setCurrentUser(staff);
       setCurrentView(staff.role === 'Sales' ? 'pos' : 'dashboard');
     } else alert("Invalid Password");
+  };
+
+  const handleSetupComplete = (adminId: number, isNewRegistration?: boolean) => {
+    setIsInitialized(true);
+    if (isNewRegistration) {
+      const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
+      if (isStandalone) {
+        window.location.reload(); // If already installed, just refresh state
+      } else {
+        setShowInstallAfterSetup(true); // Show the requested install modal
+      }
+    } else {
+      window.location.reload();
+    }
   };
 
   const handleForgotPin = () => {
@@ -224,6 +251,18 @@ const AppContent: React.FC = () => {
     window.open(`https://wa.me/2348184774884?text=${encodeURIComponent(message)}`, '_blank');
   };
 
+  const handleInstallClick = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      console.log(`User response to the install prompt: ${outcome}`);
+      setDeferredPrompt(null);
+      setShowInstallAfterSetup(false);
+    } else {
+      // Manual trigger or browser instruction handled inside Modal
+    }
+  };
+
   if (showSplash || !isInitialized) {
     return (
       <div className="min-h-screen bg-emerald-900 flex flex-col items-center justify-center p-6 text-center">
@@ -263,7 +302,7 @@ const AppContent: React.FC = () => {
 
   if (isInitialized && (!settings?.is_setup_complete || staffList.length === 0)) {
     if (currentView === 'landing') return <LandingPage onStartTrial={() => setCurrentView('setup')} />;
-    return <SetupShop onComplete={() => window.location.reload()} />;
+    return <SetupShop onComplete={handleSetupComplete} />;
   }
 
   if (!currentUser && currentView !== 'activation') {
@@ -464,6 +503,7 @@ const AppContent: React.FC = () => {
         onNavigate={setCurrentView} onAddToCart={handleAddToCart}
         onParkOrder={() => { setCurrentView('pos'); setParkTrigger(prev => prev + 1); }}
       />
+      {showInstallAfterSetup && <InstallModal onInstall={handleInstallClick} onClose={() => { setShowInstallAfterSetup(false); window.location.reload(); }} isAfterSetup={true} />}
     </>
   );
 };

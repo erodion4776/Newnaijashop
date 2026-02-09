@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { db } from '../db/db';
 import { getOrCreateTerminalId } from '../utils/licensing';
@@ -13,7 +12,7 @@ import {
 } from 'lucide-react';
 
 interface SetupShopProps {
-  onComplete: (adminId: number) => void;
+  onComplete: (adminId: number, isNewRegistration?: boolean) => void;
 }
 
 const encode = (data: any) => {
@@ -41,7 +40,7 @@ const SetupShop: React.FC<SetupShopProps> = ({ onComplete }) => {
     setIsProcessing(true);
 
     try {
-      // 1. Submit to Netlify Tracking (Awaited as per instructions)
+      // 1. Submit to Netlify Tracking
       await fetch("/", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -53,13 +52,12 @@ const SetupShop: React.FC<SetupShopProps> = ({ onComplete }) => {
           "referral-code-used": formData.referralCode || "NONE"
         }),
       });
-      console.log("Netlify Tracking Success");
 
       // 2. Perform Atomic Database Setup
+      let adminId = 0;
       await (db as any).transaction('rw', [db.settings, db.staff], async () => {
         const now = Date.now();
         
-        // Update App Settings
         await db.settings.update('app_settings', {
           shop_name: formData.shopName,
           admin_name: formData.adminName,
@@ -67,25 +65,22 @@ const SetupShop: React.FC<SetupShopProps> = ({ onComplete }) => {
           is_setup_complete: true,
           terminal_id: terminalId,
           referral_code_used: formData.referralCode || 'NONE',
-          // Trial Initialization & Security
           installationDate: now,
           isSubscribed: false,
           last_used_timestamp: now
         } as any);
 
-        // Add Admin Account
-        await db.staff.add({
+        adminId = await db.staff.add({
           name: formData.adminName,
           role: 'Admin',
           password: formData.adminPin,
           status: 'Active',
           created_at: now
-        });
+        }) as number;
       });
 
-      // 3. Finalize: Forced hard redirect to break registration loop
-      console.log("Setup Transaction Successful. Redirecting...");
-      window.location.href = '/';
+      // 3. Signal completion with isNewRegistration=true to trigger install modal
+      onComplete(adminId, true);
 
     } catch (err) {
       console.error("Setup Error:", err);
