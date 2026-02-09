@@ -51,14 +51,18 @@ window.addEventListener('beforeinstallprompt', (e) => {
 });
 
 export const getTrialRemainingTime = (installationDate: number) => {
-  // STRICT INSTRUCTION: Temporarily set to 0 to test immediate expiry/lockout
+  // STRICT INSTRUCTION: SET TO 0 FOR IMMEDIATE EXPIRY TEST
   const trialPeriod = 0; 
+  
+  if (trialPeriod === 0) return { days: 0, hours: 0, minutes: 0, totalMs: 0 };
+  
   const expiry = installationDate + trialPeriod;
   const remaining = expiry - Date.now();
   if (remaining <= 0) return { days: 0, hours: 0, minutes: 0, totalMs: 0 };
+  
   const days = Math.floor(remaining / (24 * 60 * 60 * 1000));
-  const hours = Math.floor((remaining % (24 * 60 * 60 * 1000)) / (60 * 1000));
-  const minutes = Math.floor((remaining % (60 * 1000)) / (60 * 1000));
+  const hours = Math.floor((remaining % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
+  const minutes = Math.floor((remaining % (60 * 60 * 1000)) / (60 * 1000));
   return { days, hours, minutes, totalMs: remaining };
 };
 
@@ -107,12 +111,11 @@ const AppContent: React.FC = () => {
   const [parkTrigger, setParkTrigger] = useState(0);
   const [now, setNow] = useState(Date.now());
 
-  const isAffiliateView = location.pathname.includes('affiliate');
   const settings = useLiveQuery(() => db.settings.get('app_settings'));
   const staffList = useLiveQuery(() => db.staff.toArray()) || [];
 
   useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 60000); 
+    const timer = setInterval(() => setNow(Date.now()), 10000); // More frequent check during test
     return () => clearInterval(timer);
   }, []);
 
@@ -123,7 +126,9 @@ const AppContent: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    initSettings().then(() => setIsInitialized(true));
+    initSettings().then(() => {
+      setIsInitialized(true);
+    });
   }, []);
 
   const handleAddToCart = (product: Product, quantity: number) => {
@@ -226,18 +231,30 @@ const AppContent: React.FC = () => {
   }
 
   if (isMasterView) return <MasterAdminHub />;
-  if (isAffiliateView) return <AffiliatePortal />;
 
+  // Aggressive trial check logic
   const s = settings as any;
   const isLicensed = settings?.license_expiry && settings.license_expiry > now;
-  // Trial Period Constant is set to 0 in getTrialRemainingTime to force immediate expiry
-  const trial = s?.installationDate ? getTrialRemainingTime(s.installationDate) : { totalMs: 0, days: 0, hours: 0, minutes: 0 };
-  const isTrialExpired = s?.installationDate && (trial.totalMs <= 0) && !s.isSubscribed && !isLicensed;
+  
+  // Default to 31 days ago if missing to force lockout for this test
+  const testDefaultDate = Date.now() - (31 * 24 * 60 * 60 * 1000);
+  const trial = getTrialRemainingTime(s?.installationDate || testDefaultDate);
+  
+  const isTrialExpired = (trial.totalMs <= 0) && !s?.isSubscribed && !isLicensed;
 
+  // STRICT INSTRUCTION: Debugging logs
+  console.log('--- Terminal State ---');
+  console.log('Installation Date:', s?.installationDate ? new Date(s.installationDate).toLocaleString() : 'MISSING (Fallback used)');
+  console.log('Trial MS Remaining:', trial.totalMs);
+  console.log('Is Subscribed (DB Flag):', !!s?.isSubscribed);
+  console.log('Is Licensed (Expiry Check):', !!isLicensed);
+  console.log('Is Trial Expired (Guard):', isTrialExpired);
+
+  // STRICT INSTRUCTION: Force render lockout before anything else
   if (isTrialExpired && currentView !== 'activation') {
     return (
       <div className="min-h-screen bg-emerald-950 flex flex-col items-center justify-center p-6">
-        <div className="bg-white p-12 rounded-[3.5rem] text-center space-y-8 max-w-md w-full animate-in zoom-in duration-300">
+        <div className="bg-white p-12 rounded-[3.5rem] text-center space-y-8 max-w-md w-full animate-in zoom-in duration-300 shadow-[0_32px_100px_rgba(0,0,0,0.5)]">
           <ShieldAlert size={48} className="mx-auto text-emerald-600"/>
           <div className="space-y-2">
             <h2 className="text-3xl font-black text-slate-900 tracking-tight">Trial Expired</h2>
@@ -253,21 +270,23 @@ const AppContent: React.FC = () => {
             <CreditCard size={24} /> Subscribe Now (₦10,000)
           </button>
 
-          <div className="pt-8 border-t border-slate-100">
+          <div className="pt-8 border-t border-slate-100 flex flex-col gap-4">
              <button 
                 onClick={async () => {
-                   const s = await db.settings.get('app_settings');
-                   if (s) {
-                      // Note: This only updates installationDate. 
-                      // For a real "30 day" test, one must also change the code constant trialPeriod.
-                      await db.settings.update('app_settings', { installationDate: Date.now() });
-                      alert("DEV: installationDate reset to NOW. Remember to revert trialPeriod to 30 in App.tsx to bypass lockout.");
-                      window.location.reload();
-                   }
+                   await db.settings.update('app_settings', { installationDate: Date.now() });
+                   alert("DEV: installationDate reset to NOW. Lockout will re-trigger if trialPeriod is still 0.");
+                   window.location.reload();
                 }}
                 className="text-[10px] font-black text-slate-300 uppercase tracking-widest hover:text-emerald-600 transition-colors"
              >
-               DEV: Reset Trial (Local Database)
+               DEV: Reset installationDate
+             </button>
+             {/* Master bypass option for dev testing */}
+             <button 
+                onClick={() => setCurrentView('setup')}
+                className="text-[10px] font-black text-slate-300 uppercase tracking-widest hover:text-slate-500"
+             >
+               DEV: Re-Setup Terminal
              </button>
           </div>
         </div>

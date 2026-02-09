@@ -56,7 +56,7 @@ const SetupShop: React.FC<SetupShopProps> = ({ onComplete }) => {
       // 2. Perform Atomic Database Setup
       let adminId = 0;
       await (db as any).transaction('rw', [db.settings, db.staff], async () => {
-        const now = Date.now();
+        const nowTimestamp = Number(Date.now());
         
         await db.settings.update('app_settings', {
           shop_name: formData.shopName,
@@ -65,9 +65,9 @@ const SetupShop: React.FC<SetupShopProps> = ({ onComplete }) => {
           is_setup_complete: true,
           terminal_id: terminalId,
           referral_code_used: formData.referralCode || 'NONE',
-          installationDate: now,
+          installationDate: nowTimestamp,
           isSubscribed: false,
-          last_used_timestamp: now
+          last_used_timestamp: nowTimestamp
         } as any);
 
         adminId = await db.staff.add({
@@ -75,7 +75,7 @@ const SetupShop: React.FC<SetupShopProps> = ({ onComplete }) => {
           role: 'Admin',
           password: formData.adminPin,
           status: 'Active',
-          created_at: now
+          created_at: nowTimestamp
         }) as number;
       });
 
