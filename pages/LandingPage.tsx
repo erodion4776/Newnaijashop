@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence, useMotionValue, useTransform, useSpring } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { 
   ArrowRight, 
@@ -90,6 +90,31 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
 
+  // 3D Tilt Logic
+  const x = useMotionValue(0);
+  const y = useMotionValue(0);
+  const mouseXSpring = useSpring(x);
+  const mouseYSpring = useSpring(y);
+  const rotateX = useTransform(mouseYSpring, [-0.5, 0.5], ["10deg", "-10deg"]);
+  const rotateY = useTransform(mouseXSpring, [-0.5, 0.5], ["-10deg", "10deg"]);
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const width = rect.width;
+    const height = rect.height;
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    const xPct = mouseX / width - 0.5;
+    const yPct = mouseY / height - 0.5;
+    x.set(xPct);
+    y.set(yPct);
+  };
+
+  const handleMouseLeave = () => {
+    x.set(0);
+    y.set(0);
+  };
+
   const handleMarketerClick = () => {
     window.scrollTo(0, 0);
     navigate('/affiliate');
@@ -153,7 +178,11 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
       </nav>
 
       {/* Hero Section */}
-      <section className="relative pt-32 pb-20 lg:pt-48 lg:pb-40 mt-16 overflow-hidden">
+      <section 
+        className="relative pt-32 pb-20 lg:pt-48 lg:pb-40 mt-16 overflow-hidden"
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
+      >
         <div className="absolute inset-0 z-0">
           <img 
             src="https://i.ibb.co/qFD5Jyn9/IMG-20260125-230827.png" 
@@ -198,22 +227,50 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStartTrial }) => {
               initial={{ opacity: 0, scale: 0.8 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 1 }}
-              className="flex-1 relative w-full"
+              className="flex-1 relative w-full flex flex-col items-center"
+              style={{ perspective: 1000 }}
             >
               <motion.div 
-                animate={{ y: [0, -20, 0] }}
-                transition={{ repeat: Infinity, duration: 4, ease: "easeInOut" }}
-                className="relative z-20"
+                style={{ 
+                  rotateX: /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ? 0 : rotateX, 
+                  rotateY: /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ? 0 : rotateY, 
+                  transformStyle: "preserve-3d" 
+                }}
+                animate={{ 
+                  y: [0, -20, 0],
+                  rotateY: /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ? [0, 5, -5, 0] : undefined
+                }}
+                transition={{ 
+                  y: { repeat: Infinity, duration: 4, ease: "easeInOut" },
+                  rotateY: { repeat: Infinity, duration: 8, ease: "easeInOut" }
+                }}
+                className="relative z-20 w-full max-w-lg"
               >
-                <div className="absolute -inset-10 bg-emerald-500/20 blur-[120px] rounded-full" />
-                <a href="https://ibb.co/XrDW7m0m" target="_blank" rel="noopener noreferrer">
+                {/* Premium Radial Glow */}
+                <div className="absolute -inset-10 bg-[radial-gradient(circle,_#10b98133_0%,_transparent_70%)] blur-[80px] rounded-full pointer-events-none" />
+                
+                <div className="relative overflow-hidden rounded-[3rem] shadow-[0_50px_100px_rgba(0,0,0,0.3)] bg-white border-4 border-slate-100">
                   <img 
-                    src="https://i.ibb.co/G49dWgYg/20260207-062946-0000.png" 
-                    alt="20260207-062946-0000" 
-                    className="w-full max-w-lg mx-auto drop-shadow-[0_50px_50px_rgba(0,0,0,0.2)]"
+                    src="https://i.ibb.co/W4XQSpqw/IMG-20260125-230934.png" 
+                    alt="NaijaShop App Display" 
+                    className="w-full h-auto object-cover"
                   />
-                </a>
+                </div>
               </motion.div>
+              
+              {/* Dynamic 3D Shadow */}
+              <motion.div 
+                animate={{ 
+                  scale: [1, 0.8, 1],
+                  opacity: [0.2, 0.1, 0.2]
+                }}
+                transition={{ 
+                  repeat: Infinity, 
+                  duration: 4, 
+                  ease: "easeInOut" 
+                }}
+                className="w-48 h-8 bg-black/20 blur-xl rounded-[100%] mt-12 z-10"
+              />
             </motion.div>
           </div>
         </div>
