@@ -64,9 +64,10 @@ const MasterAdminHub: React.FC = () => {
   };
 
   const fetchData = async () => {
-    // Correctly using Vite environment variables with type casting for safety
-    const SITE_ID = (import.meta as any).env.VITE_NETLIFY_SITE_ID;
-    const ACCESS_TOKEN = (import.meta as any).env.VITE_NETLIFY_ACCESS_TOKEN;
+    // Fixed: Safe environment variable access
+    const env = (import.meta as any).env || {};
+    const SITE_ID = env.VITE_NETLIFY_SITE_ID;
+    const ACCESS_TOKEN = env.VITE_NETLIFY_ACCESS_TOKEN;
     
     if (!SITE_ID || !ACCESS_TOKEN) {
       setError("Environment configuration missing. Check VITE_NETLIFY_SITE_ID and VITE_NETLIFY_ACCESS_TOKEN.");

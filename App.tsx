@@ -41,7 +41,8 @@ import {
 
 const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-9987-b4ed4c0e3c36.png";
 const MASTER_RECOVERY_PIN = "9999";
-const PAYSTACK_PUBLIC_KEY = (import.meta as any).env.VITE_PAYSTACK_PUBLIC_KEY || "pk_live_f001150495f27092c42d3d34d35e07663f707f15";
+// Fixed: Safely access environment variables with optional chaining
+const PAYSTACK_PUBLIC_KEY = (import.meta as any).env?.VITE_PAYSTACK_PUBLIC_KEY || "pk_live_f001150495f27092c42d3d34d35e07663f707f15";
 
 // CRITICAL: Global listener for PWA installation
 window.addEventListener('beforeinstallprompt', (e) => {
@@ -51,13 +52,11 @@ window.addEventListener('beforeinstallprompt', (e) => {
 });
 
 export const getTrialRemainingTime = (installationDate: number) => {
-  // STRICT INSTRUCTION: SET TO 0 FOR IMMEDIATE EXPIRY TEST
-  const trialPeriod = 0; 
-  
-  if (trialPeriod === 0) return { days: 0, hours: 0, minutes: 0, totalMs: 0 };
-  
+  // Standard 30-Day Free Trial Restored
+  const trialPeriod = 30 * 24 * 60 * 60 * 1000; 
   const expiry = installationDate + trialPeriod;
   const remaining = expiry - Date.now();
+  
   if (remaining <= 0) return { days: 0, hours: 0, minutes: 0, totalMs: 0 };
   
   const days = Math.floor(remaining / (24 * 60 * 60 * 1000));
@@ -115,7 +114,7 @@ const AppContent: React.FC = () => {
   const staffList = useLiveQuery(() => db.staff.toArray()) || [];
 
   useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 10000); // More frequent check during test
+    const timer = setInterval(() => setNow(Date.now()), 60000); 
     return () => clearInterval(timer);
   }, []);
 
@@ -232,63 +231,47 @@ const AppContent: React.FC = () => {
 
   if (isMasterView) return <MasterAdminHub />;
 
-  // Aggressive trial check logic
+  // PRODUCTION TRIAL ENGINE
   const s = settings as any;
   const isLicensed = settings?.license_expiry && settings.license_expiry > now;
-  
-  // Default to 31 days ago if missing to force lockout for this test
-  const testDefaultDate = Date.now() - (31 * 24 * 60 * 60 * 1000);
-  const trial = getTrialRemainingTime(s?.installationDate || testDefaultDate);
-  
+  // If installationDate is missing (older migration edge case), default to NOW to grant 30 days
+  const installationDate = s?.installationDate || Date.now();
+  const trial = getTrialRemainingTime(installationDate);
   const isTrialExpired = (trial.totalMs <= 0) && !s?.isSubscribed && !isLicensed;
 
-  // STRICT INSTRUCTION: Debugging logs
-  console.log('--- Terminal State ---');
-  console.log('Installation Date:', s?.installationDate ? new Date(s.installationDate).toLocaleString() : 'MISSING (Fallback used)');
-  console.log('Trial MS Remaining:', trial.totalMs);
-  console.log('Is Subscribed (DB Flag):', !!s?.isSubscribed);
-  console.log('Is Licensed (Expiry Check):', !!isLicensed);
-  console.log('Is Trial Expired (Guard):', isTrialExpired);
-
-  // STRICT INSTRUCTION: Force render lockout before anything else
+  // LOCKOUT GUARD
   if (isTrialExpired && currentView !== 'activation') {
     return (
       <div className="min-h-screen bg-emerald-950 flex flex-col items-center justify-center p-6">
-        <div className="bg-white p-12 rounded-[3.5rem] text-center space-y-8 max-w-md w-full animate-in zoom-in duration-300 shadow-[0_32px_100px_rgba(0,0,0,0.5)]">
-          <ShieldAlert size={48} className="mx-auto text-emerald-600"/>
-          <div className="space-y-2">
-            <h2 className="text-3xl font-black text-slate-900 tracking-tight">Trial Expired</h2>
+        <div className="bg-white p-12 rounded-[3.5rem] text-center space-y-8 max-w-md w-full animate-in zoom-in duration-300 shadow-[0_32px_100px_rgba(0,0,0,0.5)] border border-emerald-900/10">
+          <div className="w-20 h-20 bg-rose-50 text-rose-600 rounded-[2rem] flex items-center justify-center mx-auto shadow-inner">
+            <ShieldAlert size={48} />
+          </div>
+          <div className="space-y-3">
+            <h2 className="text-4xl font-black text-slate-900 tracking-tight leading-none uppercase">Trial Expired</h2>
             <p className="text-slate-500 font-medium leading-relaxed">
-              Oga, your free trial has ended. Please subscribe to keep your terminal active and secure your records.
+              Oga, your free trial has ended. Please subscribe to keep your terminal active and secure your business records.
             </p>
           </div>
           
+          <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 space-y-2 text-left">
+             <div className="flex items-center gap-2 text-[10px] font-black uppercase text-slate-400">
+                <ShieldCheck size={14} className="text-emerald-500" /> Professional Terminal Access
+             </div>
+             <p className="text-sm font-bold text-slate-700">12 Months Full License Activation</p>
+             <p className="text-2xl font-black text-emerald-600">₦10,000 / Year</p>
+          </div>
+
           <button 
             onClick={handleStartSubscription}
-            className="w-full py-5 bg-emerald-600 text-white rounded-2xl font-black text-xl shadow-xl active:scale-95 transition-transform flex items-center justify-center gap-3"
+            className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-xl shadow-[0_20px_40px_rgba(16,185,129,0.3)] active:scale-95 transition-transform flex items-center justify-center gap-3 hover:bg-emerald-700"
           >
-            <CreditCard size={24} /> Subscribe Now (₦10,000)
+            <CreditCard size={24} /> Subscribe Now
           </button>
-
-          <div className="pt-8 border-t border-slate-100 flex flex-col gap-4">
-             <button 
-                onClick={async () => {
-                   await db.settings.update('app_settings', { installationDate: Date.now() });
-                   alert("DEV: installationDate reset to NOW. Lockout will re-trigger if trialPeriod is still 0.");
-                   window.location.reload();
-                }}
-                className="text-[10px] font-black text-slate-300 uppercase tracking-widest hover:text-emerald-600 transition-colors"
-             >
-               DEV: Reset installationDate
-             </button>
-             {/* Master bypass option for dev testing */}
-             <button 
-                onClick={() => setCurrentView('setup')}
-                className="text-[10px] font-black text-slate-300 uppercase tracking-widest hover:text-slate-500"
-             >
-               DEV: Re-Setup Terminal
-             </button>
-          </div>
+          
+          <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
+            Safe & Secure Payment by Paystack
+          </p>
         </div>
       </div>
     );
