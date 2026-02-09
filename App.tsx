@@ -27,7 +27,14 @@ import SupportChat from './components/SupportChat';
 import { 
   AlertTriangle,
   ShieldAlert,
-  Loader2
+  Loader2,
+  X,
+  Smartphone,
+  MessageSquare,
+  Key,
+  ShieldCheck,
+  CheckCircle2,
+  Lock
 } from 'lucide-react';
 
 const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-9987-b4ed4c0e3c36.png";
@@ -87,6 +94,13 @@ const AppContent: React.FC = () => {
   const [isStaffLock, setIsStaffLock] = useState(localStorage.getItem('isStaffLock') === 'true');
   const [isMasterView, setIsMasterView] = useState(window.location.pathname.includes('master-control'));
   
+  // Recovery States
+  const [showRecoveryModal, setShowRecoveryModal] = useState(false);
+  const [recoveryStep, setRecoveryStep] = useState<'initial' | 'reset'>('initial');
+  const [masterCodeInput, setMasterCodeInput] = useState('');
+  const [newPin, setNewPin] = useState('');
+  const [confirmNewPin, setConfirmNewPin] = useState('');
+
   const [cart, setCart] = useState<SaleItem[]>([]);
   const [parkTrigger, setParkTrigger] = useState(0);
   const [now, setNow] = useState(Date.now());
@@ -157,6 +171,59 @@ const AppContent: React.FC = () => {
     } else alert("Invalid Password");
   };
 
+  const handleForgotPin = () => {
+    if (!selectedStaffId) {
+      alert("Please select your account first.");
+      return;
+    }
+    setRecoveryStep('initial');
+    setMasterCodeInput('');
+    setNewPin('');
+    setConfirmNewPin('');
+    setShowRecoveryModal(true);
+  };
+
+  const handleVerifyMasterCode = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (masterCodeInput === MASTER_RECOVERY_PIN) {
+      setRecoveryStep('reset');
+    } else {
+      alert("Invalid Master Recovery Code. Please contact Support.");
+    }
+  };
+
+  const handleResetPin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPin !== confirmNewPin) {
+      alert("PINs do not match!");
+      return;
+    }
+    if (newPin.length < 4) {
+      alert("PIN must be at least 4 digits.");
+      return;
+    }
+
+    try {
+      const admin = staffList.find(s => s.role === 'Admin');
+      if (admin && admin.id) {
+        await db.staff.update(admin.id, { password: newPin });
+        alert("Admin PIN updated successfully! You can now log in.");
+        setShowRecoveryModal(false);
+      } else {
+        alert("System Error: Admin account not found.");
+      }
+    } catch (err) {
+      alert("Failed to update PIN: " + err);
+    }
+  };
+
+  const requestSupportReset = () => {
+    const shopName = settings?.shop_name || 'NaijaShop User';
+    const terminalId = settings?.terminal_id || 'UNKNOWN';
+    const message = `Hello Support, I forgot my Admin PIN for Shop: ${shopName} (ID: ${terminalId}). Please assist.`;
+    window.open(`https://wa.me/2348184774884?text=${encodeURIComponent(message)}`, '_blank');
+  };
+
   if (showSplash || !isInitialized) {
     return (
       <div className="min-h-screen bg-emerald-900 flex flex-col items-center justify-center p-6 text-center">
@@ -200,6 +267,9 @@ const AppContent: React.FC = () => {
   }
 
   if (!currentUser && currentView !== 'activation') {
+    const selectedStaff = staffList.find(s => s.id === Number(selectedStaffId));
+    const isAdminAccount = selectedStaff?.role === 'Admin';
+
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
         <div className="w-full max-sm:px-4 max-w-sm space-y-10">
@@ -216,10 +286,147 @@ const AppContent: React.FC = () => {
                 {staffList.map(s => <option key={s.id} value={s.id!}>{s.name} ({s.role})</option>)}
               </select>
               <input required type="password" placeholder="PIN" className="w-full px-5 py-4 bg-slate-50 border rounded-2xl font-bold" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} />
-              <button type="submit" className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-xl shadow-xl">Unlock Terminal</button>
+              
+              <div className="text-right">
+                <button 
+                  type="button" 
+                  onClick={handleForgotPin}
+                  className="text-[10px] font-black text-slate-400 hover:text-emerald-600 transition-colors uppercase tracking-widest"
+                >
+                  Forgot PIN?
+                </button>
+              </div>
+
+              <button type="submit" className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-xl shadow-xl active:scale-[0.98] transition-transform">Unlock Terminal</button>
             </form>
           </div>
         </div>
+
+        {/* Recovery Modal */}
+        {showRecoveryModal && (
+          <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md animate-in fade-in duration-300">
+            <div className="bg-white rounded-[3rem] w-full max-w-sm p-10 shadow-2xl space-y-8 animate-in zoom-in duration-300 relative">
+              <button 
+                onClick={() => setShowRecoveryModal(false)}
+                className="absolute top-6 right-6 p-2 text-slate-300 hover:text-slate-500 transition-colors"
+              >
+                <X size={24} />
+              </button>
+
+              {isAdminAccount ? (
+                recoveryStep === 'initial' ? (
+                  <div className="space-y-8">
+                    <div className="text-center space-y-4">
+                      <div className="w-16 h-16 bg-rose-50 text-rose-600 rounded-2xl flex items-center justify-center mx-auto">
+                        <ShieldAlert size={32} />
+                      </div>
+                      <h3 className="text-2xl font-black text-slate-900 tracking-tight">Security Recovery</h3>
+                      <p className="text-sm text-slate-500 font-medium leading-relaxed">
+                        To reset your Admin PIN, you must contact NaijaShop Support.
+                      </p>
+                    </div>
+
+                    <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 space-y-1">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Your Terminal ID</p>
+                      <p className="text-lg font-black text-indigo-600 font-mono tracking-wider">{settings?.terminal_id || 'INITIALIZING...'}</p>
+                    </div>
+
+                    <button 
+                      onClick={requestSupportReset}
+                      className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all"
+                    >
+                      <MessageSquare size={18} /> Request Reset via WhatsApp
+                    </button>
+
+                    <div className="pt-4 border-t border-slate-100">
+                       <form onSubmit={handleVerifyMasterCode} className="space-y-4">
+                          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Enter Master Recovery Code</label>
+                          <div className="relative">
+                            <Key className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
+                            <input 
+                              required
+                              type="password" 
+                              maxLength={4}
+                              placeholder="••••"
+                              className="w-full pl-11 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-black text-2xl tracking-[0.5em] focus:ring-2 focus:ring-emerald-500"
+                              value={masterCodeInput}
+                              onChange={e => setMasterCodeInput(e.target.value.replace(/\D/g, ''))}
+                            />
+                          </div>
+                          <button type="submit" className="w-full py-3 bg-slate-900 text-white rounded-xl font-black text-xs uppercase tracking-widest">Verify Code</button>
+                       </form>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-8 animate-in slide-in-from-right duration-300">
+                    <div className="text-center space-y-4">
+                      <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto">
+                        <Lock size={32} />
+                      </div>
+                      <h3 className="text-2xl font-black text-slate-900 tracking-tight">Set New PIN</h3>
+                      <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Admin Authorization Granted</p>
+                    </div>
+
+                    <form onSubmit={handleResetPin} className="space-y-6">
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">New Admin PIN</label>
+                          <input 
+                            required
+                            autoFocus
+                            type="password"
+                            maxLength={4}
+                            placeholder="••••"
+                            className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-center text-3xl font-black tracking-[0.5em] outline-none focus:ring-2 focus:ring-emerald-500"
+                            value={newPin}
+                            onChange={e => setNewPin(e.target.value.replace(/\D/g, ''))}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Confirm PIN</label>
+                          <input 
+                            required
+                            type="password"
+                            maxLength={4}
+                            placeholder="••••"
+                            className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-center text-3xl font-black tracking-[0.5em] outline-none focus:ring-2 focus:ring-emerald-500"
+                            value={confirmNewPin}
+                            onChange={e => setConfirmNewPin(e.target.value.replace(/\D/g, ''))}
+                          />
+                        </div>
+                      </div>
+
+                      <button 
+                        type="submit"
+                        className="w-full py-5 bg-emerald-600 text-white rounded-2xl font-black text-lg shadow-xl shadow-emerald-200 active:scale-[0.98]"
+                      >
+                        Update Admin PIN
+                      </button>
+                    </form>
+                  </div>
+                )
+              ) : (
+                <div className="text-center space-y-8 py-4">
+                  <div className="w-16 h-16 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center mx-auto">
+                    <Smartphone size={32} />
+                  </div>
+                  <div className="space-y-4">
+                    <h3 className="text-2xl font-black text-slate-900 tracking-tight">Staff PIN Reset</h3>
+                    <p className="text-sm text-slate-500 font-medium leading-relaxed">
+                      Please ask your Shop Owner (Admin) to reset your password in the <b>"Manage Staff"</b> section of the dashboard.
+                    </p>
+                  </div>
+                  <button 
+                    onClick={() => setShowRecoveryModal(false)}
+                    className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest"
+                  >
+                    Got it, Thanks
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     );
   }
