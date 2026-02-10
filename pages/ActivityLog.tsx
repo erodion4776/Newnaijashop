@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
@@ -44,11 +43,13 @@ interface ActivityLogProps {
 const ActivityLog: React.FC<ActivityLogProps> = ({ currentUser }) => {
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
-  const [editingSale, setEditingSale] = useState<Sale | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [showSensitiveData, setShowSensitiveData] = useState(false);
   const [isProcessingAction, setIsProcessingAction] = useState(false);
   const [isBTPrinting, setIsBTPrinting] = useState(false);
+
+  const isAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'Manager';
+  const isSales = currentUser?.role === 'Sales';
 
   const dateRange = useMemo(() => {
     const start = new Date(selectedDate);
@@ -73,6 +74,8 @@ const ActivityLog: React.FC<ActivityLogProps> = ({ currentUser }) => {
   }, [products]);
 
   const calculateInterest = (sale: Sale) => {
+    // SECURITY: Sales staff cannot calculate interest
+    if (isSales) return 0;
     return sale.items.reduce((acc, item) => {
       const product = productMap[item.productId];
       const cost = product?.cost_price || 0;
@@ -95,10 +98,10 @@ const ActivityLog: React.FC<ActivityLogProps> = ({ currentUser }) => {
       }
     });
     return stats;
-  }, [sales, productMap]);
+  }, [sales, productMap, isSales]);
 
   const formatCurrency = (val: number, isSensitive: boolean = false) => {
-    if (isSensitive && !showSensitiveData) return "₦ ****";
+    if (isSensitive && (isSales || !showSensitiveData)) return "₦ ****";
     return `₦${Math.floor(val).toLocaleString()}`;
   };
 
@@ -109,36 +112,12 @@ const ActivityLog: React.FC<ActivityLogProps> = ({ currentUser }) => {
     return sales.filter(s => s.sale_id?.toLowerCase().includes(term) || s.staff_name?.toLowerCase().includes(term));
   }, [sales, searchTerm]);
 
-  const handlePrint = () => {
-    window.print();
-  };
-
-  const handleBTPrint = async () => {
-    if (!selectedSale || !settings) return;
-    setIsBTPrinting(true);
-    try {
-      await BluetoothPrintService.printReceipt(selectedSale, settings);
-    } catch (err) {
-      alert("BT Printing failed. Check connection in Settings.");
-    } finally {
-      setIsBTPrinting(false);
-    }
-  };
-
-  const handleShareWhatsApp = () => {
-    if (!selectedSale || !settings) return;
-    const itemsText = selectedSale.items.map(i => `${i.name} x${i.quantity} @ ₦${i.price.toLocaleString()} = ₦${(i.price * i.quantity).toLocaleString()}`).join('\n');
-    const text = `--- ${settings.shop_name.toUpperCase()} ---\n${settings.shop_address || ''}\n\nRECEIPT: ${selectedSale.sale_id}\nDATE: ${new Date(selectedSale.timestamp).toLocaleString()}\n\nITEMS:\n${itemsText}\n\nTOTAL: ₦${selectedSale.total_amount.toLocaleString()}\nPAYMENT: ${selectedSale.payment_method.toUpperCase()}\n\n${settings.receipt_footer || 'Thanks for your patronage!'}`;
-    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
-  };
-
   const handleDeleteSale = async (e: React.MouseEvent, sale: Sale) => {
     e.stopPropagation();
     if (currentUser?.role !== 'Admin') return;
     if (!confirm(`Are you sure? This will delete the sale and return items to stock.`)) return;
     setIsProcessingAction(true);
     try {
-      // Logic: Log Sale Deletion to Audit Trail
       await db.audit_trail.add({
         action: 'Sale Record Deleted',
         details: `Deleted Sale #${sale.sale_id.substring(0,8)} | Total: ₦${sale.total_amount.toLocaleString()} | Items: ${sale.items.length}`,
@@ -150,7 +129,7 @@ const ActivityLog: React.FC<ActivityLogProps> = ({ currentUser }) => {
         for (const item of sale.items) {
           const product = await db.products.get(item.productId);
           if (product) {
-            const oldStock = product.stock_qty;
+            const oldStock = Number(product.stock_qty);
             await db.products.update(item.productId, { stock_qty: oldStock + item.quantity });
             await db.inventory_logs.add({
               product_id: item.productId,
@@ -176,7 +155,9 @@ const ActivityLog: React.FC<ActivityLogProps> = ({ currentUser }) => {
           <Calendar className="text-slate-400" size={18} />
           <input type="date" className="py-3 pr-6 bg-transparent outline-none font-bold text-slate-800" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} />
         </div>
-        <button onClick={() => setShowSensitiveData(!showSensitiveData)} className="px-6 py-3 rounded-2xl border bg-white font-black text-xs uppercase tracking-widest">{showSensitiveData ? 'Hide Profit' : 'Show Profit'}</button>
+        {isAdmin && (
+          <button onClick={() => setShowSensitiveData(!showSensitiveData)} className="px-6 py-3 rounded-2xl border bg-white font-black text-xs uppercase tracking-widest">{showSensitiveData ? 'Hide Profit' : 'Show Profit'}</button>
+        )}
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -184,8 +165,8 @@ const ActivityLog: React.FC<ActivityLogProps> = ({ currentUser }) => {
           { label: 'Total Cash', val: summaryStats.cash, icon: <Wallet size={20}/>, bg: 'bg-emerald-50', text: 'text-emerald-600' },
           { label: 'Total Transfer', val: summaryStats.transfer, icon: <Landmark size={20}/>, bg: 'bg-blue-50', text: 'text-blue-600' },
           { label: 'Total POS', val: summaryStats.pos, icon: <CreditCard size={20}/>, bg: 'bg-purple-50', text: 'text-purple-600' },
-          { label: 'Total Interest', val: summaryStats.interest, icon: <Coins size={20}/>, bg: 'bg-amber-50', text: 'text-amber-600', sensitive: true }
-        ].map((stat, i) => (
+          { label: 'Total Interest', val: summaryStats.interest, icon: <Coins size={20}/>, bg: 'bg-amber-50', text: 'text-amber-600', sensitive: true, hide: isSales }
+        ].filter(s => !s.hide).map((stat, i) => (
           <div key={i} className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm flex items-center gap-4">
             <div className={`w-10 h-10 ${stat.bg} ${stat.text} rounded-xl flex items-center justify-center shrink-0`}>{stat.icon}</div>
             <div>
@@ -245,54 +226,18 @@ const ActivityLog: React.FC<ActivityLogProps> = ({ currentUser }) => {
                <div className="pt-6 border-t-2 border-dashed border-slate-100 space-y-3">
                   <div className="flex justify-between items-center"><span className="text-xs font-black uppercase">Total</span><span className="text-3xl font-black text-emerald-600">₦{selectedSale.total_amount.toLocaleString()}</span></div>
                </div>
-               
                <div className="grid grid-cols-1 gap-2">
-                  <div className="grid grid-cols-2 gap-2">
-                    <button onClick={handlePrint} className="py-3 bg-slate-100 text-slate-600 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2">
-                      <Printer size={16} /> Print
-                    </button>
-                    {BluetoothPrintService.isConnected() && (
-                      <button 
-                        onClick={handleBTPrint} 
-                        disabled={isBTPrinting}
-                        className="py-3 bg-emerald-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg"
-                      >
-                        {isBTPrinting ? <Loader2 className="animate-spin" size={16} /> : <Bluetooth size={16} />} BT Print
-                      </button>
-                    )}
-                  </div>
-                  <button onClick={handleShareWhatsApp} className="py-3 bg-emerald-50 text-emerald-600 border border-emerald-100 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2">
-                    <MessageSquare size={16} /> Share via WhatsApp
-                  </button>
+                  <button onClick={() => window.print()} className="py-3 bg-slate-100 text-slate-600 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2"><Printer size={16} /> Print</button>
+                  <button onClick={() => {
+                    const itemsText = selectedSale.items.map(i => `${i.name} x${i.quantity} = ₦${(i.price * i.quantity).toLocaleString()}`).join('\n');
+                    const text = `RECEIPT: ${selectedSale.sale_id}\nTOTAL: ₦${selectedSale.total_amount.toLocaleString()}\nITEMS:\n${itemsText}`;
+                    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+                  }} className="py-3 bg-emerald-50 text-emerald-600 border border-emerald-100 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2"><MessageSquare size={16} /> Share via WhatsApp</button>
                </div>
             </div>
           </div>
         </div>
       )}
-
-      {/* Hidden Print Area */}
-      <div id="printable-receipt-area" className="hidden print:block text-slate-900 p-4 font-mono text-xs w-full max-w-[380px] mx-auto">
-          <div className="text-center space-y-1 mb-6">
-            <h1 className="text-lg font-black uppercase">{settings?.shop_name}</h1>
-            <p className="whitespace-pre-line">{settings?.shop_address}</p>
-            <p className="text-[10px] font-bold">RECEIPT: #{selectedSale?.sale_id.substring(0,8)}</p>
-          </div>
-          <div className="border-y border-dashed border-slate-300 py-3 mb-4">
-             {selectedSale?.items.map((item, idx) => (
-               <div key={idx} className="flex justify-between mb-1">
-                  <span className="w-1/2 truncate pr-2 uppercase">{item.name}</span>
-                  <span className="w-1/4 text-center">x{item.quantity}</span>
-                  <span className="w-1/4 text-right">₦{(item.price * item.quantity).toLocaleString()}</span>
-               </div>
-             ))}
-          </div>
-          <div className="space-y-1 text-sm font-black mb-6">
-             <div className="flex justify-between"><span>TOTAL</span><span>₦{selectedSale?.total_amount.toLocaleString()}</span></div>
-          </div>
-          <div className="text-center border-t border-dashed border-slate-300 pt-4 space-y-2">
-             <p className="text-[9px] font-bold uppercase italic">{settings?.receipt_footer}</p>
-          </div>
-       </div>
     </div>
   );
 };
