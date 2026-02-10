@@ -37,6 +37,7 @@ import BarcodeScanner from '../components/BarcodeScanner';
 import CheckoutModal from '../components/CheckoutModal';
 import SmartSupportChat from '../components/SupportChat';
 import { exportDataForWhatsApp } from '../services/syncService';
+import WhatsAppService from '../services/WhatsAppService';
 
 interface POSProps {
   setView: (view: View) => void;
@@ -180,16 +181,8 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
       const result = await exportDataForWhatsApp('STOCK', settings.sync_key, currentUser?.name);
       if (result.raw !== "FILE_DOWNLOADED") {
         const text = result.summary.replace('[CompressedJSON]', result.raw);
-        
-        // AUTOMATION: Use Direct Link if group link is configured
-        if (settings.whatsapp_group_link) {
-           const groupLink = settings.whatsapp_group_link.replace(/\/$/, ""); // Remove trailing slash
-           window.open(`${groupLink}?text=${encodeURIComponent(text)}`, '_blank');
-        } else if (navigator.share) {
-           await navigator.share({ title: 'NaijaShop Master Update', text });
-        } else {
-           window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
-        }
+        // AUTOMATION: Use Direct Link if group link is configured via WhatsAppService
+        await WhatsAppService.send(text, settings, 'GROUP_UPDATE');
       }
     } finally { setIsPushing(false); }
   };
@@ -199,15 +192,8 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
     const result = await exportDataForWhatsApp('URGENT_SYNC', settings.sync_key, currentUser?.name);
     if (result.raw !== "FILE_DOWNLOADED") {
       const text = result.summary.replace('[CompressedJSON]', result.raw);
-      
-      // AUTOMATION: Use Direct Link if Admin Number is configured
-      if (settings.admin_whatsapp_number) {
-        window.open(`https://wa.me/${settings.admin_whatsapp_number}?text=${encodeURIComponent(text)}`, '_blank');
-      } else if (navigator.share) {
-        await navigator.share({ title: 'Urgent Stock Alert', text });
-      } else {
-        window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
-      }
+      // AUTOMATION: Use Direct Link if Admin Number is configured via WhatsAppService
+      await WhatsAppService.send(text, settings, 'DIRECT_REPORT');
       setShowSyncRequired(false);
     }
   };

@@ -26,7 +26,8 @@ import {
   Mail,
   Loader2,
   Share2,
-  Users
+  Users,
+  MessageSquare
 } from 'lucide-react';
 import { Staff, Settings as SettingsType } from '../types';
 import BluetoothPrintService from '../services/BluetoothPrintService';
@@ -89,9 +90,15 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
     setIsSaving(true);
     try {
       await db.settings.update('app_settings', {
-        shop_name: shopName, email, bank_name: bankName, account_number: accountNumber,
-        account_name: accountName, shop_address: shopAddress, receipt_footer: receiptFooter,
-        admin_whatsapp_number: adminWhatsapp, whatsapp_group_link: groupLink
+        shop_name: shopName, 
+        email, 
+        bank_name: bankName, 
+        account_number: accountNumber,
+        account_name: accountName, 
+        shop_address: shopAddress, 
+        receipt_footer: receiptFooter,
+        admin_whatsapp_number: adminWhatsapp,
+        whatsapp_group_link: groupLink
       });
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 3000);
@@ -144,7 +151,7 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
           {/* WhatsApp Sync Configuration Section - ADMIN ONLY */}
           <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
             <div className="flex items-center gap-3">
-              <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl"><Share2 size={24} /></div>
+              <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl"><MessageSquare size={24} /></div>
               <h3 className="text-xl font-black text-slate-800 tracking-tight">WhatsApp Sync Configuration</h3>
             </div>
             <div className="space-y-4">
@@ -152,12 +159,12 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
                   <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Admin WhatsApp Number</label>
                   <input 
                     type="text" 
-                    placeholder="e.g. 2348030000000"
+                    placeholder="e.g. 2348184774884"
                     className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" 
                     value={adminWhatsapp} 
                     onChange={e => setAdminWhatsapp(e.target.value.replace(/\D/g, ''))} 
                   />
-                  <p className="text-[10px] text-slate-400 mt-2 ml-1 italic font-medium">Tip: Include country code (234) without the + sign.</p>
+                  <p className="text-[10px] text-slate-400 mt-2 ml-1 italic font-medium">Format: Country code first, no plus (+) sign.</p>
                </div>
                <div>
                   <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">WhatsApp Shop Group Link</label>
@@ -168,6 +175,7 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
                     value={groupLink} 
                     onChange={e => setGroupLink(e.target.value)} 
                   />
+                  <p className="text-[10px] text-slate-400 mt-2 ml-1 italic font-medium">The group where all staff will receive stock updates.</p>
                </div>
             </div>
           </div>
@@ -190,18 +198,6 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
               </div>
             </div>
           </form>
-
-          <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
-             <div className="flex items-center gap-3"><div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl"><HelpCircle size={24} /></div><h3 className="text-xl font-black text-slate-800 tracking-tight">FAQ</h3></div>
-             <div className="divide-y divide-slate-100">
-               {filteredFaq.map((item, idx) => (
-                 <div key={idx}>
-                   <button onClick={() => setActiveFaq(activeFaq === idx ? null : idx)} className="flex items-center justify-between w-full py-5 text-left"><span className="font-black text-slate-700">{item.q}</span>{activeFaq === idx ? <ChevronUp size={20}/> : <ChevronDown size={20}/>}</button>
-                   {activeFaq === idx && <div className="pb-6 text-slate-500 font-medium leading-relaxed">{item.a}</div>}
-                 </div>
-               ))}
-             </div>
-          </div>
         </div>
 
         <div className="space-y-6">

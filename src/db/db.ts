@@ -30,7 +30,7 @@ export class NaijaShopDB extends Dexie {
   constructor() {
     super('NaijaShopDB');
     
-    // CRITICAL: Database version bumped to 38 for WhatsApp Direct Link fields
+    // CRITICAL: Database version bumped to 38 to ensure WhatsApp configuration fields exist
     (this as any).version(38).stores({
       products: '++id, name, category, barcode',
       sales: '++id, sale_id, timestamp, payment_method, staff_name',
@@ -144,7 +144,9 @@ export const initSettings = async () => {
       shop_name: '', admin_name: '', admin_pin: '', email: '', is_setup_complete: false,
       bank_name: 'Access Bank', account_number: '0123456789', account_name: 'NAIJA RETAIL STORE',
       last_used_timestamp: Date.now(), shop_address: '123 Business Way, Lagos',
-      receipt_footer: 'Thanks for your patronage! No refund after payment.'
+      receipt_footer: 'Thanks for your patronage! No refund after payment.',
+      admin_whatsapp_number: '',
+      whatsapp_group_link: ''
     });
   }
   await initializeDailyStock();
