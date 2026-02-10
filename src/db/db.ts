@@ -2,9 +2,6 @@ import { Dexie } from 'dexie';
 import type { Table } from 'dexie';
 import { Product, Sale, Debt, Settings, ParkedOrder, InventoryLog, Staff, Expense, AuditEntry, CustomerWallet, WalletTransaction, UsedReference, StockSnapshot } from '../types';
 
-/**
- * Robust helper to get YYYY-MM-DD in local time
- */
 export const getLocalDateString = (date = new Date()) => {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -30,8 +27,8 @@ export class NaijaShopDB extends Dexie {
   constructor() {
     super('NaijaShopDB');
     
-    // CRITICAL: Database version bumped to 50 for WhatsApp Sync Relocation
-    (this as any).version(50).stores({
+    // Fix: Cast this to any to access version() and other Dexie methods if inheritance typing fails
+    (this as any).version(55).stores({
       products: '++id, name, category, barcode',
       sales: '++id, sale_id, timestamp, payment_method, staff_name',
       debts: '++id, customer_name, phone, status',
@@ -47,18 +44,14 @@ export class NaijaShopDB extends Dexie {
       stock_snapshots: '++id, date, product_id, [date+product_id]'
     });
 
-    // 100% ACCURACY HOOK: Monitor stock_qty changes automatically
     this.products.hook('updating', (mods: Partial<Product>, primKey: number, obj: Product, transaction) => {
       if (mods.hasOwnProperty('stock_qty')) {
         const oldStock = Number(obj.stock_qty || 0);
         const newStock = Number(mods.stock_qty || 0);
         const diff = newStock - oldStock;
-
         if (diff === 0) return;
-
         const type = diff < 0 ? 'Sale' : 'Restock';
         const activeUserName = localStorage.getItem('last_active_user') || 'System Auto-Audit';
-
         transaction.on('complete', () => {
           db.inventory_logs.add({
             product_id: primKey,
@@ -70,32 +63,6 @@ export class NaijaShopDB extends Dexie {
             timestamp: Date.now(),
             performed_by: activeUserName
           }).catch(err => console.error("Auto-Log Hook Failed:", err));
-        });
-      }
-    });
-
-    // REAL-TIME SNAPSHOT HOOKS
-    this.sales.hook('creating', (primKey, obj, transaction) => {
-      const today = getLocalDateString();
-      transaction.on('complete', () => {
-        obj.items.forEach(async (item) => {
-          const snapshot = await db.stock_snapshots.where({ date: today, product_id: item.productId }).first();
-          if (snapshot && snapshot.id) {
-            await db.stock_snapshots.update(snapshot.id, { sold_qty: (snapshot.sold_qty || 0) + item.quantity });
-          }
-        });
-      });
-    });
-
-    this.inventory_logs.hook('creating', (primKey, obj, transaction) => {
-      if (obj.type === 'Restock' || (obj.type === 'Adjustment' && obj.quantity_changed > 0)) {
-        const today = getLocalDateString();
-        transaction.on('complete', async () => {
-          const snapshot = await db.stock_snapshots.where({ date: today, product_id: obj.product_id }).first();
-          if (snapshot && snapshot.id) {
-            const addedAmount = Math.abs(obj.quantity_changed);
-            await db.stock_snapshots.update(snapshot.id, { added_qty: (snapshot.added_qty || 0) + addedAmount });
-          }
         });
       }
     });
@@ -114,11 +81,6 @@ export const reconcileStock = async (productId: number) => {
   const calculatedStock = startingQty + movements;
   const actualStock = Number(product.stock_qty);
   return { match: calculatedStock === actualStock, calculated: calculatedStock, actual: actualStock, discrepancy: actualStock - calculatedStock };
-};
-
-export const getLowStockItems = async () => {
-  const all = await db.products.toArray();
-  return all.filter(p => Number(p.stock_qty) <= Number(p.low_stock_threshold || 5));
 };
 
 export const initializeDailyStock = async () => {
@@ -156,13 +118,10 @@ export const initSettings = async () => {
       whatsapp_group_link: ''
     });
   } else {
-    // Ensure new fields exist even on legacy installations
-    if (settings.admin_whatsapp_number === undefined) {
-      await db.settings.update('app_settings', { admin_whatsapp_number: '' });
-    }
-    if (settings.whatsapp_group_link === undefined) {
-      await db.settings.update('app_settings', { whatsapp_group_link: '' });
-    }
+    const updates: any = {};
+    if (settings.admin_whatsapp_number === undefined) updates.admin_whatsapp_number = '';
+    if (settings.whatsapp_group_link === undefined) updates.whatsapp_group_link = '';
+    if (Object.keys(updates).length > 0) await db.settings.update('app_settings', updates);
   }
   await initializeDailyStock();
 };

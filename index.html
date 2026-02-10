@@ -46,54 +46,23 @@
     "xlsx": "https://esm.sh/xlsx@^0.18.5",
     "mammoth": "https://esm.sh/mammoth@^1.11.0",
     "framer-motion": "https://esm.sh/framer-motion@^11.18.2",
-    "@/": "./",
-    "path": "https://esm.sh/path@^0.12.7",
-    "url": "https://esm.sh/url@^0.11.4",
-    "jspdf": "https://esm.sh/jspdf@^4.1.0",
-    "jspdf-autotable": "https://esm.sh/jspdf-autotable@^5.0.7"
+    "jspdf": "https://esm.sh/jspdf@^2.5.1",
+    "jspdf-autotable": "https://esm.sh/jspdf-autotable@^3.8.2"
   }
 }
 </script>
 </head>
 <body class="bg-slate-50 text-slate-900">
     <div id="root"></div>
-
-    <iframe name="hidden_iframe" id="hidden_iframe" style="display:none;"></iframe>
-
-    <script type="module" src="./index.tsx"></script>
-    
+    <script type="module" src="./src/main.tsx"></script>
     <script>
-      // Service Worker Registration
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
           navigator.serviceWorker.register('./sw.js')
-            .then(registration => console.log('SW registered'))
+            .then(reg => console.log('SW registered'))
             .catch(err => console.warn('SW failed:', err));
         });
       }
     </script>
-
-    <!-- Essential Forms -->
-    <form name="affiliate-registration" data-netlify="true" hidden>
-      <input type="text" name="marketer-name" />
-      <input type="text" name="phone-number" />
-      <input type="text" name="bank-name" />
-      <input type="text" name="account-number" />
-      <input type="hidden" name="form-name" value="affiliate-registration" />
-    </form>
-    <form name="shop-registration" data-netlify="true" hidden>
-      <input type="text" name="shop-name" />
-      <input type="text" name="admin-name" />
-      <input type="text" name="terminal-id" />
-      <input type="text" name="referral-code-used" />
-      <input type="hidden" name="form-name" value="shop-registration" />
-    </form>
-    <form name="enquiry-form" data-netlify="true" hidden>
-      <input type="text" name="full-name" />
-      <input type="text" name="phone-number" />
-      <input type="text" name="business-type" />
-      <input type="textarea" name="message" />
-      <input type="hidden" name="form-name" value="enquiry-form" />
-    </form>
 </body>
 </html>

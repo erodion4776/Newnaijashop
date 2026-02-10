@@ -18,8 +18,7 @@ import {
   Printer,
   Mail,
   Loader2,
-  User,
-  MessageSquareCode
+  User
 } from 'lucide-react';
 import { Staff, Settings as SettingsType } from '../types';
 import BluetoothPrintService from '../services/BluetoothPrintService';
@@ -39,15 +38,11 @@ interface SettingsProps {
 }
 
 const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
-  // UI Debugger
-  console.log('Admin detected in Settings:', currentUser?.role);
-
   const settings = useLiveQuery(() => db.settings.get('app_settings')) as SettingsType | undefined;
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [activeFaq, setActiveFaq] = useState<number | null>(null);
 
-  // Consolidated formData state without WhatsApp keys
   const [formData, setFormData] = useState({
     shop_name: '',
     admin_name: '',
@@ -64,7 +59,6 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
   );
   const [isConnectingBT, setIsConnectingBT] = useState(false);
 
-  // Load logic: useEffect to populate state from db
   useEffect(() => {
     if (settings) {
       setFormData({
@@ -80,7 +74,6 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
     }
   }, [settings]);
 
-  // Safe Render Guard - ensures Admin check is case-insensitive
   if (currentUser?.role.toLowerCase() !== 'admin') {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
@@ -90,7 +83,6 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
     );
   }
 
-  // Save Logic
   const handleSaveSettings = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setIsSaving(true);
@@ -132,7 +124,6 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
 
   return (
     <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in duration-500 pb-24">
-      {/* Header */}
       <div className="bg-emerald-900 rounded-[3rem] p-10 text-white relative overflow-hidden shadow-2xl">
         <div className="absolute right-[-20px] top-[-20px] opacity-10"><SettingsIcon size={180} /></div>
         <div className="relative z-10">
@@ -143,11 +134,8 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
         <div className="md:col-span-2 space-y-8">
-          
-          {/* Subscription Manager */}
           {settings && <SubscriptionManager settings={settings} onSubscribe={onSubscribe} />}
 
-          {/* Section A: Business Identity */}
           <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
             <div className="flex items-center gap-3">
               <div className="p-3 bg-slate-50 text-slate-600 rounded-2xl"><Store size={24} /></div>
@@ -175,7 +163,6 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
             </div>
           </div>
 
-          {/* Section B: Bank Transfer Details */}
           <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
             <div className="flex items-center gap-3">
               <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl"><Landmark size={24} /></div>
@@ -197,7 +184,6 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
             </div>
           </div>
 
-          {/* Section D: Receipt Settings */}
           <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
             <div className="flex items-center gap-3">
               <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl"><FileText size={24} /></div>
@@ -205,75 +191,32 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
             </div>
             <div className="space-y-4">
               <div>
-                <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2">
-                  <MapPin size={12} /> Shop Address
-                </label>
+                <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2"><MapPin size={12} /> Shop Address</label>
                 <textarea className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold resize-none" rows={2} value={formData.shop_address} onChange={e => setFormData({...formData, shop_address: e.target.value})} />
               </div>
               <div>
-                <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2">
-                  <MessageCircle size={12} /> Footer Message
-                </label>
+                <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2"><MessageCircle size={12} /> Footer Message</label>
                 <textarea className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold resize-none" rows={2} value={formData.receipt_footer} onChange={e => setFormData({...formData, receipt_footer: e.target.value})} />
               </div>
             </div>
           </div>
-
-          {/* Section E: Help Center & FAQ */}
-          <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
-             <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl"><HelpCircle size={24} /></div>
-                  <h3 className="text-xl font-black text-slate-800 tracking-tight">Help Center</h3>
-                </div>
-                <button 
-                  onClick={() => window.open('https://wa.me/2348184774884', '_blank')}
-                  className="px-4 py-2 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2"
-                >
-                   <MessageSquareCode size={14}/> Contact Support
-                </button>
-             </div>
-             <div className="divide-y divide-slate-100">
-               {FAQ_DATA.map((item, idx) => (
-                 <div key={idx}>
-                   <button onClick={() => setActiveFaq(activeFaq === idx ? null : idx)} className="flex items-center justify-between w-full py-5 text-left"><span className="font-black text-slate-700">{item.q}</span>{activeFaq === idx ? <ChevronUp size={20}/> : <ChevronDown size={20}/>}</button>
-                   {activeFaq === idx && <div className="pb-6 text-slate-500 font-medium leading-relaxed">{item.a}</div>}
-                 </div>
-               ))}
-             </div>
-          </div>
         </div>
 
-        {/* Floating Control Pane */}
         <div className="space-y-6">
           <div className="bg-slate-900 p-8 rounded-[3rem] text-white space-y-6 shadow-xl sticky top-6">
             <h4 className="font-black text-lg tracking-tight">Terminal Hardware</h4>
-            
             <div className="space-y-3">
                <p className="text-[10px] font-black text-slate-500 uppercase">Hardware Options</p>
                <div className="flex items-center gap-2 p-3 bg-slate-800 rounded-xl border border-slate-700">
                   <Printer size={16} className={btStatus === 'connected' ? 'text-emerald-400' : 'text-slate-500'} />
-                  <span className="text-xs font-bold truncate">
-                    {btStatus === 'connected' ? BluetoothPrintService.getDeviceName() : 'Disconnected Printer'}
-                  </span>
+                  <span className="text-xs font-bold truncate">{btStatus === 'connected' ? BluetoothPrintService.getDeviceName() : 'Disconnected'}</span>
                </div>
-               <button 
-                onClick={handleConnectPrinter}
-                className="w-full py-3 bg-slate-800 hover:bg-slate-700 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all border border-slate-700"
-               >
-                 {btStatus === 'connected' ? 'Change Printer' : 'Connect Bluetooth'}
-               </button>
+               <button onClick={handleConnectPrinter} className="w-full py-3 bg-slate-800 hover:bg-slate-700 rounded-xl font-black text-[10px] uppercase transition-all border border-slate-700">{btStatus === 'connected' ? 'Change Printer' : 'Connect Printer'}</button>
             </div>
-
             <button onClick={() => handleSaveSettings()} disabled={isSaving} className="w-full py-5 bg-emerald-600 hover:bg-emerald-500 rounded-2xl font-black flex items-center justify-center gap-3 shadow-lg disabled:opacity-50">
               {isSaving ? <Loader2 size={20} className="animate-spin" /> : <Save size={20} />} Save All Changes
             </button>
-            
-            {showSuccess && (
-              <div className="flex items-center gap-2 justify-center text-emerald-400 font-bold text-xs animate-in slide-in-from-bottom-2">
-                <CheckCircle2 size={16} /> Update Successful!
-              </div>
-            )}
+            {showSuccess && <div className="flex items-center gap-2 justify-center text-emerald-400 font-bold text-xs"><CheckCircle2 size={16} /> Updated!</div>}
           </div>
         </div>
       </div>
