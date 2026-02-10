@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { 
   LayoutDashboard, 
@@ -45,7 +44,7 @@ interface LayoutProps {
   onLogout: () => void;
   canInstall?: boolean;
   onInstall?: () => void;
-  trialRemaining?: { days: number, hours: number, minutes: number, totalMs: number, label: string, totalPeriod: number };
+  trialRemaining?: { days: number, percentage: number, totalMs: number, label: string, totalPeriod: number };
   isSubscribed?: boolean;
   onSubscribe?: () => void;
 }
@@ -112,7 +111,8 @@ const Layout: React.FC<LayoutProps> = ({
   const renderTrialWidget = () => {
     if (!trialRemaining) return null;
 
-    const percentage = Math.max(0, (trialRemaining.totalMs / trialRemaining.totalPeriod) * 100);
+    // Use dynamic percentage and total period from the unified calculation
+    const percentage = trialRemaining.percentage;
     const isUrgent = !isSubscribed && trialRemaining.days < 5;
 
     return (

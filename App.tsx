@@ -41,7 +41,6 @@ import {
 
 const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-9987-b4ed4c0e3c36.png";
 const MASTER_RECOVERY_PIN = "9999";
-// Fixed: Safely access environment variables with optional chaining
 const PAYSTACK_PUBLIC_KEY = (import.meta as any).env?.VITE_PAYSTACK_PUBLIC_KEY || "pk_live_f001150495f27092c42d3d34d35e07663f707f15";
 
 // CRITICAL: Global listener for PWA installation
@@ -51,18 +50,36 @@ window.addEventListener('beforeinstallprompt', (e) => {
   console.log('✅ PWA Install Prompt Captured');
 });
 
-export const getTrialRemainingTime = (installationDate: number) => {
-  // Standard 30-Day Free Trial Restored
-  const trialPeriod = 30 * 24 * 60 * 60 * 1000; 
-  const expiry = installationDate + trialPeriod;
-  const remaining = expiry - Date.now();
+/**
+ * Unified License Calculation Engine
+ * Correctly scales for 365-day Pro licenses and 30-day Free Trials
+ */
+export const getLicenseRemainingTime = (settings: any) => {
+  const now = Date.now();
+  const isSubscribed = !!settings?.isSubscribed;
   
-  if (remaining <= 0) return { days: 0, hours: 0, minutes: 0, totalMs: 0 };
+  const trialPeriod = 30 * 24 * 60 * 60 * 1000;
+  const proPeriod = 365 * 24 * 60 * 60 * 1000;
+  const totalPeriod = isSubscribed ? proPeriod : trialPeriod;
   
-  const days = Math.floor(remaining / (24 * 60 * 60 * 1000));
-  const hours = Math.floor((remaining % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
-  const minutes = Math.floor((remaining % (60 * 60 * 1000)) / (60 * 1000));
-  return { days, hours, minutes, totalMs: remaining };
+  let expiry = 0;
+  if (isSubscribed) {
+    expiry = settings?.license_expiry || (now + proPeriod);
+  } else {
+    expiry = (settings?.installationDate || now) + trialPeriod;
+  }
+  
+  const totalMs = Math.max(0, expiry - now);
+  const days = Math.floor(totalMs / (24 * 60 * 60 * 1000));
+  const percentage = (totalMs / totalPeriod) * 100;
+  
+  return { 
+    days, 
+    percentage, 
+    totalMs, 
+    totalPeriod, 
+    label: isSubscribed ? 'Pro License' : 'Free Trial' 
+  };
 };
 
 interface ErrorBoundaryProps { children?: ReactNode; }
@@ -231,13 +248,11 @@ const AppContent: React.FC = () => {
 
   if (isMasterView) return <MasterAdminHub />;
 
-  // PRODUCTION TRIAL ENGINE
+  // Unified License and Trial Status
   const s = settings as any;
+  const licenseInfo = getLicenseRemainingTime(settings);
   const isLicensed = settings?.license_expiry && settings.license_expiry > now;
-  // If installationDate is missing (older migration edge case), default to NOW to grant 30 days
-  const installationDate = s?.installationDate || Date.now();
-  const trial = getTrialRemainingTime(installationDate);
-  const isTrialExpired = (trial.totalMs <= 0) && !s?.isSubscribed && !isLicensed;
+  const isTrialExpired = (licenseInfo.totalMs <= 0) && !s?.isSubscribed && !isLicensed;
 
   // LOCKOUT GUARD
   if (isTrialExpired && currentView !== 'activation') {
@@ -377,10 +392,10 @@ const AppContent: React.FC = () => {
           shopName={settings?.shop_name || 'NaijaShop'} currentUser={currentUser} 
           isStaffLock={isStaffLock} toggleStaffLock={(v) => { setIsStaffLock(v); localStorage.setItem('isStaffLock', String(v)); }}
           adminPin={settings?.admin_pin || ''} onLogout={() => setCurrentUser(null)}
-          trialRemaining={{...trial, label: s?.isSubscribed ? 'Pro License' : 'Free Trial', totalPeriod: s?.isSubscribed ? 365 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000}} isSubscribed={s?.isSubscribed}
+          trialRemaining={licenseInfo} isSubscribed={s?.isSubscribed}
           onSubscribe={handleStartSubscription}
         >
-          {currentView === 'dashboard' && <Dashboard currentUser={currentUser} setView={setCurrentView} isStaffLock={isStaffLock} trialRemaining={{...trial, label: s?.isSubscribed ? 'Pro License' : 'Free Trial', totalPeriod: s?.isSubscribed ? 365 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000}} isSubscribed={s?.isSubscribed} onSubscribe={handleStartSubscription} />}
+          {currentView === 'dashboard' && <Dashboard currentUser={currentUser} setView={setCurrentView} isStaffLock={isStaffLock} trialRemaining={licenseInfo} isSubscribed={s?.isSubscribed} onSubscribe={handleStartSubscription} />}
           {currentView === 'pos' && <POS setView={setCurrentView} currentUser={currentUser} cart={cart} setCart={setCart} parkTrigger={parkTrigger} />}
           {currentView === 'activity-log' && <ActivityLog currentUser={currentUser} />}
           {currentView === 'inventory' && <Inventory setView={setCurrentView} currentUser={currentUser} isStaffLock={isStaffLock} />}
