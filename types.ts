@@ -1,4 +1,5 @@
 
+
 export interface Product {
   id?: number;
   name: string;
@@ -150,6 +151,9 @@ export interface Settings {
   license_expiry?: number;
   installationDate?: number;
   isSubscribed?: boolean;
+  // Fix: Added missing WhatsApp automation fields to resolve property missing errors in SecurityBackups.tsx
+  admin_whatsapp_number?: string;
+  whatsapp_group_link?: string;
 }
 
 export type View = 'landing' | 'setup' | 'dashboard' | 'pos' | 'inventory' | 'inventory-ledger' | 'debts' | 'settings' | 'staff-management' | 'activity-log' | 'security-backups' | 'transfer-station' | 'expense-tracker' | 'audit-trail' | 'customer-wallets' | 'business-hub' | 'activation' | 'stock-audit';

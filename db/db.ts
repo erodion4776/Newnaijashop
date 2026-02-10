@@ -30,8 +30,8 @@ export class NaijaShopDB extends Dexie {
   constructor() {
     super('NaijaShopDB');
     
-    // CRITICAL: Database version bumped to 37
-    (this as any).version(37).stores({
+    // CRITICAL: Database version bumped to 55 for WhatsApp Automation relocation
+    (this as any).version(55).stores({
       products: '++id, name, category, barcode',
       sales: '++id, sale_id, timestamp, payment_method, staff_name',
       debts: '++id, customer_name, phone, status',
@@ -56,13 +56,9 @@ export class NaijaShopDB extends Dexie {
 
         if (diff === 0) return;
 
-        // Determine type based on movement direction
         const type = diff < 0 ? 'Sale' : 'Restock';
-        
-        // Attempt to find current user from localStorage (set during login)
         const activeUserName = localStorage.getItem('last_active_user') || 'System Auto-Audit';
 
-        // Add log entry within the same transaction to guarantee atomicity
         transaction.on('complete', () => {
           db.inventory_logs.add({
             product_id: primKey,
@@ -77,87 +73,32 @@ export class NaijaShopDB extends Dexie {
         });
       }
     });
-
-    // REAL-TIME SNAPSHOT HOOKS - Maintain daily summaries
-    this.sales.hook('creating', (primKey, obj, transaction) => {
-      const today = getLocalDateString();
-      transaction.on('complete', () => {
-        obj.items.forEach(async (item) => {
-          const snapshot = await db.stock_snapshots.where({ date: today, product_id: item.productId }).first();
-          if (snapshot && snapshot.id) {
-            await db.stock_snapshots.update(snapshot.id, { sold_qty: (snapshot.sold_qty || 0) + item.quantity });
-          }
-        });
-      });
-    });
-
-    this.inventory_logs.hook('creating', (primKey, obj, transaction) => {
-      if (obj.type === 'Restock' || (obj.type === 'Adjustment' && obj.quantity_changed > 0)) {
-        const today = getLocalDateString();
-        transaction.on('complete', async () => {
-          const snapshot = await db.stock_snapshots.where({ date: today, product_id: obj.product_id }).first();
-          if (snapshot && snapshot.id) {
-            const addedAmount = Math.abs(obj.quantity_changed);
-            await db.stock_snapshots.update(snapshot.id, { added_qty: (snapshot.added_qty || 0) + addedAmount });
-          }
-        });
-      }
-    });
   }
 }
 
 export const db: NaijaShopDB = new NaijaShopDB();
 
-/**
- * Audit Tool: Compares logs vs current stock
- */
 export const reconcileStock = async (productId: number) => {
   const product = await db.products.get(productId);
   if (!product) return { match: true };
-
   const logs = await db.inventory_logs.where('product_id').equals(productId).toArray();
-  
-  // Starting point for this audit is the first "Initial Stock" entry
   const initialLog = logs.find(l => l.type === 'Initial Stock');
   const startingQty = initialLog ? Number(initialLog.new_stock) : 0;
-  
-  // Sum of all changes after initial stock
-  const movements = logs
-    .filter(l => l.type !== 'Initial Stock')
-    .reduce((sum, log) => sum + Number(log.quantity_changed), 0);
-
+  const movements = logs.filter(l => l.type !== 'Initial Stock').reduce((sum, log) => sum + Number(log.quantity_changed), 0);
   const calculatedStock = startingQty + movements;
   const actualStock = Number(product.stock_qty);
-
-  return {
-    match: calculatedStock === actualStock,
-    calculated: calculatedStock,
-    actual: actualStock,
-    discrepancy: actualStock - calculatedStock
-  };
+  return { match: calculatedStock === actualStock, calculated: calculatedStock, actual: actualStock, discrepancy: actualStock - calculatedStock };
 };
 
-/**
- * Ensures today's stock records are prepared using local time.
- */
 export const initializeDailyStock = async () => {
   const today = getLocalDateString();
   const existingCount = await db.stock_snapshots.where('date').equals(today).count();
-  
   if (existingCount === 0) {
     const allProducts = await db.products.toArray();
     if (allProducts.length === 0) return 0;
-
     const snapshots: StockSnapshot[] = allProducts.map(p => ({
-      date: today,
-      product_id: p.id!,
-      product_name: p.name,
-      starting_qty: p.stock_qty,
-      added_qty: 0,
-      sold_qty: 0,
-      closing_qty: undefined
+      date: today, product_id: p.id!, product_name: p.name, starting_qty: p.stock_qty, added_qty: 0, sold_qty: 0, closing_qty: undefined
     }));
-    
     await db.stock_snapshots.bulkAdd(snapshots);
     return snapshots.length;
   }
@@ -179,8 +120,18 @@ export const initSettings = async () => {
       account_name: 'NAIJA RETAIL STORE',
       last_used_timestamp: Date.now(),
       shop_address: '123 Business Way, Lagos',
-      receipt_footer: 'Thanks for your patronage! No refund after payment.'
+      receipt_footer: 'Thanks for your patronage! No refund after payment.',
+      admin_whatsapp_number: '',
+      whatsapp_group_link: ''
     });
+  } else {
+    // Ensure new fields exist even on legacy installations
+    const updates: any = {};
+    if (settings.admin_whatsapp_number === undefined) updates.admin_whatsapp_number = '';
+    if (settings.whatsapp_group_link === undefined) updates.whatsapp_group_link = '';
+    if (Object.keys(updates).length > 0) {
+      await db.settings.update('app_settings', updates);
+    }
   }
   await initializeDailyStock();
 };
