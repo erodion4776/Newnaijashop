@@ -20,7 +20,6 @@ import {
   Loader2,
   MessageSquare,
   User,
-  ExternalLink,
   MessageSquareCode
 } from 'lucide-react';
 import { Staff, Settings as SettingsType } from '../types';
@@ -46,7 +45,7 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
   const [showSuccess, setShowSuccess] = useState(false);
   const [activeFaq, setActiveFaq] = useState<number | null>(null);
 
-  // Consolidated formData state per strict instructions
+  // Consolidated formData state with exact database keys
   const [formData, setFormData] = useState({
     shop_name: '',
     admin_name: '',
@@ -54,8 +53,8 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
     bank_name: '',
     account_number: '',
     account_name: '',
-    admin_whatsapp_number: '',
-    whatsapp_group_link: '',
+    admin_whatsapp_number: '', // matched to db
+    whatsapp_group_link: '',   // matched to db
     shop_address: '',
     receipt_footer: ''
   });
@@ -65,7 +64,7 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
   );
   const [isConnectingBT, setIsConnectingBT] = useState(false);
 
-  // Load logic: useEffect to populate state from db
+  // Load logic
   useEffect(() => {
     if (settings) {
       setFormData({
@@ -83,10 +82,10 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
     }
   }, [settings]);
 
-  // Save Logic: Atomic update and toast
+  // Save Logic
   const handleSaveSettings = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (currentUser?.role !== 'Admin') return;
+    if (currentUser?.role.toLowerCase() !== 'admin') return;
     
     setIsSaving(true);
     try {
@@ -127,7 +126,8 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
     }
   };
 
-  if (currentUser?.role !== 'Admin') {
+  // Safe Render Guard - ensures Admin check is case-insensitive
+  if (currentUser?.role.toLowerCase() !== 'admin') {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
         <ShieldCheck size={64} className="text-slate-200" />
@@ -136,6 +136,9 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
     );
   }
 
+  // UI Debugger
+  console.log('WhatsApp settings data:', formData.admin_whatsapp_number);
+
   return (
     <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in duration-500 pb-24">
       {/* Header */}
@@ -143,21 +146,21 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
         <div className="absolute right-[-20px] top-[-20px] opacity-10"><SettingsIcon size={180} /></div>
         <div className="relative z-10">
           <h2 className="text-4xl font-black">Terminal Control</h2>
-          <p className="text-emerald-400 font-bold uppercase tracking-widest text-[10px] mt-1">Global Configuration</p>
+          <p className="text-emerald-400 font-bold uppercase tracking-widest text-[10px] mt-1">Configure your shop identities</p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
         <div className="md:col-span-2 space-y-8">
           
-          {/* Section: Subscription (Kept for Core UI integrity) */}
+          {/* Subscription Manager */}
           {settings && <SubscriptionManager settings={settings} onSubscribe={onSubscribe} />}
 
           {/* Section A: Business Identity */}
           <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
             <div className="flex items-center gap-3">
               <div className="p-3 bg-slate-50 text-slate-600 rounded-2xl"><Store size={24} /></div>
-              <h3 className="text-xl font-black text-slate-800 tracking-tight">Section A: Business Identity</h3>
+              <h3 className="text-xl font-black text-slate-800 tracking-tight">Business Identity</h3>
             </div>
             <div className="space-y-4">
               <div>
@@ -181,11 +184,45 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
             </div>
           </div>
 
+          {/* WhatsApp Sync Configuration (Moved to Top as Section C equivalent) */}
+          <div className="bg-white p-8 rounded-[3rem] border border-emerald-100 shadow-xl space-y-6">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center">
+                <MessageSquare size={20} />
+              </div>
+              <h3 className="font-black text-slate-800 uppercase text-xs tracking-widest">WhatsApp Sync Configuration</h3>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Owner WhatsApp Number</label>
+                <input 
+                  type="text" 
+                  placeholder="e.g. 2348184774884" 
+                  className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold outline-none focus:ring-2 focus:ring-emerald-500"
+                  value={formData.admin_whatsapp_number}
+                  onChange={e => setFormData({...formData, admin_whatsapp_number: e.target.value.replace(/\D/g, '')})}
+                />
+                <p className="text-[9px] text-slate-400 mt-2 ml-1 italic font-medium">Format: Country code first (234), no plus (+) sign.</p>
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Staff Group Link</label>
+                <input 
+                  type="text" 
+                  placeholder="https://chat.whatsapp.com/..." 
+                  className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold outline-none focus:ring-2 focus:ring-emerald-500"
+                  value={formData.whatsapp_group_link}
+                  onChange={e => setFormData({...formData, whatsapp_group_link: e.target.value})}
+                />
+                <p className="text-[9px] text-slate-400 mt-2 ml-1 italic font-medium">The group where all staff will receive stock updates.</p>
+              </div>
+            </div>
+          </div>
+
           {/* Section B: Bank Transfer Details */}
           <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
             <div className="flex items-center gap-3">
               <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl"><Landmark size={24} /></div>
-              <h3 className="text-xl font-black text-slate-800 tracking-tight">Section B: Bank Transfer Details</h3>
+              <h3 className="text-xl font-black text-slate-800 tracking-tight">Bank Transfer Details</h3>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
@@ -203,45 +240,11 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
             </div>
           </div>
 
-          {/* Section C: WhatsApp Sync Configuration (CRITICAL - NEW) */}
-          <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-lg space-y-6">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center">
-                <MessageSquare size={20} />
-              </div>
-              <h3 className="font-black text-slate-800 uppercase text-xs tracking-widest">Section C: WhatsApp Sync Configuration</h3>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Owner WhatsApp Number</label>
-                <input 
-                  type="text" 
-                  placeholder="e.g. 2348184774884" 
-                  className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold outline-none focus:ring-2 focus:ring-emerald-500"
-                  value={formData.admin_whatsapp_number || ''}
-                  onChange={e => setFormData({...formData, admin_whatsapp_number: e.target.value.replace(/\D/g, '')})}
-                />
-                <p className="text-[9px] text-slate-400 mt-2 ml-1 italic font-medium">Format: Country code first (234), no plus (+) sign.</p>
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Staff Group Link</label>
-                <input 
-                  type="text" 
-                  placeholder="https://chat.whatsapp.com/..." 
-                  className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold outline-none focus:ring-2 focus:ring-emerald-500"
-                  value={formData.whatsapp_group_link || ''}
-                  onChange={e => setFormData({...formData, whatsapp_group_link: e.target.value})}
-                />
-                <p className="text-[9px] text-slate-400 mt-2 ml-1 italic font-medium">The group where all staff will receive stock updates.</p>
-              </div>
-            </div>
-          </div>
-
           {/* Section D: Receipt Settings */}
           <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
             <div className="flex items-center gap-3">
               <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl"><FileText size={24} /></div>
-              <h3 className="text-xl font-black text-slate-800 tracking-tight">Section D: Receipt Settings</h3>
+              <h3 className="text-xl font-black text-slate-800 tracking-tight">Receipt Settings</h3>
             </div>
             <div className="space-y-4">
               <div>
@@ -264,7 +267,7 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
              <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl"><HelpCircle size={24} /></div>
-                  <h3 className="text-xl font-black text-slate-800 tracking-tight">Section E: Help Center</h3>
+                  <h3 className="text-xl font-black text-slate-800 tracking-tight">Help Center</h3>
                 </div>
                 <button 
                   onClick={() => window.open('https://wa.me/2348184774884', '_blank')}
@@ -287,14 +290,14 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
         {/* Floating Control Pane */}
         <div className="space-y-6">
           <div className="bg-slate-900 p-8 rounded-[3rem] text-white space-y-6 shadow-xl sticky top-6">
-            <h4 className="font-black text-lg tracking-tight">Terminal Hardware</h4>
+            <h4 className="font-black text-lg tracking-tight">Terminal Control</h4>
             
             <div className="space-y-3">
-               <p className="text-[10px] font-black text-slate-500 uppercase">Thermal Printer</p>
+               <p className="text-[10px] font-black text-slate-500 uppercase">Hardware Options</p>
                <div className="flex items-center gap-2 p-3 bg-slate-800 rounded-xl border border-slate-700">
                   <Printer size={16} className={btStatus === 'connected' ? 'text-emerald-400' : 'text-slate-500'} />
                   <span className="text-xs font-bold truncate">
-                    {btStatus === 'connected' ? BluetoothPrintService.getDeviceName() : 'Disconnected'}
+                    {btStatus === 'connected' ? BluetoothPrintService.getDeviceName() : 'Disconnected Printer'}
                   </span>
                </div>
                <button 
@@ -306,12 +309,12 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
             </div>
 
             <button onClick={() => handleSaveSettings()} disabled={isSaving} className="w-full py-5 bg-emerald-600 hover:bg-emerald-500 rounded-2xl font-black flex items-center justify-center gap-2 shadow-lg disabled:opacity-50">
-              {isSaving ? <Loader2 size={20} className="animate-spin" /> : <Save size={20} />} Update All Settings
+              {isSaving ? <Loader2 size={20} className="animate-spin" /> : <Save size={20} />} Save All Changes
             </button>
             
             {showSuccess && (
               <div className="flex items-center gap-2 justify-center text-emerald-400 font-bold text-xs animate-in slide-in-from-bottom-2">
-                <CheckCircle2 size={16} /> Settings Updated!
+                <CheckCircle2 size={16} /> Update Successful!
               </div>
             )}
           </div>

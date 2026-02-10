@@ -30,8 +30,8 @@ export class NaijaShopDB extends Dexie {
   constructor() {
     super('NaijaShopDB');
     
-    // CRITICAL: Database version bumped to 42 for WhatsApp Direct Link fields and structural alignment
-    (this as any).version(42).stores({
+    // CRITICAL: Database version bumped to 45 for WhatsApp Sync structural enforcement
+    (this as any).version(45).stores({
       products: '++id, name, category, barcode',
       sales: '++id, sale_id, timestamp, payment_method, staff_name',
       debts: '++id, customer_name, phone, status',
@@ -155,6 +155,14 @@ export const initSettings = async () => {
       admin_whatsapp_number: '',
       whatsapp_group_link: ''
     });
+  } else {
+    // Ensure new fields exist even on legacy installations
+    if (settings.admin_whatsapp_number === undefined) {
+      await db.settings.update('app_settings', { admin_whatsapp_number: '' });
+    }
+    if (settings.whatsapp_group_link === undefined) {
+      await db.settings.update('app_settings', { whatsapp_group_link: '' });
+    }
   }
   await initializeDailyStock();
 };
