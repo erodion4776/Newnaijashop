@@ -30,8 +30,8 @@ export class NaijaShopDB extends Dexie {
   constructor() {
     super('NaijaShopDB');
     
-    // CRITICAL: Database version bumped to 37
-    (this as any).version(37).stores({
+    // CRITICAL: Database version bumped to 38 for WhatsApp Direct Link fields
+    (this as any).version(38).stores({
       products: '++id, name, category, barcode',
       sales: '++id, sale_id, timestamp, payment_method, staff_name',
       debts: '++id, customer_name, phone, status',
@@ -50,20 +50,15 @@ export class NaijaShopDB extends Dexie {
     // 100% ACCURACY HOOK: Monitor stock_qty changes automatically
     this.products.hook('updating', (mods: Partial<Product>, primKey: number, obj: Product, transaction) => {
       if (mods.hasOwnProperty('stock_qty')) {
-        // Data Type Protection: Force Number conversion
         const oldStock = Number(obj.stock_qty || 0);
         const newStock = Number(mods.stock_qty || 0);
         const diff = newStock - oldStock;
 
         if (diff === 0) return;
 
-        // Determine type based on movement direction
         const type = diff < 0 ? 'Sale' : 'Restock';
-        
-        // Attempt to find current user from localStorage
         const activeUserName = localStorage.getItem('last_active_user') || 'System Auto-Audit';
 
-        // Add log entry within the same transaction to guarantee atomicity
         transaction.on('complete', () => {
           db.inventory_logs.add({
             product_id: primKey,
@@ -109,35 +104,18 @@ export class NaijaShopDB extends Dexie {
 
 export const db: NaijaShopDB = new NaijaShopDB();
 
-/**
- * Audit Tool: Compares logs vs current stock
- */
 export const reconcileStock = async (productId: number) => {
   const product = await db.products.get(productId);
   if (!product) return { match: true };
-
   const logs = await db.inventory_logs.where('product_id').equals(productId).toArray();
   const initialLog = logs.find(l => l.type === 'Initial Stock');
   const startingQty = initialLog ? Number(initialLog.new_stock) : 0;
-  
-  const movements = logs
-    .filter(l => l.type !== 'Initial Stock')
-    .reduce((sum, log) => sum + Number(log.quantity_changed), 0);
-
+  const movements = logs.filter(l => l.type !== 'Initial Stock').reduce((sum, log) => sum + Number(log.quantity_changed), 0);
   const calculatedStock = startingQty + movements;
   const actualStock = Number(product.stock_qty);
-
-  return {
-    match: calculatedStock === actualStock,
-    calculated: calculatedStock,
-    actual: actualStock,
-    discrepancy: actualStock - calculatedStock
-  };
+  return { match: calculatedStock === actualStock, calculated: calculatedStock, actual: actualStock, discrepancy: actualStock - calculatedStock };
 };
 
-/**
- * Helper to check for low stock items for Chain-Sync logic
- */
 export const getLowStockItems = async () => {
   const all = await db.products.toArray();
   return all.filter(p => Number(p.stock_qty) <= Number(p.low_stock_threshold || 5));
@@ -146,21 +124,12 @@ export const getLowStockItems = async () => {
 export const initializeDailyStock = async () => {
   const today = getLocalDateString();
   const existingCount = await db.stock_snapshots.where('date').equals(today).count();
-  
   if (existingCount === 0) {
     const allProducts = await db.products.toArray();
     if (allProducts.length === 0) return 0;
-
     const snapshots: StockSnapshot[] = allProducts.map(p => ({
-      date: today,
-      product_id: p.id!,
-      product_name: p.name,
-      starting_qty: p.stock_qty,
-      added_qty: 0,
-      sold_qty: 0,
-      closing_qty: undefined
+      date: today, product_id: p.id!, product_name: p.name, starting_qty: p.stock_qty, added_qty: 0, sold_qty: 0, closing_qty: undefined
     }));
-    
     await db.stock_snapshots.bulkAdd(snapshots);
     return snapshots.length;
   }
@@ -172,16 +141,9 @@ export const initSettings = async () => {
   if (!settings) {
     await db.settings.add({
       id: 'app_settings',
-      shop_name: '',
-      admin_name: '',
-      admin_pin: '',
-      email: '',
-      is_setup_complete: false,
-      bank_name: 'Access Bank',
-      account_number: '0123456789',
-      account_name: 'NAIJA RETAIL STORE',
-      last_used_timestamp: Date.now(),
-      shop_address: '123 Business Way, Lagos',
+      shop_name: '', admin_name: '', admin_pin: '', email: '', is_setup_complete: false,
+      bank_name: 'Access Bank', account_number: '0123456789', account_name: 'NAIJA RETAIL STORE',
+      last_used_timestamp: Date.now(), shop_address: '123 Business Way, Lagos',
       receipt_footer: 'Thanks for your patronage! No refund after payment.'
     });
   }

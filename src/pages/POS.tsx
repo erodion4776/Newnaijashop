@@ -118,7 +118,6 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
 
   const handleParkOrder = () => { if (cart.length > 0) setShowParkModal(true); else alert('Cart is empty'); };
 
-  // Fix: Implemented confirmParkOrder which was missing and causing a 'Cannot find name' error
   const confirmParkOrder = async () => {
     if (!parkingCustomerName.trim()) { alert('Enter customer name'); return; }
     try {
@@ -166,7 +165,6 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
     const existing = cart.find(item => item.productId === product.id);
     const newQty = existing ? existing.quantity + quantity : quantity;
     if (newQty > product.stock_qty) { alert(`Only ${product.stock_qty} units available`); return; }
-    
     if (existing) {
       setCart(cart.map(item => item.productId === product.id ? { ...item, quantity: newQty } : item));
     } else {
@@ -182,7 +180,16 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
       const result = await exportDataForWhatsApp('STOCK', settings.sync_key, currentUser?.name);
       if (result.raw !== "FILE_DOWNLOADED") {
         const text = result.summary.replace('[CompressedJSON]', result.raw);
-        window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+        
+        // AUTOMATION: Use Direct Link if group link is configured
+        if (settings.whatsapp_group_link) {
+           const groupLink = settings.whatsapp_group_link.replace(/\/$/, ""); // Remove trailing slash
+           window.open(`${groupLink}?text=${encodeURIComponent(text)}`, '_blank');
+        } else if (navigator.share) {
+           await navigator.share({ title: 'NaijaShop Master Update', text });
+        } else {
+           window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+        }
       }
     } finally { setIsPushing(false); }
   };
@@ -192,7 +199,15 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
     const result = await exportDataForWhatsApp('URGENT_SYNC', settings.sync_key, currentUser?.name);
     if (result.raw !== "FILE_DOWNLOADED") {
       const text = result.summary.replace('[CompressedJSON]', result.raw);
-      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+      
+      // AUTOMATION: Use Direct Link if Admin Number is configured
+      if (settings.admin_whatsapp_number) {
+        window.open(`https://wa.me/${settings.admin_whatsapp_number}?text=${encodeURIComponent(text)}`, '_blank');
+      } else if (navigator.share) {
+        await navigator.share({ title: 'Urgent Stock Alert', text });
+      } else {
+        window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+      }
       setShowSyncRequired(false);
     }
   };
@@ -240,7 +255,6 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
           <button onClick={() => setShowScanner(true)} className="h-14 w-14 flex items-center justify-center bg-indigo-600 text-white rounded-xl shadow-lg"><Camera size={24} /></button>
         </div>
         
-        {/* Admin Push Button */}
         {isAdmin && (
           <button onClick={handlePushUpdate} disabled={isPushing} className="w-full py-3 bg-emerald-600 text-white rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all">
             {isPushing ? <Loader2 className="animate-spin" size={16} /> : <Send size={16} />} 🚀 Push Update to All Staff
@@ -301,24 +315,18 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
         </div>
       )}
 
-      {/* Mandatory Sync Modal for Chain-Sync */}
       {showSyncRequired && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md animate-in fade-in">
           <div className="bg-white rounded-[3rem] w-full max-w-sm p-10 text-center space-y-8 shadow-2xl border-4 border-amber-500/20">
-            <div className="w-24 h-24 bg-amber-50 text-amber-600 rounded-[2.5rem] flex items-center justify-center mx-auto animate-bounce">
-              <ShieldAlert size={48} />
-            </div>
+            <div className="w-24 h-24 bg-amber-50 text-amber-600 rounded-[2.5rem] flex items-center justify-center mx-auto animate-bounce"><ShieldAlert size={48} /></div>
             <div className="space-y-3">
               <h2 className="text-3xl font-black text-slate-900 tracking-tight uppercase italic leading-none">Sync Required!</h2>
-              <p className="text-slate-500 font-bold leading-relaxed">
-                ⚠️ Stock is Low! To ensure accuracy across all staff phones, you must send a report to the Boss now.
-              </p>
+              <p className="text-slate-500 font-bold leading-relaxed">⚠️ Stock is Low! To ensure accuracy across all staff phones, you must send a report to the Boss now.</p>
             </div>
             <div className="space-y-3">
               <button onClick={handleUrgentSync} className="w-full py-5 bg-emerald-600 text-white rounded-2xl font-black text-lg flex items-center justify-center gap-3 shadow-xl shadow-emerald-200 active:scale-95 transition-all">
                 <MessageSquare size={20} /> Send Report & Request Update
               </button>
-              <p className="text-[10px] text-slate-300 font-black uppercase tracking-widest">Market must match records</p>
             </div>
           </div>
         </div>
@@ -346,7 +354,6 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
                 <button onClick={() => loadParkedOrder(order)} className="px-6 py-2 bg-emerald-600 text-white rounded-xl font-bold text-xs">Load</button>
               </div>
             ))}
-            {parkedOrders.length === 0 && <p className="text-center text-slate-400 py-20 font-bold">No saved orders</p>}
           </div>
         </div>
       )}

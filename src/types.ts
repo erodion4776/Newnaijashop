@@ -1,4 +1,3 @@
-
 export interface Product {
   id?: number;
   name: string;
@@ -23,9 +22,6 @@ export interface InventoryLog {
   performed_by: string;
 }
 
-/**
- * Fix: Added missing StockSnapshot interface used by database hooks and auditing pages.
- */
 export interface StockSnapshot {
   id?: number;
   date: string; // YYYY-MM-DD
@@ -137,6 +133,7 @@ export interface Settings {
   shop_name: string;
   admin_name: string;
   admin_pin: string;
+  email: string;
   is_setup_complete: boolean;
   bank_name: string;
   account_number: string;
@@ -150,11 +147,10 @@ export interface Settings {
   license_expiry?: number;
   installationDate?: number;
   isSubscribed?: boolean;
+  admin_whatsapp_number?: string;
+  whatsapp_group_link?: string;
 }
 
-/**
- * Fix: Added 'stock-audit' to the View type union.
- */
 export type View = 'landing' | 'setup' | 'dashboard' | 'pos' | 'inventory' | 'inventory-ledger' | 'debts' | 'settings' | 'staff-management' | 'activity-log' | 'security-backups' | 'transfer-station' | 'expense-tracker' | 'audit-trail' | 'customer-wallets' | 'business-hub' | 'activation' | 'stock-audit';
 
 export type SyncStatus = 'offline' | 'connecting' | 'live' | 'reconnecting' | 'failed';
