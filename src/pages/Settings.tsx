@@ -40,6 +40,9 @@ interface SettingsProps {
 }
 
 const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
+  // UI Debugger
+  console.log('Admin detected in Settings:', currentUser?.role);
+
   const settings = useLiveQuery(() => db.settings.get('app_settings')) as SettingsType | undefined;
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -53,8 +56,8 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
     bank_name: '',
     account_number: '',
     account_name: '',
-    admin_whatsapp_number: '', // matched to db
-    whatsapp_group_link: '',   // matched to db
+    admin_whatsapp_number: '',
+    whatsapp_group_link: '',
     shop_address: '',
     receipt_footer: ''
   });
@@ -64,7 +67,7 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
   );
   const [isConnectingBT, setIsConnectingBT] = useState(false);
 
-  // Load logic
+  // Load logic: useEffect to populate state from db
   useEffect(() => {
     if (settings) {
       setFormData({
@@ -82,11 +85,19 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
     }
   }, [settings]);
 
+  // Safe Render Guard - ensures Admin check is case-insensitive
+  if (currentUser?.role.toLowerCase() !== 'admin') {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
+        <ShieldCheck size={64} className="text-slate-200" />
+        <h2 className="text-xl font-black text-slate-800 uppercase tracking-widest">Admin Access Required</h2>
+      </div>
+    );
+  }
+
   // Save Logic
   const handleSaveSettings = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (currentUser?.role.toLowerCase() !== 'admin') return;
-    
     setIsSaving(true);
     try {
       await db.settings.update('app_settings', {
@@ -126,19 +137,6 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
     }
   };
 
-  // Safe Render Guard - ensures Admin check is case-insensitive
-  if (currentUser?.role.toLowerCase() !== 'admin') {
-    return (
-      <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
-        <ShieldCheck size={64} className="text-slate-200" />
-        <h2 className="text-xl font-black text-slate-800 uppercase tracking-widest">Admin Access Required</h2>
-      </div>
-    );
-  }
-
-  // UI Debugger
-  console.log('WhatsApp settings data:', formData.admin_whatsapp_number);
-
   return (
     <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in duration-500 pb-24">
       {/* Header */}
@@ -156,35 +154,7 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
           {/* Subscription Manager */}
           {settings && <SubscriptionManager settings={settings} onSubscribe={onSubscribe} />}
 
-          {/* Section A: Business Identity */}
-          <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
-            <div className="flex items-center gap-3">
-              <div className="p-3 bg-slate-50 text-slate-600 rounded-2xl"><Store size={24} /></div>
-              <h3 className="text-xl font-black text-slate-800 tracking-tight">Business Identity</h3>
-            </div>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Shop Name</label>
-                <input type="text" className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" value={formData.shop_name} onChange={e => setFormData({...formData, shop_name: e.target.value})} />
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Admin Name</label>
-                <div className="relative">
-                  <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
-                  <input type="text" className="w-full pl-12 pr-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" value={formData.admin_name} onChange={e => setFormData({...formData, admin_name: e.target.value})} />
-                </div>
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Business Email</label>
-                <div className="relative">
-                  <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
-                  <input type="email" className="w-full pl-12 pr-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} placeholder="business@example.com" />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* WhatsApp Sync Configuration (Moved to Top as Section C equivalent) */}
+          {/* Section C: WhatsApp Sync Configuration (CRITICAL - MOVED TO TOP) */}
           <div className="bg-white p-8 rounded-[3rem] border border-emerald-100 shadow-xl space-y-6">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center">
@@ -214,6 +184,34 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
                   onChange={e => setFormData({...formData, whatsapp_group_link: e.target.value})}
                 />
                 <p className="text-[9px] text-slate-400 mt-2 ml-1 italic font-medium">The group where all staff will receive stock updates.</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Section A: Business Identity */}
+          <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-slate-50 text-slate-600 rounded-2xl"><Store size={24} /></div>
+              <h3 className="text-xl font-black text-slate-800 tracking-tight">Business Identity</h3>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Shop Name</label>
+                <input type="text" className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" value={formData.shop_name} onChange={e => setFormData({...formData, shop_name: e.target.value})} />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Admin Name</label>
+                <div className="relative">
+                  <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+                  <input type="text" className="w-full pl-12 pr-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" value={formData.admin_name} onChange={e => setFormData({...formData, admin_name: e.target.value})} />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Business Email</label>
+                <div className="relative">
+                  <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+                  <input type="email" className="w-full pl-12 pr-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} placeholder="business@example.com" />
+                </div>
               </div>
             </div>
           </div>
