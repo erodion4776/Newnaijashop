@@ -51,15 +51,18 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   
-  const [shopName, setShopName] = useState('');
-  const [email, setEmail] = useState('');
-  const [bankName, setBankName] = useState('');
-  const [accountNumber, setAccountNumber] = useState('');
-  const [accountName, setAccountName] = useState('');
-  const [shopAddress, setShopAddress] = useState('');
-  const [receiptFooter, setReceiptFooter] = useState('');
-  const [adminWhatsapp, setAdminWhatsapp] = useState('');
-  const [groupLink, setGroupLink] = useState('');
+  // Use formData state to comply with strict instruction snippets
+  const [formData, setFormData] = useState({
+    shop_name: '',
+    email: '',
+    bank_name: '',
+    account_number: '',
+    account_name: '',
+    shop_address: '',
+    receipt_footer: '',
+    admin_whatsapp_number: '',
+    whatsapp_group_link: ''
+  });
 
   const [btStatus, setBtStatus] = useState<'connected' | 'disconnected' | 'unsupported'>(
     BluetoothPrintService.isSupported() ? (BluetoothPrintService.isConnected() ? 'connected' : 'disconnected') : 'unsupported'
@@ -72,15 +75,17 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
 
   useEffect(() => {
     if (settings) {
-      setShopName(settings.shop_name);
-      setEmail(settings.email || '');
-      setBankName(settings.bank_name || '');
-      setAccountNumber(settings.account_number || '');
-      setAccountName(settings.account_name || '');
-      setShopAddress(settings.shop_address || '');
-      setReceiptFooter(settings.receipt_footer || '');
-      setAdminWhatsapp(settings.admin_whatsapp_number || '');
-      setGroupLink(settings.whatsapp_group_link || '');
+      setFormData({
+        shop_name: settings.shop_name || '',
+        email: settings.email || '',
+        bank_name: settings.bank_name || '',
+        account_number: settings.account_number || '',
+        account_name: settings.account_name || '',
+        shop_address: settings.shop_address || '',
+        receipt_footer: settings.receipt_footer || '',
+        admin_whatsapp_number: settings.admin_whatsapp_number || '',
+        whatsapp_group_link: settings.whatsapp_group_link || ''
+      });
     }
   }, [settings]);
 
@@ -90,15 +95,15 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
     setIsSaving(true);
     try {
       await db.settings.update('app_settings', {
-        shop_name: shopName, 
-        email, 
-        bank_name: bankName, 
-        account_number: accountNumber,
-        account_name: accountName, 
-        shop_address: shopAddress, 
-        receipt_footer: receiptFooter,
-        admin_whatsapp_number: adminWhatsapp,
-        whatsapp_group_link: groupLink
+        shop_name: formData.shop_name, 
+        email: formData.email, 
+        bank_name: formData.bank_name, 
+        account_number: formData.account_number,
+        account_name: formData.account_name, 
+        shop_address: formData.shop_address, 
+        receipt_footer: formData.receipt_footer,
+        admin_whatsapp_number: formData.admin_whatsapp_number,
+        whatsapp_group_link: formData.whatsapp_group_link
       });
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 3000);
@@ -148,35 +153,31 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
         <div className="md:col-span-2 space-y-8">
           {settings && <SubscriptionManager settings={settings} onSubscribe={onSubscribe} />}
 
-          {/* WhatsApp Sync Configuration Section - ADMIN ONLY */}
           <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
             <div className="flex items-center gap-3">
-              <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl"><MessageSquare size={24} /></div>
-              <h3 className="text-xl font-black text-slate-800 tracking-tight">WhatsApp Sync Configuration</h3>
+              <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl"><Printer size={24} /></div>
+              <h3 className="text-xl font-black text-slate-800 tracking-tight">Thermal Printer</h3>
             </div>
-            <div className="space-y-4">
-               <div>
-                  <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Admin WhatsApp Number</label>
-                  <input 
-                    type="text" 
-                    placeholder="e.g. 2348184774884"
-                    className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" 
-                    value={adminWhatsapp} 
-                    onChange={e => setAdminWhatsapp(e.target.value.replace(/\D/g, ''))} 
-                  />
-                  <p className="text-[10px] text-slate-400 mt-2 ml-1 italic font-medium">Format: Country code first, no plus (+) sign.</p>
-               </div>
-               <div>
-                  <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">WhatsApp Shop Group Link</label>
-                  <input 
-                    type="url" 
-                    placeholder="https://chat.whatsapp.com/..."
-                    className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" 
-                    value={groupLink} 
-                    onChange={e => setGroupLink(e.target.value)} 
-                  />
-                  <p className="text-[10px] text-slate-400 mt-2 ml-1 italic font-medium">The group where all staff will receive stock updates.</p>
-               </div>
+            <div className="flex flex-col sm:flex-row items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+              <div className="flex-1">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Printer Status</p>
+                <div className="flex items-center gap-2">
+                  {btStatus === 'connected' ? (
+                    <><div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" /><span className="font-bold text-slate-700">Connected: {BluetoothPrintService.getDeviceName()}</span></>
+                  ) : btStatus === 'unsupported' ? (
+                    <><div className="w-2 h-2 bg-rose-500 rounded-full" /><span className="font-bold text-slate-400 italic">Not Supported</span></>
+                  ) : (
+                    <><div className="w-2 h-2 bg-slate-300 rounded-full" /><span className="font-bold text-slate-400">Disconnected</span></>
+                  )}
+                </div>
+              </div>
+              <button 
+                type="button"
+                onClick={handleConnectPrinter}
+                className="px-6 py-3 bg-emerald-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest"
+              >
+                Connect Printer
+              </button>
             </div>
           </div>
 
@@ -184,20 +185,81 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
             <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
               <div className="flex items-center gap-3"><div className="p-3 bg-slate-50 text-slate-600 rounded-2xl"><Store size={24} /></div><h3 className="text-xl font-black text-slate-800 tracking-tight">Business Details</h3></div>
               <div className="space-y-4">
-                <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Shop Name</label><input type="text" className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" value={shopName} onChange={e => setShopName(e.target.value)} /></div>
-                <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Email</label><div className="relative"><Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} /><input type="email" className="w-full pl-12 pr-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" value={email} onChange={e => setEmail(e.target.value)} placeholder="business@example.com" /></div></div>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Shop Name</label>
+                  <input type="text" className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" value={formData.shop_name} onChange={e => setFormData({...formData, shop_name: e.target.value})} />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Email Address</label>
+                  <div className="relative">
+                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+                    <input type="email" className="w-full pl-12 pr-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} placeholder="business@example.com" />
+                  </div>
+                </div>
+
+                {/* WhatsApp Sync Configuration Section - STRICTLY AS REQUESTED */}
+                <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-6">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center">
+                      <MessageSquare size={20} />
+                    </div>
+                    <h3 className="font-black text-slate-800 uppercase text-xs tracking-widest">WhatsApp Sync Configuration</h3>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Owner WhatsApp Number</label>
+                      <input 
+                        type="text" 
+                        placeholder="e.g. 2348184774884" 
+                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-emerald-500"
+                        value={formData.admin_whatsapp_number || ''}
+                        onChange={e => setFormData({...formData, admin_whatsapp_number: e.target.value})}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Staff Group Invite Link</label>
+                      <input 
+                        type="text" 
+                        placeholder="https://chat.whatsapp.com/..." 
+                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-emerald-500"
+                        value={formData.whatsapp_group_link || ''}
+                        onChange={e => setFormData({...formData, whatsapp_group_link: e.target.value})}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
+              <div className="flex items-center gap-3"><div className="p-3 bg-blue-50 text-blue-600 rounded-2xl"><FileText size={24} /></div><h3 className="text-xl font-black text-slate-800 tracking-tight">Receipt Config</h3></div>
+              <div className="space-y-4">
+                <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2"><MapPin size={12} /> Address</label><textarea className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold resize-none" rows={2} value={formData.shop_address} onChange={e => setFormData({...formData, shop_address: e.target.value})} /></div>
+                <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2"><MessageCircle size={12} /> Footer Message</label><textarea className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold resize-none" rows={2} value={formData.receipt_footer} onChange={e => setFormData({...formData, receipt_footer: e.target.value})} /></div>
               </div>
             </div>
 
             <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
               <div className="flex items-center gap-3"><div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl"><Landmark size={24} /></div><h3 className="text-xl font-black text-slate-800 tracking-tight">Bank Details</h3></div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-2">Bank Name</label><input type="text" className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" value={bankName} onChange={e => setBankName(e.target.value)} /></div>
-                <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-2">Account Number</label><input type="text" maxLength={10} className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-black" value={accountNumber} onChange={e => setAccountNumber(e.target.value.replace(/\D/g, ''))} /></div>
-                <div className="md:col-span-2"><label className="block text-[10px] font-black text-slate-400 uppercase mb-2">Account Name</label><input type="text" className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold uppercase" value={accountName} onChange={e => setAccountName(e.target.value.toUpperCase())} /></div>
+                <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-2">Bank Name</label><input type="text" className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" value={formData.bank_name} onChange={e => setFormData({...formData, bank_name: e.target.value})} /></div>
+                <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-2">Account Number</label><input type="text" maxLength={10} className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-black" value={formData.account_number} onChange={e => setFormData({...formData, account_number: e.target.value.replace(/\D/g, '')})} /></div>
+                <div className="md:col-span-2"><label className="block text-[10px] font-black text-slate-400 uppercase mb-2">Account Name</label><input type="text" className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold uppercase" value={formData.account_name} onChange={e => setFormData({...formData, account_name: e.target.value.toUpperCase()})} /></div>
               </div>
             </div>
           </form>
+
+          <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
+             <div className="flex items-center gap-3"><div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl"><HelpCircle size={24} /></div><h3 className="text-xl font-black text-slate-800 tracking-tight">FAQ</h3></div>
+             <div className="divide-y divide-slate-100">
+               {filteredFaq.map((item, idx) => (
+                 <div key={idx}>
+                   <button onClick={() => setActiveFaq(activeFaq === idx ? null : idx)} className="flex items-center justify-between w-full py-5 text-left"><span className="font-black text-slate-700">{item.q}</span>{activeFaq === idx ? <ChevronUp size={20}/> : <ChevronDown size={20}/>}</button>
+                   {activeFaq === idx && <div className="pb-6 text-slate-500 font-medium leading-relaxed">{item.a}</div>}
+                 </div>
+               ))}
+             </div>
+          </div>
         </div>
 
         <div className="space-y-6">

@@ -30,8 +30,8 @@ export class NaijaShopDB extends Dexie {
   constructor() {
     super('NaijaShopDB');
     
-    // CRITICAL: Database version bumped to 38 to ensure WhatsApp configuration fields exist
-    (this as any).version(38).stores({
+    // CRITICAL: Database version bumped to 40 to ensure WhatsApp configuration fields exist
+    (this as any).version(40).stores({
       products: '++id, name, category, barcode',
       sales: '++id, sale_id, timestamp, payment_method, staff_name',
       debts: '++id, customer_name, phone, status',
