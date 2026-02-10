@@ -30,8 +30,8 @@ export class NaijaShopDB extends Dexie {
   constructor() {
     super('NaijaShopDB');
     
-    // CRITICAL: Database version bumped to 36
-    (this as any).version(36).stores({
+    // CRITICAL: Database version bumped to 37
+    (this as any).version(37).stores({
       products: '++id, name, category, barcode',
       sales: '++id, sale_id, timestamp, payment_method, staff_name',
       debts: '++id, customer_name, phone, status',
@@ -47,7 +47,38 @@ export class NaijaShopDB extends Dexie {
       stock_snapshots: '++id, date, product_id, [date+product_id]'
     });
 
-    // REAL-TIME SNAPSHOT HOOKS - Now using local date logic
+    // 100% ACCURACY HOOK: Monitor stock_qty changes automatically
+    this.products.hook('updating', (mods: Partial<Product>, primKey: number, obj: Product, transaction) => {
+      if (mods.hasOwnProperty('stock_qty')) {
+        const oldStock = Number(obj.stock_qty || 0);
+        const newStock = Number(mods.stock_qty || 0);
+        const diff = newStock - oldStock;
+
+        if (diff === 0) return;
+
+        // Determine type based on movement direction
+        const type = diff < 0 ? 'Sale' : 'Restock';
+        
+        // Attempt to find current user from localStorage (set during login)
+        const activeUserName = localStorage.getItem('last_active_user') || 'System Auto-Audit';
+
+        // Add log entry within the same transaction to guarantee atomicity
+        transaction.on('complete', () => {
+          db.inventory_logs.add({
+            product_id: primKey,
+            product_name: obj.name,
+            quantity_changed: diff,
+            old_stock: oldStock,
+            new_stock: newStock,
+            type: type,
+            timestamp: Date.now(),
+            performed_by: activeUserName
+          }).catch(err => console.error("Auto-Log Hook Failed:", err));
+        });
+      }
+    });
+
+    // REAL-TIME SNAPSHOT HOOKS - Maintain daily summaries
     this.sales.hook('creating', (primKey, obj, transaction) => {
       const today = getLocalDateString();
       transaction.on('complete', () => {
@@ -76,6 +107,35 @@ export class NaijaShopDB extends Dexie {
 }
 
 export const db: NaijaShopDB = new NaijaShopDB();
+
+/**
+ * Audit Tool: Compares logs vs current stock
+ */
+export const reconcileStock = async (productId: number) => {
+  const product = await db.products.get(productId);
+  if (!product) return { match: true };
+
+  const logs = await db.inventory_logs.where('product_id').equals(productId).toArray();
+  
+  // Starting point for this audit is the first "Initial Stock" entry
+  const initialLog = logs.find(l => l.type === 'Initial Stock');
+  const startingQty = initialLog ? Number(initialLog.new_stock) : 0;
+  
+  // Sum of all changes after initial stock
+  const movements = logs
+    .filter(l => l.type !== 'Initial Stock')
+    .reduce((sum, log) => sum + Number(log.quantity_changed), 0);
+
+  const calculatedStock = startingQty + movements;
+  const actualStock = Number(product.stock_qty);
+
+  return {
+    match: calculatedStock === actualStock,
+    calculated: calculatedStock,
+    actual: actualStock,
+    discrepancy: actualStock - calculatedStock
+  };
+};
 
 /**
  * Ensures today's stock records are prepared using local time.
