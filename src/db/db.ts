@@ -30,8 +30,8 @@ export class NaijaShopDB extends Dexie {
   constructor() {
     super('NaijaShopDB');
     
-    // CRITICAL: Database version bumped to 45 for WhatsApp Sync structural enforcement
-    (this as any).version(45).stores({
+    // CRITICAL: Database version bumped to 50 for WhatsApp Sync Relocation
+    (this as any).version(50).stores({
       products: '++id, name, category, barcode',
       sales: '++id, sale_id, timestamp, payment_method, staff_name',
       debts: '++id, customer_name, phone, status',

@@ -18,7 +18,6 @@ import {
   Printer,
   Mail,
   Loader2,
-  MessageSquare,
   User,
   MessageSquareCode
 } from 'lucide-react';
@@ -48,7 +47,7 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
   const [showSuccess, setShowSuccess] = useState(false);
   const [activeFaq, setActiveFaq] = useState<number | null>(null);
 
-  // Consolidated formData state with exact database keys
+  // Consolidated formData state without WhatsApp keys
   const [formData, setFormData] = useState({
     shop_name: '',
     admin_name: '',
@@ -56,8 +55,6 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
     bank_name: '',
     account_number: '',
     account_name: '',
-    admin_whatsapp_number: '',
-    whatsapp_group_link: '',
     shop_address: '',
     receipt_footer: ''
   });
@@ -77,8 +74,6 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
         bank_name: settings.bank_name || '',
         account_number: settings.account_number || '',
         account_name: settings.account_name || '',
-        admin_whatsapp_number: settings.admin_whatsapp_number || '',
-        whatsapp_group_link: settings.whatsapp_group_link || '',
         shop_address: settings.shop_address || '',
         receipt_footer: settings.receipt_footer || ''
       });
@@ -107,8 +102,6 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
         bank_name: formData.bank_name,
         account_number: formData.account_number,
         account_name: formData.account_name,
-        admin_whatsapp_number: formData.admin_whatsapp_number,
-        whatsapp_group_link: formData.whatsapp_group_link,
         shop_address: formData.shop_address,
         receipt_footer: formData.receipt_footer
       });
@@ -153,40 +146,6 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
           
           {/* Subscription Manager */}
           {settings && <SubscriptionManager settings={settings} onSubscribe={onSubscribe} />}
-
-          {/* Section C: WhatsApp Sync Configuration (CRITICAL - MOVED TO TOP) */}
-          <div className="bg-white p-8 rounded-[3rem] border border-emerald-100 shadow-xl space-y-6">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center">
-                <MessageSquare size={20} />
-              </div>
-              <h3 className="font-black text-slate-800 uppercase text-xs tracking-widest">WhatsApp Sync Configuration</h3>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Owner WhatsApp Number</label>
-                <input 
-                  type="text" 
-                  placeholder="e.g. 2348184774884" 
-                  className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold outline-none focus:ring-2 focus:ring-emerald-500"
-                  value={formData.admin_whatsapp_number}
-                  onChange={e => setFormData({...formData, admin_whatsapp_number: e.target.value.replace(/\D/g, '')})}
-                />
-                <p className="text-[9px] text-slate-400 mt-2 ml-1 italic font-medium">Format: Country code first (234), no plus (+) sign.</p>
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Staff Group Link</label>
-                <input 
-                  type="text" 
-                  placeholder="https://chat.whatsapp.com/..." 
-                  className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold outline-none focus:ring-2 focus:ring-emerald-500"
-                  value={formData.whatsapp_group_link}
-                  onChange={e => setFormData({...formData, whatsapp_group_link: e.target.value})}
-                />
-                <p className="text-[9px] text-slate-400 mt-2 ml-1 italic font-medium">The group where all staff will receive stock updates.</p>
-              </div>
-            </div>
-          </div>
 
           {/* Section A: Business Identity */}
           <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
@@ -288,7 +247,7 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
         {/* Floating Control Pane */}
         <div className="space-y-6">
           <div className="bg-slate-900 p-8 rounded-[3rem] text-white space-y-6 shadow-xl sticky top-6">
-            <h4 className="font-black text-lg tracking-tight">Terminal Control</h4>
+            <h4 className="font-black text-lg tracking-tight">Terminal Hardware</h4>
             
             <div className="space-y-3">
                <p className="text-[10px] font-black text-slate-500 uppercase">Hardware Options</p>
@@ -306,7 +265,7 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onSubscribe }) => {
                </button>
             </div>
 
-            <button onClick={() => handleSaveSettings()} disabled={isSaving} className="w-full py-5 bg-emerald-600 hover:bg-emerald-500 rounded-2xl font-black flex items-center justify-center gap-2 shadow-lg disabled:opacity-50">
+            <button onClick={() => handleSaveSettings()} disabled={isSaving} className="w-full py-5 bg-emerald-600 hover:bg-emerald-500 rounded-2xl font-black flex items-center justify-center gap-3 shadow-lg disabled:opacity-50">
               {isSaving ? <Loader2 size={20} className="animate-spin" /> : <Save size={20} />} Save All Changes
             </button>
             
