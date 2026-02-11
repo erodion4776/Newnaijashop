@@ -28,7 +28,8 @@ import {
   MessageSquare,
   ShieldAlert,
   Send,
-  RefreshCw
+  RefreshCw,
+  Edit2
 } from 'lucide-react';
 import { Product, SaleItem, Staff, View, ParkedOrder } from '../types';
 import BarcodeScanner from '../components/BarcodeScanner';
@@ -58,6 +59,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
   const [parkingCustomerName, setParkingCustomerName] = useState('');
   const [showParkModal, setShowParkModal] = useState(false);
   const [activeParkedId, setActiveParkedId] = useState<number | null>(null);
+  const [editingParkedOrder, setEditingParkedOrder] = useState<ParkedOrder | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const products = useLiveQuery(() => db.products.toArray()) || [];
@@ -203,6 +205,68 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
     setShowMobileCart(true);
   };
 
+  const handleUpdateParkedQty = async (productId: number, delta: number) => {
+    if (!editingParkedOrder) return;
+    
+    const product = await db.products.get(productId);
+    if (!product) return;
+
+    // IF increased: subtract from products table
+    // IF decreased: add back to products table
+    if (delta > 0 && product.stock_qty <= 0) {
+      alert(`No more ${product.name} in main stock!`);
+      return;
+    }
+
+    try {
+      await db.products.update(productId, { stock_qty: product.stock_qty - delta });
+      
+      setEditingParkedOrder(prev => {
+        if (!prev) return null;
+        const updatedItems = prev.items.map(item => {
+          if (item.productId === productId) {
+            return { ...item, quantity: item.quantity + delta };
+          }
+          return item;
+        }).filter(item => item.quantity > 0);
+
+        return {
+          ...prev,
+          items: updatedItems,
+          total: updatedItems.reduce((sum, i) => sum + (i.price * i.quantity), 0)
+        };
+      });
+    } catch (err) {
+      alert("Failed to update stock records.");
+    }
+  };
+
+  const saveEditedParkedOrder = async () => {
+    if (!editingParkedOrder || !editingParkedOrder.id) return;
+    try {
+      await db.parked_orders.update(editingParkedOrder.id, {
+        items: editingParkedOrder.items,
+        total: editingParkedOrder.total
+      });
+      
+      await db.inventory_logs.add({
+        product_id: 0,
+        product_name: `Parked Order: ${editingParkedOrder.customerName}`,
+        quantity_changed: 0,
+        old_stock: 0,
+        new_stock: 0,
+        type: 'Adjustment',
+        timestamp: Date.now(),
+        performed_by: `Parked Order Adjusted: ${currentUser?.name || 'Staff'}`
+      });
+
+      setEditingParkedOrder(null);
+      alert("Parked order updated!");
+    } catch (err) {
+      alert("Failed to save changes.");
+    }
+  };
+
   return (
     <div className="h-full flex flex-col bg-slate-50 overflow-hidden relative">
       <div className="bg-white border-b border-slate-200 px-4 py-3 shrink-0 shadow-sm flex flex-col gap-3">
@@ -329,10 +393,62 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
             {parkedOrders.map(order => (
               <div key={order.id} className="bg-white border-2 border-slate-200 rounded-2xl p-4 flex items-center justify-between shadow-sm">
-                <div><h4 className="font-black">{order.customerName}</h4><p className="text-xs text-slate-400">₦{order.total.toLocaleString()} • {new Date(order.timestamp).toLocaleTimeString()}</p></div>
-                <button onClick={() => loadParkedOrder(order)} className="px-6 py-2 bg-emerald-600 text-white rounded-xl font-bold text-xs">Load</button>
+                <div className="flex-1">
+                  <h4 className="font-black">{order.customerName}</h4>
+                  <p className="text-xs text-slate-400">₦{order.total.toLocaleString()} • {new Date(order.timestamp).toLocaleTimeString()}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => setEditingParkedOrder(order)} className="p-3 bg-slate-100 text-slate-600 rounded-xl hover:bg-slate-200"><Edit2 size={18} /></button>
+                  <button onClick={() => loadParkedOrder(order)} className="px-6 py-3 bg-emerald-600 text-white rounded-xl font-bold text-xs">Resume</button>
+                </div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {editingParkedOrder && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="bg-white rounded-[3rem] w-full max-w-md shadow-2xl overflow-hidden flex flex-col max-h-[85vh] animate-in zoom-in">
+            <div className="p-6 border-b flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-black">Edit Saved Order</h3>
+                <p className="text-[10px] text-slate-400 uppercase font-black tracking-widest">{editingParkedOrder.customerName}</p>
+              </div>
+              <button onClick={() => setEditingParkedOrder(null)} className="p-2 hover:bg-slate-50 rounded-full"><X size={24} /></button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6 space-y-3 scrollbar-hide">
+              {editingParkedOrder.items.map(item => (
+                <div key={item.productId} className="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex items-center justify-between">
+                  <div className="min-w-0 flex-1 mr-4">
+                    <h4 className="font-bold text-sm truncate">{item.name}</h4>
+                    <p className="text-xs text-emerald-600 font-black">₦{item.price.toLocaleString()}</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button onClick={() => handleUpdateParkedQty(item.productId, -1)} className="w-10 h-10 bg-white border border-slate-200 rounded-xl flex items-center justify-center text-rose-500 shadow-sm active:scale-90"><Minus size={16}/></button>
+                    <span className="w-8 text-center font-black text-lg tabular-nums">{item.quantity}</span>
+                    <button onClick={() => handleUpdateParkedQty(item.productId, 1)} className="w-10 h-10 bg-white border border-slate-200 rounded-xl flex items-center justify-center text-emerald-600 shadow-sm active:scale-90"><Plus size={16}/></button>
+                  </div>
+                </div>
+              ))}
+              {editingParkedOrder.items.length === 0 && (
+                <div className="text-center py-10">
+                  <p className="text-slate-400 italic">No items left in this order.</p>
+                </div>
+              )}
+            </div>
+            <div className="p-6 border-t bg-slate-50/50 space-y-4">
+              <div className="flex justify-between items-center px-2">
+                <span className="text-[10px] font-black uppercase text-slate-400">Revised Total</span>
+                <span className="text-2xl font-black text-slate-900">₦{editingParkedOrder.total.toLocaleString()}</span>
+              </div>
+              <button 
+                onClick={saveEditedParkedOrder} 
+                className="w-full py-5 bg-emerald-600 text-white rounded-2xl font-black text-lg shadow-xl shadow-emerald-100 active:scale-95"
+              >
+                Update Saved Order
+              </button>
+            </div>
           </div>
         </div>
       )}
