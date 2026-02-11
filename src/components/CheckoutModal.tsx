@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { 
   X, 
@@ -17,7 +16,8 @@ import {
   Receipt,
   ArrowLeft,
   Plus,
-  Zap
+  Zap,
+  Tag
 } from 'lucide-react';
 import { db } from '../db/db';
 import { SaleItem, Staff, Sale } from '../types';
@@ -44,6 +44,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
 }) => {
   const [step, setStep] = useState<CheckoutStep>('payment');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [discount, setDiscount] = useState<number>(0);
   
   // Payment State
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(null);
@@ -63,28 +64,30 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   if (!isOpen) return null;
 
-  const changeAmount = paymentMethod === 'cash' && cashAmount > total ? cashAmount - total : 0;
-  const splitPosAmount = paymentMethod === 'split' ? Math.max(0, total - splitCashAmount) : 0;
+  const finalTotal = Math.max(0, total - discount);
+  const changeAmount = paymentMethod === 'cash' && cashAmount > finalTotal ? cashAmount - finalTotal : 0;
+  const splitPosAmount = paymentMethod === 'split' ? Math.max(0, finalTotal - splitCashAmount) : 0;
 
   // Quick Cash Presets
   const cashPresets = [
-    Math.ceil(total / 1000) * 1000,
-    Math.ceil(total / 5000) * 5000,
-    Math.ceil(total / 10000) * 10000,
-  ].filter((v, i, a) => a.indexOf(v) === i && v >= total).slice(0, 3);
+    Math.ceil(finalTotal / 1000) * 1000,
+    Math.ceil(finalTotal / 5000) * 5000,
+    Math.ceil(finalTotal / 10000) * 10000,
+  ].filter((v, i, a) => a.indexOf(v) === i && v >= finalTotal).slice(0, 3);
 
-  /**
-   * FIXED: handleCompleteSale Implementation
-   * Uses proper Dexie transaction with stock validation
-   */
   const handleCompleteSale = async () => {
     if (!paymentMethod) {
       alert('Please select a payment method');
       return;
     }
 
-    if (paymentMethod === 'cash' && cashAmount < total) {
+    if (paymentMethod === 'cash' && cashAmount < finalTotal) {
       alert('Cash amount is insufficient');
+      return;
+    }
+
+    if (discount > total) {
+      alert('Discount cannot be greater than the total');
       return;
     }
 
@@ -97,8 +100,9 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
       const saleData: Sale = {
         sale_id: saleId,
         items: [...cart],
-        total_amount: total,
+        total_amount: finalTotal,
         subtotal: total,
+        discount_amount: Number(discount),
         payment_method: (paymentMethod === 'transfer' ? 'Bank Transfer' : (paymentMethod === 'split' ? 'split' : paymentMethod)) as any,
         cash_amount: paymentMethod === 'split' ? splitCashAmount : (paymentMethod === 'cash' ? cashAmount : 0),
         customer_phone: customerPhone || undefined,
@@ -110,47 +114,31 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
       let lowItems: string[] = [];
 
-      // Critical: Use a proper Dexie transaction with error handling
-      // Fix: Cast db to any because TypeScript may not correctly identify the transaction method on the extended class.
       await (db as any).transaction('rw', [db.sales, db.products, db.inventory_logs], async () => {
-        // 1. Record the Sale first
         await db.sales.add(saleData);
         
-        // 2. Process each item for stock deduction sequentially
         for (const item of cart) {
-          // Get the current product state from database
           const product = await db.products.get(item.productId);
           
-          if (!product) {
-            console.error(`Product ${item.productId} not found in database`);
-            continue;
-          }
+          if (!product) continue;
 
-          // CHECKPOINT: Skip if stock was already subtracted during a 'Park' event
           if (item.isStockAlreadyDeducted) {
-            console.log(`Stock already deducted for ${item.name} - skipping`);
-            
-            // Still check for low stock alert
             if (product.stock_qty <= Number(product.low_stock_threshold || 5)) {
               lowItems.push(product.name);
             }
             continue;
           }
 
-          // Calculate new stock level
           const currentStock = Number(product.stock_qty || 0);
           const soldQty = Number(item.quantity || 0);
           const newStock = Math.max(0, currentStock - soldQty);
           
-          // Validate we have enough stock
           if (currentStock < soldQty) {
             throw new Error(`Insufficient stock for ${product.name}. Available: ${currentStock}, Required: ${soldQty}`);
           }
           
-          // Update product stock - this is the critical operation
           await db.products.update(item.productId, { stock_qty: newStock });
           
-          // Create an inventory log for the audit trail
           await db.inventory_logs.add({
             product_id: item.productId,
             product_name: product.name,
@@ -162,7 +150,6 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
             performed_by: currentUser?.name || 'Staff'
           });
 
-          // Check for low stock alert
           if (newStock <= Number(product.low_stock_threshold || 5)) {
             lowItems.push(product.name);
           }
@@ -172,9 +159,10 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
       setIsProcessing(false);
       onComplete(saleData, lowItems);
       
-      // UI Reset
+      // Reset
       setStep('payment');
       setPaymentMethod(null);
+      setDiscount(0);
       setCashAmount(total);
       setCustomerName('');
       setCustomerPhone('');
@@ -188,9 +176,30 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   const renderPaymentStep = () => (
     <div className="space-y-6 animate-in slide-in-from-right duration-300">
-      <div className="text-center">
-        <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Total Payable</h3>
-        <p className="text-5xl font-black text-emerald-600">₦{total.toLocaleString()}</p>
+      <div className="text-center space-y-2">
+        <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Payable</h3>
+        <div className="flex flex-col items-center">
+          {discount > 0 && (
+            <p className="text-sm font-bold text-slate-400 line-through">₦{total.toLocaleString()}</p>
+          )}
+          <p className="text-5xl font-black text-emerald-600">₦{finalTotal.toLocaleString()}</p>
+        </div>
+      </div>
+
+      <div className="bg-white p-4 border border-slate-100 rounded-2xl flex items-center gap-3">
+        <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center shrink-0">
+          <Tag size={20} />
+        </div>
+        <div className="flex-1">
+          <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Apply Discount / Jara (₦)</label>
+          <input 
+            type="number" 
+            placeholder="Enter discount amount..." 
+            className="w-full bg-transparent font-black text-lg outline-none text-emerald-600"
+            value={discount || ''}
+            onChange={(e) => setDiscount(Math.max(0, Number(e.target.value)))}
+          />
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
@@ -204,7 +213,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
             key={method.id}
             onClick={() => {
               setPaymentMethod(method.id);
-              if (method.id === 'cash') setCashAmount(total);
+              if (method.id === 'cash') setCashAmount(finalTotal);
             }}
             className={`p-6 rounded-3xl border-2 flex flex-col items-center gap-3 transition-all active:scale-95 ${
               paymentMethod === method.id
@@ -256,7 +265,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
               inputMode="numeric"
               className="w-full px-5 py-4 text-2xl font-black text-center bg-white border-2 border-amber-200 rounded-2xl outline-none"
               value={splitCashAmount || ''}
-              onChange={(e) => setSplitCashAmount(Math.min(total, Number(e.target.value)))}
+              onChange={(e) => setSplitCashAmount(Math.min(finalTotal, Number(e.target.value)))}
             />
           </div>
           <div className="text-center"><Plus size={16} className="mx-auto text-amber-300" /></div>
@@ -269,21 +278,10 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
         </div>
       )}
 
-      {(paymentMethod === 'transfer' || paymentMethod === 'pos') && (
-        <div className={`${paymentMethod === 'transfer' ? 'bg-blue-50 border-blue-100' : 'bg-purple-50 border-purple-100'} p-6 rounded-3xl text-center space-y-2 animate-in slide-in-from-top-2`}>
-           <div className={`w-12 h-12 ${paymentMethod === 'transfer' ? 'bg-blue-100 text-blue-600' : 'bg-purple-100 text-purple-600'} rounded-full flex items-center justify-center mx-auto mb-2`}>
-             {paymentMethod === 'transfer' ? <Building2 size={24} /> : <CreditCard size={24} />}
-           </div>
-           <p className="text-xs font-bold text-slate-700">
-             {paymentMethod === 'transfer' ? 'Confirm bank alert before continuing.' : 'Verify transaction approval on POS device.'}
-           </p>
-        </div>
-      )}
-
       {paymentMethod && (
         <button
           onClick={() => setStep('details')}
-          disabled={paymentMethod === 'cash' && cashAmount < total}
+          disabled={paymentMethod === 'cash' && cashAmount < finalTotal}
           className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-lg shadow-xl shadow-emerald-200 hover:bg-emerald-700 transition-all flex items-center justify-center gap-3"
         >
           Customer Details <ArrowRight size={24} />
@@ -356,9 +354,19 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
         </div>
 
         <div className="pt-4 border-t border-slate-200 space-y-2">
-          <div className="flex justify-between items-center font-black">
-            <span className="text-slate-900 uppercase text-xs">Grand Total</span>
-            <span className="text-3xl text-emerald-600">₦{total.toLocaleString()}</span>
+          <div className="flex justify-between items-center">
+            <span className="text-slate-400 text-[10px] font-black uppercase">Subtotal</span>
+            <span className="text-sm font-bold text-slate-600">₦{total.toLocaleString()}</span>
+          </div>
+          {discount > 0 && (
+            <div className="flex justify-between items-center">
+              <span className="text-rose-400 text-[10px] font-black uppercase">Discount (Jara)</span>
+              <span className="text-sm font-black text-rose-600">-₦{discount.toLocaleString()}</span>
+            </div>
+          )}
+          <div className="flex justify-between items-center font-black mt-2">
+            <span className="text-slate-900 uppercase text-xs">Total Paid</span>
+            <span className="text-3xl text-emerald-600">₦{finalTotal.toLocaleString()}</span>
           </div>
         </div>
       </div>
@@ -400,7 +408,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
         <div className="px-8 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-center gap-2 opacity-30">
            <Zap size={12} className="text-emerald-600" />
-           <span className="text-[8px] font-black uppercase tracking-widest">Terminal Transaction Engine v3.2</span>
+           <span className="text-[8px] font-black uppercase tracking-widest">Terminal Transaction Engine v3.3</span>
         </div>
       </div>
     </div>

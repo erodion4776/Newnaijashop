@@ -55,6 +55,7 @@ export interface Sale {
   items: SaleItem[];
   total_amount: number;
   subtotal?: number;
+  discount_amount: number;
   tax?: number;
   payment_method: 'cash' | 'transfer' | 'pos' | 'split' | 'Bank Transfer';
   cash_amount?: number;
