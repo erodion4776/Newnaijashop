@@ -77,7 +77,7 @@ const Layout: React.FC<LayoutProps> = ({
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, restrict: true },
     { id: 'pos', label: 'Point of Sale', icon: ShoppingCart, restrict: false },
     { id: 'business-hub', label: 'Business Hub', icon: Lightbulb, restrict: true },
-    { id: 'activity-log', label: 'Activity Log', icon: History, restrict: true },
+    { id: 'activity-log', label: 'Activity Log', icon: History, restrict: false },
     { id: 'audit-trail', label: 'Security Logs', icon: ShieldIcon, restrict: true },
     { id: 'expense-tracker', label: 'Expense Tracker', icon: TrendingDown, restrict: true },
     { id: 'transfer-station', label: 'Transfer Station', icon: Landmark, restrict: false },
@@ -111,7 +111,6 @@ const Layout: React.FC<LayoutProps> = ({
   const renderTrialWidget = () => {
     if (!trialRemaining) return null;
 
-    // Use dynamic percentage and total period from the unified calculation
     const percentage = trialRemaining.percentage;
     const isUrgent = !isSubscribed && trialRemaining.days < 5;
 
@@ -163,7 +162,7 @@ const Layout: React.FC<LayoutProps> = ({
           {showAllFeatures && (
             <button 
               onClick={() => setShowClosingModal(true)}
-              className="w-full flex items-center justify-center gap-2 py-4 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-emerald-500 transition-all shadow-xl shadow-emerald-950/20 active:scale-95"
+              className="w-full flex items-center justify-center gap-2 py-4 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-emerald-50 transition-all shadow-xl shadow-emerald-950/20 active:scale-95"
             >
               <Moon size={16} /> Close Shop for Today
             </button>

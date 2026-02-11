@@ -87,7 +87,8 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
         p.category?.toLowerCase().includes(term)
       );
     }
-    return filtered.filter(p => p.stock_qty > 0);
+    // Updated: Remove the > 0 filter to allow "Out of Stock" visibility as requested
+    return filtered;
   }, [products, selectedCategory, searchTerm]);
 
   const cartSummary = useMemo(() => {
@@ -114,6 +115,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
           if (!item.isStockAlreadyDeducted) {
             const oldStock = Number(product.stock_qty);
             const soldQty = Number(item.quantity);
+            if (oldStock < soldQty && currentUser?.role === 'Sales') throw new Error(`Insufficient stock for ${product.name}`);
             const newStock = Math.max(0, oldStock - soldQty);
             await db.products.update(item.productId, { stock_qty: newStock });
             await db.inventory_logs.add({
@@ -212,15 +214,39 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
         <div className="flex-1 overflow-y-auto p-4 pb-32 scrollbar-hide">
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-            {filteredProducts.map(product => (
-              <button key={product.id} onClick={() => addToCart(product, 1)} className="group bg-white border border-slate-200 rounded-2xl p-4 text-left hover:border-emerald-500 hover:shadow-lg transition-all active:scale-95 flex flex-col h-full">
-                <span className="text-[10px] font-black px-2 py-1 bg-slate-100 rounded-lg text-slate-500 uppercase self-start mb-3">{product.category}</span>
-                <h4 className="font-bold text-sm text-slate-800 line-clamp-2 mb-2 flex-1">{product.name}</h4>
-                <div className="flex items-center justify-between mt-auto">
-                  <span className="text-lg font-black text-emerald-600">₦{product.price.toLocaleString()}</span>
-                </div>
-              </button>
-            ))}
+            {filteredProducts.map(product => {
+              const isLowStock = product.stock_qty > 0 && product.stock_qty <= 5;
+              const isOutOfStock = product.stock_qty <= 0;
+              
+              return (
+                <button 
+                  key={product.id} 
+                  onClick={() => !isOutOfStock && addToCart(product, 1)} 
+                  disabled={isOutOfStock}
+                  className={`group bg-white border border-slate-200 rounded-2xl p-4 text-left transition-all flex flex-col h-full ${isOutOfStock ? 'opacity-60 cursor-not-allowed bg-slate-50' : 'hover:border-emerald-500 hover:shadow-lg active:scale-95'}`}
+                >
+                  <span className="text-[10px] font-black px-2 py-1 bg-slate-100 rounded-lg text-slate-500 uppercase self-start mb-3">{product.category}</span>
+                  <h4 className="font-bold text-sm text-slate-800 line-clamp-2 mb-2 flex-1">{product.name}</h4>
+                  <div className="mt-auto pt-2">
+                    {/* Stock Display Indicator */}
+                    <div className={`text-[10px] mb-1 font-bold ${isOutOfStock ? 'text-rose-600 font-black' : isLowStock ? 'text-amber-600 font-black' : 'text-slate-400'}`}>
+                      {isOutOfStock ? (
+                        'OUT OF STOCK'
+                      ) : isLowStock ? (
+                        `⚠️ Only ${product.stock_qty} Left`
+                      ) : (
+                        `${product.stock_qty} Units Available`
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className={`text-lg font-black ${isOutOfStock ? 'text-slate-400' : 'text-emerald-600'}`}>
+                        ₦{product.price.toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>

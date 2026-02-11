@@ -30,6 +30,7 @@ const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-998
 const MASTER_RECOVERY_PIN = "9999";
 const PAYSTACK_PUBLIC_KEY = (import.meta as any).env?.VITE_PAYSTACK_PUBLIC_KEY || "pk_live_f001150495f27092c42d3d34d35e07663f707f15";
 
+// Fix: Updated getLicenseRemainingTime to include hours and minutes to resolve type mismatch on Layout prop
 export const getLicenseRemainingTime = (settings: any) => {
   const now = Date.now();
   const isSubscribed = !!settings?.isSubscribed;
@@ -39,8 +40,10 @@ export const getLicenseRemainingTime = (settings: any) => {
   let expiry = isSubscribed ? (settings?.license_expiry || (now + proPeriod)) : ((settings?.installationDate || now) + trialPeriod);
   const totalMs = Math.max(0, expiry - now);
   const days = Math.floor(totalMs / (24 * 60 * 60 * 1000));
+  const hours = Math.floor((totalMs % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
+  const minutes = Math.floor((totalMs % (60 * 60 * 1000)) / (60 * 1000));
   const percentage = (totalMs / totalPeriod) * 100;
-  return { days, percentage, totalMs, totalPeriod, label: isSubscribed ? 'Pro License' : 'Free Trial' };
+  return { days, hours, minutes, percentage, totalMs, totalPeriod, label: isSubscribed ? 'Pro License' : 'Free Trial' };
 };
 
 interface ErrorBoundaryProps { children?: ReactNode; }

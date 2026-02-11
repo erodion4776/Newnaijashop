@@ -22,7 +22,8 @@ import {
   ShieldAlert as ShieldIcon,
   Lightbulb,
   Moon,
-  Zap
+  Zap,
+  ClipboardCheck
 } from 'lucide-react';
 import { View, Staff } from '../types';
 import ClosingReport from './ClosingReport';
@@ -44,7 +45,16 @@ interface LayoutProps {
   onLogout: () => void;
   canInstall?: boolean;
   onInstall?: () => void;
-  trialRemaining?: { days: number, hours: number, minutes: number, totalMs: number };
+  // Fix: Added hours and minutes to trialRemaining type to resolve mismatch error in App.tsx
+  trialRemaining?: { 
+    days: number, 
+    hours: number, 
+    minutes: number, 
+    percentage: number, 
+    totalMs: number, 
+    label: string, 
+    totalPeriod: number 
+  };
   isSubscribed?: boolean;
   onSubscribe?: () => void;
 }
@@ -77,12 +87,13 @@ const Layout: React.FC<LayoutProps> = ({
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, restrict: true },
     { id: 'pos', label: 'Point of Sale', icon: ShoppingCart, restrict: false },
     { id: 'business-hub', label: 'Business Hub', icon: Lightbulb, restrict: true },
-    { id: 'activity-log', label: 'Activity Log', icon: History, restrict: true },
+    { id: 'activity-log', label: 'Activity Log', icon: History, restrict: false },
     { id: 'audit-trail', label: 'Security Logs', icon: ShieldIcon, restrict: true },
     { id: 'expense-tracker', label: 'Expense Tracker', icon: TrendingDown, restrict: true },
     { id: 'transfer-station', label: 'Transfer Station', icon: Landmark, restrict: false },
     { id: 'inventory', label: 'Inventory', icon: Package, restrict: false },
     { id: 'inventory-ledger', label: 'Inventory Ledger', icon: ClipboardList, restrict: true },
+    { id: 'stock-audit', label: 'Stock Audit', icon: ClipboardCheck, restrict: true },
     { id: 'debts', label: 'Debt Tracker', icon: Users, restrict: true },
     { id: 'staff-management', label: 'Manage Staff', icon: UserCog, restrict: true },
     { id: 'security-backups', label: 'Security & Backup', icon: Database, restrict: true },
@@ -108,15 +119,15 @@ const Layout: React.FC<LayoutProps> = ({
   };
 
   const renderTrialWidget = () => {
-    if (isSubscribed || !trialRemaining) return null;
-    const percentage = Math.max(0, (trialRemaining.totalMs / (30 * 24 * 60 * 60 * 1000)) * 100);
-    const isUrgent = trialRemaining.days < 5;
+    if (!trialRemaining) return null;
+    const percentage = trialRemaining.percentage;
+    const isUrgent = !isSubscribed && trialRemaining.days < 5;
     return (
       <div className="px-4 py-3 bg-white/5 rounded-2xl border border-white/10 mb-4 mx-4">
         <div className="flex items-center justify-between mb-2">
            <div className="flex items-center gap-1.5">
               <Zap size={12} className={isUrgent ? 'text-rose-400' : 'text-emerald-400'} />
-              <span className="text-[9px] font-black uppercase text-white/60">Free Trial</span>
+              <span className="text-[9px] font-black uppercase text-white/60">{trialRemaining.label}</span>
            </div>
            <span className={`text-[10px] font-black ${isUrgent ? 'text-rose-400' : 'text-white'}`}>{trialRemaining.days} Days Left</span>
         </div>

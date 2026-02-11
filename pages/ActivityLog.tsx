@@ -88,7 +88,8 @@ const ActivityLog: React.FC<ActivityLogProps> = ({ currentUser }) => {
     if (!sales) return stats;
     sales.forEach(sale => {
       const method = sale.payment_method.toLowerCase();
-      stats.interest += calculateInterest(sale);
+      if (!isSales) stats.interest += calculateInterest(sale);
+      
       if (method === 'cash') stats.cash += sale.total_amount;
       else if (method === 'transfer' || method === 'bank transfer') stats.transfer += sale.total_amount;
       else if (method === 'pos' || method === 'card') stats.pos += sale.total_amount;
@@ -205,7 +206,7 @@ const ActivityLog: React.FC<ActivityLogProps> = ({ currentUser }) => {
           <div className="bg-white rounded-[3rem] w-full max-w-md shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
             <div className="p-6 border-b flex items-center justify-between">
               <h3 className="text-xl font-black text-slate-900">Sale Details</h3>
-              <button onClick={() => setSelectedSale(null)} className="p-2 hover:bg-slate-100 rounded-full"><X size={24} /></button>
+              <button onClick={() => setSelectedSale(null)} className="p-2 hover:bg-slate-100 rounded-full transition-all text-slate-400"><X size={24} /></button>
             </div>
             <div className="flex-1 overflow-y-auto p-8 space-y-6">
                <div className="text-center pb-6 border-b-2 border-dashed border-slate-100">
