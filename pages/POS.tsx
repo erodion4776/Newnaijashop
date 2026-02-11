@@ -254,12 +254,30 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
     setCart(cart.map(i => i.productId === productId ? { ...i, quantity: newQuantity } : i));
   };
 
-  const loadParkedOrder = (order: ParkedOrder) => {
+  /**
+   * FIX: Resumption Logic
+   * Sequence: Capture items -> Update cart -> Wipe from database -> Close modals
+   * Flags: Preserves isStockAlreadyDeducted to prevent double stock reduction
+   */
+  const loadParkedOrder = async (order: ParkedOrder) => {
     if (cart.length > 0 && !confirm('Current cart will be replaced. Continue?')) return;
+    
+    // 1. Update the active cart state with these items (preserves isStockAlreadyDeducted: true)
     setCart([...order.items]);
-    setActiveParkedId(order.id || null);
+    
+    // 2. IMMEDIATELY wipe it from the database to remove it from the list
+    if (order.id) {
+      try {
+        await db.parked_orders.delete(order.id);
+      } catch (err) {
+        console.error("Critical failure deleting resumed order:", err);
+      }
+    }
+    
+    // 3. UI Sync
+    setActiveParkedId(null); // Since it is deleted from DB, it is a new cart session
     setShowParkedOrders(false);
-    setShowMobileCart(true);
+    setShowMobileCart(true); // Ensure cart visibility on mobile
   };
 
   const handleUpdateParkedQty = async (productId: number, delta: number) => {
