@@ -1,6 +1,5 @@
 import React, { useState, useEffect, ReactNode, Component } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useLocation } from 'react-router-dom';
 import { db, initSettings } from './db/db';
 import { View, Staff, SaleItem, Product } from './types';
 import Layout from './components/Layout';
@@ -21,17 +20,9 @@ import ActivationPage from './pages/ActivationPage';
 import SetupShop from './pages/SetupShop';
 import LandingPage from './pages/LandingPage';
 import StockAudit from './pages/StockAudit';
-import SupportChat from './components/SupportChat';
 import { 
   AlertTriangle,
   ShieldAlert,
-  X,
-  Smartphone,
-  MessageSquare,
-  Key,
-  ShieldCheck,
-  CheckCircle2,
-  Lock,
   CreditCard
 } from 'lucide-react';
 
@@ -71,7 +62,6 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
         </div>
       );
     }
-    // Fix: Access children via (this as any).props to resolve property missing error on ErrorBoundary type
     return (this as any).props.children;
   }
 }
@@ -164,12 +154,12 @@ const AppContent: React.FC = () => {
           </div>
           <div className="bg-white p-10 rounded-[3rem] shadow-2xl border border-slate-200">
             <form onSubmit={handleLoginSubmit} className="space-y-6">
-              <select required className="w-full px-5 py-4 bg-slate-50 border rounded-2xl font-bold" value={selectedStaffId} onChange={(e) => setSelectedStaffId(Number(e.target.value))}>
+              <select required className="w-full px-5 py-4 bg-slate-50 border rounded-2xl font-bold outline-none focus:ring-2 focus:ring-emerald-500" value={selectedStaffId} onChange={(e) => setSelectedStaffId(Number(e.target.value))}>
                 <option value="">Select Account</option>
                 {staffList.map(s => <option key={s.id} value={s.id!}>{s.name} ({s.role})</option>)}
               </select>
-              <input required type="password" placeholder="PIN" className="w-full px-5 py-4 bg-slate-50 border rounded-2xl font-bold" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} />
-              <button type="submit" className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-xl shadow-xl">Unlock Terminal</button>
+              <input required type="password" placeholder="PIN" className="w-full px-5 py-4 bg-slate-50 border rounded-2xl font-bold outline-none focus:ring-2 focus:ring-emerald-500" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} />
+              <button type="submit" className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-xl shadow-xl hover:bg-emerald-700 transition-all active:scale-[0.98]">Unlock Terminal</button>
             </form>
           </div>
         </div>
