@@ -159,6 +159,52 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
     } catch (err: any) { alert(`Failed: ${err instanceof Error ? err.message : 'Error'}`); }
   };
 
+  /**
+   * THE RETURN STOCK ENGINE
+   * STRICT INSTRUCTION: Atomic return of quantities and audit logging
+   */
+  const handleDeleteParkedOrder = async (orderId: number) => {
+    if (!confirm('Do you want to delete this order and return the items to your stock?')) return;
+
+    try {
+      await (db as any).transaction('rw', [db.products, db.inventory_logs, db.parked_orders], async () => {
+        const order = await db.parked_orders.get(orderId);
+        if (!order) return;
+
+        for (const item of order.items) {
+          // Only return stock if it was actually deducted when parked
+          if (item.isStockAlreadyDeducted) {
+            const product = await db.products.get(item.productId);
+            if (product) {
+              const oldStock = Number(product.stock_qty || 0);
+              const returnedQty = Number(item.quantity || 0);
+              const newStock = oldStock + returnedQty;
+              
+              await db.products.update(item.productId, { stock_qty: newStock });
+              
+              await db.inventory_logs.add({
+                product_id: item.productId,
+                product_name: product.name,
+                quantity_changed: returnedQty,
+                old_stock: oldStock,
+                new_stock: newStock,
+                type: 'Return',
+                timestamp: Date.now(),
+                performed_by: `Parked Order Deleted: ${currentUser?.name || 'Staff'}`
+              });
+            }
+          }
+        }
+        // Delete the order after successful stock return
+        await db.parked_orders.delete(orderId);
+      });
+      alert('Order deleted and stock returned!');
+    } catch (err) {
+      console.error("Failed to delete parked order:", err);
+      alert('Failed to return stock. Order was not deleted.');
+    }
+  };
+
   const addToCart = (product: Product, quantity: number = 1) => {
     const existing = cart.find(item => item.productId === product.id);
     const newQty = existing ? existing.quantity + quantity : quantity;
@@ -439,19 +485,45 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
       {showParkedOrders && (
         <div className="fixed inset-0 z-[200] bg-white flex flex-col animate-in slide-in-from-right">
           <div className="p-6 border-b flex items-center justify-between"><div><h3 className="text-2xl font-black">Parked Orders</h3></div><button onClick={() => setShowParkedOrders(false)}><X size={24} /></button></div>
-          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          <div className="flex-1 overflow-y-auto p-4 space-y-3 scrollbar-hide">
             {parkedOrders.map(order => (
               <div key={order.id} className="bg-white border-2 border-slate-200 rounded-2xl p-4 flex items-center justify-between shadow-sm">
-                <div className="flex-1">
-                  <h4 className="font-black">{order.customerName}</h4>
+                <div className="flex-1 min-w-0 mr-4">
+                  <h4 className="font-black truncate">{order.customerName}</h4>
                   <p className="text-xs text-slate-400">₦{order.total.toLocaleString()} • {new Date(order.timestamp).toLocaleTimeString()}</p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button onClick={() => setEditingParkedOrder(order)} className="p-3 bg-slate-100 text-slate-600 rounded-xl hover:bg-slate-200"><Edit2 size={18} /></button>
-                  <button onClick={() => loadParkedOrder(order)} className="px-6 py-3 bg-emerald-600 text-white rounded-xl font-bold text-xs">Resume</button>
+                  <button 
+                    onClick={() => setEditingParkedOrder(order)} 
+                    className="p-3 bg-slate-100 text-slate-600 rounded-xl hover:bg-slate-200 transition-all active:scale-90"
+                    title="Edit Order"
+                  >
+                    <Edit2 size={18} />
+                  </button>
+                  <button 
+                    onClick={() => order.id && handleDeleteParkedOrder(order.id)} 
+                    className="p-3 bg-rose-50 text-rose-600 rounded-xl hover:bg-rose-100 transition-all active:scale-90"
+                    title="Delete Order & Return Stock"
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                  <button 
+                    onClick={() => loadParkedOrder(order)} 
+                    className="px-6 py-3 bg-emerald-600 text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-md hover:bg-emerald-700 transition-all active:scale-95"
+                  >
+                    Resume
+                  </button>
                 </div>
               </div>
             ))}
+            {parkedOrders.length === 0 && (
+              <div className="h-full flex flex-col items-center justify-center text-center p-12 space-y-4">
+                 <div className="w-20 h-20 bg-slate-50 text-slate-200 rounded-full flex items-center justify-center">
+                   <RotateCcw size={40} />
+                 </div>
+                 <p className="text-slate-400 font-bold">No parked orders found.</p>
+              </div>
+            )}
           </div>
         </div>
       )}
