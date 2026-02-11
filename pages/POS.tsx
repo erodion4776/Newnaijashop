@@ -60,6 +60,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
   const [showParkModal, setShowParkModal] = useState(false);
   const [activeParkedId, setActiveParkedId] = useState<number | null>(null);
   const [editingParkedOrder, setEditingParkedOrder] = useState<ParkedOrder | null>(null);
+  const [editSearchTerm, setEditSearchTerm] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const products = useLiveQuery(() => db.products.toArray()) || [];
@@ -98,6 +99,15 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
   }, [cart]);
 
   const { total } = cartSummary; // Helper for modal props
+
+  const editModalSearchResults = useMemo(() => {
+    if (!editSearchTerm.trim()) return [];
+    const term = editSearchTerm.toLowerCase();
+    return products.filter(p => 
+      p.name.toLowerCase().includes(term) || 
+      p.barcode?.includes(term)
+    ).slice(0, 5);
+  }, [products, editSearchTerm]);
 
   const handleBarcodeScan = (barcode: string) => {
     const product = products.find(p => p.barcode === barcode);
@@ -144,7 +154,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
           timestamp: Date.now()
         });
       });
-      setCart([]); setParkingCustomerName(''); setShowParkModal(false); setShowMobileCart(false); setActiveParkedId(null);
+      setCart([]); setParkingCustomerName(''); setShowParkModal(false) ; setShowMobileCart(false); setActiveParkedId(null);
       alert('Order parked!');
     } catch (err: any) { alert(`Failed: ${err instanceof Error ? err.message : 'Error'}`); }
   };
@@ -183,7 +193,8 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
     }
   };
 
-  const onCompleteSale = async (sale: any, lowItems: string[]) => { // FIXED: Renamed for instruction match
+  // Fix: Renamed onCompleteSale to handleCheckoutComplete to match the name used in line 546
+  const handleCheckoutComplete = async (sale: any, lowItems: string[]) => {
     setCart([]);
     setShowCheckoutModal(false);
     setShowMobileCart(false);
@@ -211,8 +222,6 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
     const product = await db.products.get(productId);
     if (!product) return;
 
-    // IF increased: subtract from products table
-    // IF decreased: add back to products table
     if (delta > 0 && product.stock_qty <= 0) {
       alert(`No more ${product.name} in main stock!`);
       return;
@@ -238,6 +247,46 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
       });
     } catch (err) {
       alert("Failed to update stock records.");
+    }
+  };
+
+  const handleAddProductToParkedOrder = async (product: Product) => {
+    if (!editingParkedOrder) return;
+    if (product.stock_qty <= 0) {
+      alert(`Oga, ${product.name} is out of stock!`);
+      return;
+    }
+
+    try {
+      // Deduct stock immediately
+      await db.products.update(product.id!, { stock_qty: product.stock_qty - 1 });
+      
+      // Update local edit state
+      setEditingParkedOrder(prev => {
+        if (!prev) return null;
+        const existing = prev.items.find(i => i.productId === product.id);
+        let updatedItems;
+        if (existing) {
+          updatedItems = prev.items.map(i => i.productId === product.id ? { ...i, quantity: i.quantity + 1 } : i);
+        } else {
+          updatedItems = [...prev.items, { 
+            productId: product.id!, 
+            name: product.name, 
+            price: product.price, 
+            quantity: 1,
+            isStockAlreadyDeducted: true 
+          }];
+        }
+        
+        return {
+          ...prev,
+          items: updatedItems,
+          total: updatedItems.reduce((sum, i) => sum + (i.price * i.quantity), 0)
+        };
+      });
+      setEditSearchTerm('');
+    } catch (err) {
+      alert("Failed to add product.");
     }
   };
 
@@ -415,27 +464,63 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
                 <h3 className="text-xl font-black">Edit Saved Order</h3>
                 <p className="text-[10px] text-slate-400 uppercase font-black tracking-widest">{editingParkedOrder.customerName}</p>
               </div>
-              <button onClick={() => setEditingParkedOrder(null)} className="p-2 hover:bg-slate-50 rounded-full"><X size={24} /></button>
+              <button onClick={() => { setEditingParkedOrder(null); setEditSearchTerm(''); }} className="p-2 hover:bg-slate-50 rounded-full"><X size={24} /></button>
             </div>
-            <div className="flex-1 overflow-y-auto p-6 space-y-3 scrollbar-hide">
-              {editingParkedOrder.items.map(item => (
-                <div key={item.productId} className="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex items-center justify-between">
-                  <div className="min-w-0 flex-1 mr-4">
-                    <h4 className="font-bold text-sm truncate">{item.name}</h4>
-                    <p className="text-xs text-emerald-600 font-black">₦{item.price.toLocaleString()}</p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <button onClick={() => handleUpdateParkedQty(item.productId, -1)} className="w-10 h-10 bg-white border border-slate-200 rounded-xl flex items-center justify-center text-rose-500 shadow-sm active:scale-90"><Minus size={16}/></button>
-                    <span className="w-8 text-center font-black text-lg tabular-nums">{item.quantity}</span>
-                    <button onClick={() => handleUpdateParkedQty(item.productId, 1)} className="w-10 h-10 bg-white border border-slate-200 rounded-xl flex items-center justify-center text-emerald-600 shadow-sm active:scale-90"><Plus size={16}/></button>
-                  </div>
+            <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-hide">
+              {/* Search to add new items */}
+              <div className="relative space-y-2">
+                <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Search to add new items</label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
+                  <input 
+                    type="text" 
+                    placeholder="Type product name..." 
+                    className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
+                    value={editSearchTerm}
+                    onChange={(e) => setEditSearchTerm(e.target.value)}
+                  />
                 </div>
-              ))}
-              {editingParkedOrder.items.length === 0 && (
-                <div className="text-center py-10">
-                  <p className="text-slate-400 italic">No items left in this order.</p>
-                </div>
-              )}
+                {editModalSearchResults.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 z-[310] mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden animate-in fade-in slide-in-from-top-2">
+                    {editModalSearchResults.map(product => (
+                      <button 
+                        key={product.id} 
+                        onClick={() => handleAddProductToParkedOrder(product)}
+                        className="w-full px-4 py-3 text-left hover:bg-emerald-50 flex items-center justify-between border-b last:border-0 border-slate-100 transition-colors"
+                      >
+                        <div className="min-w-0">
+                          <p className="font-bold text-sm text-slate-800 truncate">{product.name}</p>
+                          <p className="text-[10px] text-slate-400 uppercase font-black">{product.stock_qty} left • ₦{product.price.toLocaleString()}</p>
+                        </div>
+                        <Plus size={16} className="text-emerald-500" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Current items in order */}
+              <div className="space-y-3">
+                <p className="text-[10px] font-black uppercase text-slate-400 ml-1">Items in this order</p>
+                {editingParkedOrder.items.map(item => (
+                  <div key={item.productId} className="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex items-center justify-between">
+                    <div className="min-w-0 flex-1 mr-4">
+                      <h4 className="font-bold text-sm truncate">{item.name}</h4>
+                      <p className="text-xs text-emerald-600 font-black">₦{item.price.toLocaleString()}</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <button onClick={() => handleUpdateParkedQty(item.productId, -1)} className="w-10 h-10 bg-white border border-slate-200 rounded-xl flex items-center justify-center text-rose-500 shadow-sm active:scale-90"><Minus size={16}/></button>
+                      <span className="w-8 text-center font-black text-lg tabular-nums">{item.quantity}</span>
+                      <button onClick={() => handleUpdateParkedQty(item.productId, 1)} className="w-10 h-10 bg-white border border-slate-200 rounded-xl flex items-center justify-center text-emerald-600 shadow-sm active:scale-90"><Plus size={16}/></button>
+                    </div>
+                  </div>
+                ))}
+                {editingParkedOrder.items.length === 0 && (
+                  <div className="text-center py-10">
+                    <p className="text-slate-400 italic">No items left in this order.</p>
+                  </div>
+                )}
+              </div>
             </div>
             <div className="p-6 border-t bg-slate-50/50 space-y-4">
               <div className="flex justify-between items-center px-2">
@@ -459,7 +544,7 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
         cart={cart} 
         total={total} 
         currentUser={currentUser} 
-        onComplete={onCompleteSale} 
+        onComplete={handleCheckoutComplete} 
       />
     </div>
   );
