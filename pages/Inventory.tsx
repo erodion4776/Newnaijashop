@@ -150,6 +150,10 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
     } finally { setIsSyncing(false); }
   };
 
+  /**
+   * DATABASE ENGINE: handleRestock
+   * STRICT INSTRUCTION: Atomic stock update with ledger logging
+   */
   const handleRestock = async (productId: number, amountToAdd: number) => {
     const product = await db.products.get(productId);
     if (product) {
@@ -169,7 +173,7 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
         new_stock: newTotal,
         type: 'Restock',
         timestamp: Date.now(),
-        performed_by: currentUser?.name || 'Admin'
+        performed_by: currentUser?.role === 'Admin' ? 'Admin' : (currentUser?.name || 'Staff')
       });
     }
   };
