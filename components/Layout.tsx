@@ -86,7 +86,7 @@ const Layout: React.FC<LayoutProps> = ({
     { id: 'stock-audit', label: 'Stock Audit', icon: ClipboardCheck, restrict: true },
     { id: 'debts', label: 'Debt Tracker', icon: Users, restrict: true },
     { id: 'staff-management', label: 'Manage Staff', icon: UserCog, restrict: true },
-    { id: 'security-backups', label: 'Security & Backup', icon: Database, restrict: true },
+    { id: 'security-backups', label: 'Security & Backup', icon: Database, restrict: false },
     { id: 'settings', label: 'Settings', icon: SettingsIcon, restrict: true },
   ];
 

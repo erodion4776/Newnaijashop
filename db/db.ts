@@ -105,6 +105,13 @@ export const initializeDailyStock = async () => {
   return existingCount;
 };
 
+// Helper to generate a random security key
+const generateKey = () => {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ0123456789';
+  const part = () => Array.from({ length: 4 }, () => chars.charAt(Math.floor(Math.random() * chars.length))).join('');
+  return `NS-${part()}-${part()}`;
+};
+
 export const initSettings = async () => {
   const settings = await db.settings.get('app_settings');
   if (!settings) {
@@ -122,13 +129,16 @@ export const initSettings = async () => {
       shop_address: '123 Business Way, Lagos',
       receipt_footer: 'Thanks for your patronage! No refund after payment.',
       admin_whatsapp_number: '',
-      whatsapp_group_link: ''
+      whatsapp_group_link: '',
+      sync_key: generateKey() // Auto-generate on first run
     });
   } else {
     // Ensure new fields exist even on legacy installations
     const updates: any = {};
     if (settings.admin_whatsapp_number === undefined) updates.admin_whatsapp_number = '';
     if (settings.whatsapp_group_link === undefined) updates.whatsapp_group_link = '';
+    if (!settings.sync_key) updates.sync_key = generateKey(); // Auto-generate if missing
+    
     if (Object.keys(updates).length > 0) {
       await db.settings.update('app_settings', updates);
     }
