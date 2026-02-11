@@ -68,7 +68,6 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
   const [restockProduct, setRestockProduct] = useState<Product | null>(null);
   const [deleteProduct, setDeleteProduct] = useState<Product | null>(null);
   const [restockQty, setRestockQty] = useState<number>(0);
-  const [restockType, setRestockType] = useState<'add' | 'remove' | 'set'>('add');
   
   const [bulkTarget, setBulkTarget] = useState<'all' | 'category'>('all');
   const [bulkCategory, setBulkCategory] = useState('General');
@@ -79,7 +78,6 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
   const [reconciliationReport, setReconciliationReport] = useState<Record<number, boolean>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Fix: Added missing formData state
   const [formData, setFormData] = useState<Product>({
     name: '',
     price: 0,
@@ -152,11 +150,69 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
     } finally { setIsSyncing(false); }
   };
 
-  // Fix: Removed 'Leeds' variables and implemented proper handleSubmit
+  const handleRestock = async (productId: number, amountToAdd: number) => {
+    const product = await db.products.get(productId);
+    if (product) {
+      const oldStock = Number(product.stock_qty || 0);
+      const addedQty = Number(amountToAdd || 0);
+      const newTotal = oldStock + addedQty;
+
+      // UPDATE DATABASE
+      await db.products.update(productId, { stock_qty: newTotal });
+
+      // LOG TO LEDGER (For the Audit Trail)
+      await db.inventory_logs.add({
+        product_id: productId,
+        product_name: product.name,
+        quantity_changed: addedQty,
+        old_stock: oldStock,
+        new_stock: newTotal,
+        type: 'Restock',
+        timestamp: Date.now(),
+        performed_by: currentUser?.name || 'Admin'
+      });
+    }
+  };
+
+  const handleRestockSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!restockProduct || !restockProduct.id) return;
+    
+    setIsProcessing(true);
+    try {
+      await handleRestock(restockProduct.id, restockQty);
+      setIsRestockModalOpen(false);
+      setRestockProduct(null);
+      setRestockQty(0);
+    } catch (err) {
+      alert("Restock failed: " + err);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleBulkUpdate = async () => {
+    if (bulkValue <= 0) { alert("Please enter a valid amount."); return; }
+    const targetProducts = bulkTarget === 'all' ? allProducts : allProducts.filter(p => p.category === bulkCategory);
+    if (targetProducts.length === 0) { alert("No products found to update."); return; }
+    if (!confirm(`Update prices for ${targetProducts.length} products?`)) return;
+    setIsProcessing(true);
+    try {
+      const updatedProducts = targetProducts.map(p => {
+        let adjustment = bulkType === 'percent' ? p.price * (bulkValue / 100) : bulkValue;
+        let newPrice = bulkDirection === 'increase' ? p.price + adjustment : p.price - adjustment;
+        return { ...p, price: Math.max(0, Math.round(newPrice / 50) * 50) };
+      });
+      await db.products.bulkPut(updatedProducts);
+      setIsBulkModalOpen(false);
+      setBulkValue(0);
+      alert("Prices updated!");
+    } catch (err) { alert("Update failed: " + err); } finally { setIsProcessing(false); }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canEdit) return;
-    
     try {
       if (editingProduct?.id) {
         await db.products.update(editingProduct.id, {
@@ -177,9 +233,7 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
       }
       setIsModalOpen(false);
       setEditingProduct(null);
-    } catch (err) {
-      alert("Error saving product: " + err);
-    }
+    } catch (err) { alert("Error saving product: " + err); }
   };
 
   return (
@@ -199,7 +253,10 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
           )}
           <button onClick={generateInventoryPDF} className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 font-black text-xs uppercase tracking-widest"><FileText size={18} /> Download Price List</button>
           {canEdit && (
-            <button onClick={() => { setEditingProduct(null); setFormData({name:'', price:0, cost_price:0, stock_qty:0, category:'General', low_stock_threshold:5}); setIsModalOpen(true); }} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-emerald-600 text-white px-6 py-3 rounded-2xl font-black hover:bg-emerald-700 transition-all shadow-xl shadow-emerald-600/20"><Plus size={20} /> New Item</button>
+            <>
+               <button onClick={() => setIsBulkModalOpen(true)} className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 font-black text-xs uppercase tracking-widest"><TrendingUp size={18} /> Update Prices</button>
+               <button onClick={() => { setEditingProduct(null); setFormData({name:'', price:0, cost_price:0, stock_qty:0, category:'General', low_stock_threshold:5}); setIsModalOpen(true); }} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-emerald-600 text-white px-6 py-3 rounded-2xl font-black hover:bg-emerald-700 transition-all shadow-xl shadow-emerald-600/20"><Plus size={20} /> New Item</button>
+            </>
           )}
         </div>
       </div>
@@ -271,6 +328,85 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
             </form>
           </div>
         </div>
+      )}
+
+      {isBulkModalOpen && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="bg-white rounded-[3rem] p-8 w-full max-w-md space-y-8 animate-in zoom-in duration-300">
+            <div className="flex items-center justify-between"><h3 className="text-2xl font-black text-slate-900 tracking-tight">Bulk Price Adjuster</h3><button onClick={() => setIsBulkModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X size={24} /></button></div>
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 gap-3"><button onClick={() => setBulkTarget('all')} className={`flex items-center justify-center gap-2 py-3 rounded-2xl border-2 font-black text-[10px] uppercase tracking-widest transition-all ${bulkTarget === 'all' ? 'bg-slate-900 border-slate-900 text-white' : 'bg-slate-50 border-slate-100 text-slate-400'}`}>All Products</button><button onClick={() => setBulkTarget('category')} className={`flex items-center justify-center gap-2 py-3 rounded-2xl border-2 font-black text-[10px] uppercase tracking-widest transition-all ${bulkTarget === 'category' ? 'bg-slate-900 border-slate-900 text-white' : 'bg-slate-50 border-slate-100 text-slate-400'}`}>By Category</button></div>
+              {bulkTarget === 'category' && (<div className="animate-in slide-in-from-top-2"><label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Target Category</label><select className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-slate-400 font-bold" value={bulkCategory} onChange={e => setBulkCategory(e.target.value)}>{CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}</select></div>)}
+              <div className="grid grid-cols-2 gap-3 p-1.5 bg-slate-100 rounded-2xl"><button onClick={() => setBulkDirection('increase')} className={`flex-1 py-3 rounded-xl flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest transition-all ${bulkDirection === 'increase' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400'}`}><ArrowUp size={14}/> Increase</button><button onClick={() => setBulkDirection('decrease')} className={`flex-1 py-3 rounded-xl flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest transition-all ${bulkDirection === 'decrease' ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-400'}`}><ArrowDown size={14}/> Decrease</button></div>
+              <div><div className="flex justify-between items-center mb-2 px-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Adjustment Value</label><div className="flex gap-2"><button onClick={() => setBulkType('percent')} className={`px-2 py-1 rounded text-[10px] font-black uppercase tracking-widest ${bulkType === 'percent' ? 'bg-slate-200 text-slate-800' : 'text-slate-400'}`}>%</button><button onClick={() => setBulkType('fixed')} className={`px-2 py-1 rounded text-[10px] font-black uppercase tracking-widest ${bulkType === 'fixed' ? 'bg-slate-200 text-slate-800' : 'text-slate-400'}`}>₦</button></div></div><div className="relative"><input type="number" className="w-full h-16 text-3xl font-black text-center bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-slate-400 transition-all tabular-nums" value={bulkValue || ''} onChange={e => setBulkValue(Number(e.target.value))} /><div className="absolute right-6 top-1/2 -translate-y-1/2 text-slate-300 font-black">{bulkType === 'percent' ? '%' : '₦'}</div></div><p className="text-[9px] text-slate-400 font-bold uppercase text-center mt-3 tracking-widest">Prices will be rounded to nearest ₦50</p></div>
+            </div>
+            <button onClick={handleBulkUpdate} disabled={isProcessing} className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-lg shadow-xl hover:bg-emerald-700 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3">{isProcessing ? <Loader2 className="animate-spin" size={24} /> : <CheckCircle2 size={24} />} Apply Bulk Changes</button>
+          </div>
+        </div>
+      )}
+
+      {isRestockModalOpen && restockProduct && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="bg-white rounded-[3rem] p-10 w-full max-w-md space-y-8 animate-in zoom-in duration-300">
+            <div className="text-center space-y-2">
+               <h3 className="text-3xl font-black text-slate-900 tracking-tight">Restock Product</h3>
+               <p className="text-emerald-600 font-black uppercase text-[10px] tracking-widest">{restockProduct.name}</p>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Current Stock</p>
+                <p className="text-2xl font-black text-slate-900">{restockProduct.stock_qty}</p>
+              </div>
+              <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100">
+                <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest mb-1">New Total</p>
+                <p className="text-2xl font-black text-emerald-700">{Number(restockProduct.stock_qty) + Number(restockQty || 0)}</p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1 tracking-widest">Quantity to Add</label>
+              <input 
+                autoFocus
+                type="number" 
+                placeholder="0"
+                className="w-full h-20 text-5xl font-black text-center bg-slate-50 border-2 border-slate-200 rounded-[2rem] outline-none focus:border-emerald-500 transition-all tabular-nums"
+                value={restockQty || ''}
+                onChange={e => setRestockQty(Math.max(0, Number(e.target.value)))}
+              />
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <button 
+                onClick={handleRestockSubmit} 
+                disabled={isProcessing || restockQty <= 0}
+                className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-lg shadow-xl shadow-emerald-200 active:scale-95 disabled:opacity-50 transition-all"
+              >
+                {isProcessing ? <Loader2 className="animate-spin mx-auto" /> : 'Confirm Restock'}
+              </button>
+              <button 
+                onClick={() => { setIsRestockModalOpen(false); setRestockQty(0); }} 
+                className="w-full py-3 text-slate-400 font-black text-xs uppercase tracking-widest hover:text-slate-600"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isDeleteModalOpen && deleteProduct && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+           <div className="bg-white p-10 rounded-[3rem] text-center space-y-8 w-full max-w-sm animate-in zoom-in"><div className="w-20 h-20 bg-rose-50 text-rose-600 rounded-full flex items-center justify-center mx-auto"><Trash size={40} /></div><div className="space-y-2"><h3 className="text-2xl font-black text-slate-900 tracking-tight">Remove Item?</h3><p className="text-slate-500 text-sm font-medium">Permanently delete <b>{deleteProduct.name}</b> from terminal?</p></div><div className="flex gap-4"><button onClick={() => setIsDeleteModalOpen(false)} className="flex-1 py-4 bg-slate-100 text-slate-400 rounded-2xl font-black text-xs uppercase tracking-widest">Cancel</button><button onClick={async () => { await db.products.delete(deleteProduct.id!); setIsDeleteModalOpen(false); }} className="flex-1 py-4 bg-rose-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl">Confirm</button></div></div>
+        </div>
+      )}
+
+      {isLocalScannerOpen && (
+        <StockScanner 
+          initialFile={pendingImportFile}
+          onConfirm={async (products) => { await db.products.bulkAdd(products); setIsLocalScannerOpen(false); }} 
+          onClose={() => { setIsLocalScannerOpen(false); setPendingImportFile(null); }} 
+        />
       )}
     </div>
   );
