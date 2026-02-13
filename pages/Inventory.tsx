@@ -39,6 +39,7 @@ import { ScannedProduct } from '../utils/LocalVisionService';
 import { exportDataForWhatsApp } from '../services/syncService';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { useSync } from '../hooks/context/SyncProvider';
 
 interface InventoryProps {
   setView?: (view: View) => void;
@@ -53,6 +54,7 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
   const isAdmin = currentUser?.role === 'Admin';
   const isStaff = currentUser?.role === 'Sales';
   
+  const { broadcastStockUpdate } = useSync();
   const [searchTerm, setSearchTerm] = useState('');
   const [showValuation, setShowValuation] = useState(false);
   const [stockFilter, setStockFilter] = useState<'all' | 'low'>('all');
@@ -140,42 +142,19 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
     if (!settings?.sync_key) { alert("Security Key not set. Visit settings."); return; }
     setIsSyncing(true);
     try {
+      // 1. WhatsApp Backup (Legacy Fallback)
       const result = await exportDataForWhatsApp('STOCK', settings.sync_key, currentUser?.name);
-      if (result.raw === "FILE_DOWNLOADED") {
-        alert("Master stock data is large and has been downloaded as a file. Send it to your Staff!");
-      } else {
+      if (result.raw !== "FILE_DOWNLOADED") {
         const text = `📦 NaijaShop Master Stock Update\n\nCode:\n${result.raw}\n\nStaff: Import this to update your shelves.`;
         window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
       }
+
+      // 2. REAL-TIME RELAY PUSH
+      const updatedProducts = await db.products.toArray();
+      broadcastStockUpdate(updatedProducts);
+      alert("Relay Push Successful! All staff phones updated instantly.");
+      
     } finally { setIsSyncing(false); }
-  };
-
-  /**
-   * DATABASE ENGINE: handleRestock
-   * STRICT INSTRUCTION: Atomic stock update with ledger logging
-   */
-  const handleRestock = async (productId: number, amountToAdd: number) => {
-    const product = await db.products.get(productId);
-    if (product) {
-      const oldStock = Number(product.stock_qty || 0);
-      const addedQty = Number(amountToAdd || 0);
-      const newTotal = oldStock + addedQty;
-
-      // UPDATE DATABASE
-      await db.products.update(productId, { stock_qty: newTotal });
-
-      // LOG TO LEDGER (For the Audit Trail)
-      await db.inventory_logs.add({
-        product_id: productId,
-        product_name: product.name,
-        quantity_changed: addedQty,
-        old_stock: oldStock,
-        new_stock: newTotal,
-        type: 'Restock',
-        timestamp: Date.now(),
-        performed_by: currentUser?.role === 'Admin' ? 'Admin' : (currentUser?.name || 'Staff')
-      });
-    }
   };
 
   const handleRestockSubmit = async (e: React.FormEvent) => {
@@ -184,7 +163,30 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
     
     setIsProcessing(true);
     try {
-      await handleRestock(restockProduct.id, restockQty);
+      const product = await db.products.get(restockProduct.id);
+      if (product) {
+        const oldStock = Number(product.stock_qty || 0);
+        const addedQty = Number(restockQty || 0);
+        const newTotal = oldStock + addedQty;
+
+        await db.products.update(restockProduct.id, { stock_qty: newTotal });
+        await db.inventory_logs.add({
+          product_id: restockProduct.id,
+          product_name: product.name,
+          quantity_changed: addedQty,
+          old_stock: oldStock,
+          new_stock: newTotal,
+          type: 'Restock',
+          timestamp: Date.now(),
+          performed_by: currentUser?.role === 'Admin' ? 'Admin' : (currentUser?.name || 'Staff')
+        });
+
+        // Trigger Instant Relay for small adjustments
+        if (isAdmin) {
+          const all = await db.products.toArray();
+          broadcastStockUpdate(all);
+        }
+      }
       setIsRestockModalOpen(false);
       setRestockProduct(null);
       setRestockQty(0);
@@ -208,9 +210,16 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
         return { ...p, price: Math.max(0, Math.round(newPrice / 50) * 50) };
       });
       await db.products.bulkPut(updatedProducts);
+      
+      // Sync change instantly to all staff
+      if (isAdmin) {
+        const all = await db.products.toArray();
+        broadcastStockUpdate(all);
+      }
+
       setIsBulkModalOpen(false);
       setBulkValue(0);
-      alert("Prices updated!");
+      alert("Prices updated and broadcasted!");
     } catch (err) { alert("Update failed: " + err); } finally { setIsProcessing(false); }
   };
 
@@ -235,6 +244,13 @@ const Inventory: React.FC<InventoryProps> = ({ setView, currentUser, isStaffLock
           low_stock_threshold: Number(formData.low_stock_threshold)
         });
       }
+      
+      // Auto-sync for Admin edits
+      if (isAdmin) {
+        const all = await db.products.toArray();
+        broadcastStockUpdate(all);
+      }
+
       setIsModalOpen(false);
       setEditingProduct(null);
     } catch (err) { alert("Error saving product: " + err); }

@@ -25,7 +25,8 @@
     "simple-peer": "^9.11.1",
     "tesseract.js": "^5.1.1",
     "jspdf": "^2.5.1",
-    "jspdf-autotable": "^3.8.2"
+    "jspdf-autotable": "^3.8.2",
+    "pusher-js": "^8.4.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",
