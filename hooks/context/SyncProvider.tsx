@@ -89,12 +89,15 @@ export const SyncProvider: React.FC<{ children: React.ReactNode, currentUser: St
       const settings = await db.settings.get('app_settings');
       if (settings?.sync_key) {
         // AUTOMATIC ACTIVATION: Initialize room for this shop
-        RelayService.connect(settings.sync_key);
+        // Fix: Changed .connect() to .init() as per RelayService definition
+        RelayService.init(settings.sync_key);
         
         if (isAdmin) {
-          RelayService.subscribeToSales(handleIncomingSale);
+          // Fix: Changed .subscribeToSales() to .listen('new-sale', ...) as per RelayService definition
+          RelayService.listen('new-sale', handleIncomingSale);
         } else {
-          RelayService.subscribeToStockUpdates(handleIncomingStock);
+          // Fix: Changed .subscribeToStockUpdates() to .listen('stock-update', ...) as per RelayService definition
+          RelayService.listen('stock-update', handleIncomingStock);
         }
 
         interval = setInterval(() => {
@@ -111,8 +114,10 @@ export const SyncProvider: React.FC<{ children: React.ReactNode, currentUser: St
     };
   }, [currentUser, isAdmin, handleIncomingSale, handleIncomingStock]);
 
-  const broadcastSale = useCallback((sale: Sale) => RelayService.broadcastSale(sale), []);
-  const broadcastStockUpdate = useCallback((products: Product[]) => RelayService.broadcastStockUpdate(products), []);
+  // Fix: Changed .broadcastSale() to .send('new-sale', ...) as per RelayService definition
+  const broadcastSale = useCallback((sale: Sale) => RelayService.send('new-sale', sale), []);
+  // Fix: Changed .broadcastStockUpdate() to .send('stock-update', ...) as per RelayService definition
+  const broadcastStockUpdate = useCallback((products: Product[]) => RelayService.send('stock-update', { products }), []);
 
   return (
     <SyncContext.Provider value={{ status, broadcastSale, broadcastStockUpdate, lastIncomingSale }}>

@@ -30,7 +30,7 @@ import ClosingReport from './ClosingReport';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
 import SmartSupportChat from './SupportChat';
-import { useSync } from '../hooks/context/SyncProvider';
+import LiveIndicator from './LiveIndicator';
 
 const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-9987-b4ed4c0e3c36.png";
 
@@ -80,9 +80,6 @@ const Layout: React.FC<LayoutProps> = ({
   const [showClosingModal, setShowClosingModal] = useState(false);
   const [unlockPin, setUnlockPin] = useState('');
 
-  const { status } = useSync();
-  const isConnected = status === 'live';
-  
   const settings = useLiveQuery(() => db.settings.get('app_settings'));
   const showAllFeatures = currentUser?.role === 'Admin' || (currentUser?.role === 'Manager' && !isStaffLock);
 
@@ -191,15 +188,14 @@ const Layout: React.FC<LayoutProps> = ({
             <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-2 hover:bg-slate-100 rounded-lg"><Menu size={24} /></button>
             <h2 className="text-lg font-bold text-slate-800">{navItems.find(i => i.id === activeView)?.label || 'Terminal'}</h2>
           </div>
-          <div className="flex items-center">
-            {/* LIVE LINK INDICATOR */}
-            <div className="flex items-center gap-2 px-3 py-1 bg-slate-50 border rounded-full mr-4 shadow-sm animate-in fade-in zoom-in">
-              <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500 shadow-[0_0_8px_#10b981] animate-pulse' : 'bg-slate-300'}`}></div>
-              <span className="text-[8px] font-black uppercase tracking-widest text-slate-500">
-                {isConnected ? 'Live Link' : 'Offline'}
-              </span>
-            </div>
-
+          <div className="flex items-center gap-4">
+            <LiveIndicator />
+            {isStaffLock && currentUser?.role !== 'Admin' && (
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 border border-amber-100 rounded-full text-amber-600">
+                <ShieldAlert size={14} />
+                <span className="text-[10px] font-black uppercase tracking-widest">Locked Mode</span>
+              </div>
+            )}
             <div className="hidden sm:block text-right">
                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Local Terminal</p>
                <p className="text-xs font-bold text-slate-800 leading-none">{shopName}</p>

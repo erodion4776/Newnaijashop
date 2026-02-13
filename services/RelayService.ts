@@ -7,97 +7,76 @@ const PUSHER_CLUSTER = (import.meta as any).env?.VITE_PUSHER_CLUSTER || 'mt1';
 class RelayService {
   private pusher: Pusher | null = null;
   private channel: any = null;
-  private channelName: string | null = null;
 
   /**
-   * Connects to a unique shop relay channel using a Local Security Bypass.
-   * This allows phone-to-phone sync using Client Events without a server.
+   * Initializes the Pusher connection with a local authorizer bypass.
+   * This allows direct client-to-client events on private channels.
    */
-  public connect(syncKey: string) {
+  public init(shopKey: string) {
     if (this.pusher) return;
 
     this.pusher = new Pusher(PUSHER_KEY, {
       cluster: PUSHER_CLUSTER,
       forceTLS: true,
-      authorizer: (channel) => ({
-        authorize: (socketId: string, callback: Function) => {
-          /**
-           * THE MAGIC BYPASS:
-           * We sign the request locally. Pusher trusts this because 
-           * 'Client Events' are enabled in the dashboard.
-           */
-          callback(null, { auth: `${PUSHER_KEY}:${socketId}` });
-        }
-      })
+      authorizer: (channel, options) => {
+        return {
+          authorize: (socketId, callback) => {
+            // Bypass server and authorize client locally using the public key
+            callback(null, { auth: `${PUSHER_KEY}:${socketId}` });
+          }
+        };
+      }
     });
 
-    // Pusher requires 'private-' prefix for Client-to-Client triggers
-    const sanitizedKey = syncKey.replace(/[^a-z0-9]/g, '').toLowerCase();
-    this.channelName = `private-shop-${sanitizedKey}`;
-    this.channel = this.pusher.subscribe(this.channelName);
+    const sanitizedKey = shopKey.replace(/[^a-z0-9]/g, '').toLowerCase();
+    this.channel = this.pusher.subscribe(`private-shop-${sanitizedKey}`);
     
-    console.log(`[Relay] Joined Secure Room: ${this.channelName}`);
+    console.log(`[Relay] Connected to Secure Pipe: private-shop-${sanitizedKey}`);
   }
 
   /**
-   * BROADCAST EVENT (Peer-to-Peer)
-   * Mandatory 'client-' prefix for Pusher client events.
+   * BROADCAST EVENT
+   * Automatically adds the 'client-' prefix required by Pusher for client events.
    */
   public send(eventName: string, data: any) {
-    if (!this.channel || !this.isConnected()) return;
-    try {
-      // Pusher triggers must start with 'client-'
-      const prefixedEvent = eventName.startsWith('client-') ? eventName : `client-${eventName}`;
-      this.channel.trigger(prefixedEvent, data);
-    } catch (e) {
-      console.error("[Relay] Direct send failed:", e);
+    if (this.channel?.subscribed) {
+      try {
+        this.channel.trigger(`client-${eventName}`, data);
+        console.log(`[Relay] Triggered client-${eventName}`);
+      } catch (e) {
+        console.error("[Relay] Event broadcast failed:", e);
+      }
     }
   }
 
   /**
-   * Helper for specific sale broadcasting
+   * LISTEN FOR EVENT
+   * Automatically binds to the 'client-' prefixed version of the event name.
    */
-  public broadcastSale(saleData: any) {
-    this.send('new-sale', saleData);
+  public listen(eventName: string, callback: (data: any) => void) {
+    if (!this.channel) return;
+    this.channel.bind(`client-${eventName}`, (data: any) => {
+      console.log(`[Relay] Received client-${eventName}`);
+      callback(data);
+    });
   }
 
   /**
-   * Helper for specific stock broadcasting
+   * Checks if the socket is currently in a connected state.
    */
-  public broadcastStockUpdate(products: any[]) {
-    this.send('stock-update', { products, timestamp: Date.now() });
+  public isConnected(): boolean {
+    return this.pusher?.connection.state === 'connected';
   }
 
-  public subscribeToSales(onSaleReceived: (sale: any) => void) {
-    if (this.channel) {
-      this.channel.bind('client-new-sale', (data: any) => {
-        console.log("[Relay] Incoming sale received.");
-        onSaleReceived(data);
-      });
-    }
-  }
-
-  public subscribeToStockUpdates(onUpdateReceived: (data: any) => void) {
-    if (this.channel) {
-      this.channel.bind('client-stock-update', (data: any) => {
-        console.log("[Relay] Master stock push received.");
-        onUpdateReceived(data);
-      });
-    }
-  }
-
+  /**
+   * Disconnects and cleans up resources.
+   */
   public disconnect() {
-    if (this.pusher && this.channelName) {
-      this.pusher.unsubscribe(this.channelName);
+    if (this.pusher) {
       this.pusher.disconnect();
       this.pusher = null;
       this.channel = null;
-      this.channelName = null;
     }
-  }
-
-  public isConnected(): boolean {
-    return this.pusher?.connection.state === 'connected';
   }
 }
 

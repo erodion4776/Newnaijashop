@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { db } from '../db/db';
 import { SaleItem, Staff, Sale } from '../types';
-import { useSync } from '../hooks/context/SyncProvider';
+import RelayService from '../services/RelayService';
 
 interface CheckoutModalProps {
   isOpen: boolean;
@@ -46,9 +46,6 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [step, setStep] = useState<CheckoutStep>('payment');
   const [isProcessing, setIsProcessing] = useState(false);
   const [discount, setDiscount] = useState<number>(0);
-  
-  // Relay Hook for Instant Push
-  const { broadcastSale } = useSync();
   
   // Payment State
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(null);
@@ -160,14 +157,13 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
         }
       });
 
-      // INSTANT RELAY PUSH
-      // Immediately after successful local save, we "throw" the sale into the shop pipe
-      broadcastSale(saleData);
+      // REAL-TIME BROADCAST
+      RelayService.send('new-sale', saleData);
 
       setIsProcessing(false);
       onComplete(saleData, lowItems);
       
-      // Reset Modal State
+      // Reset
       setStep('payment');
       setPaymentMethod(null);
       setDiscount(0);
