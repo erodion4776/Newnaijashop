@@ -23,8 +23,8 @@ import {
   Share2
 } from 'lucide-react';
 import { Staff, Settings as SettingsType } from '../types';
-import { generateBackupData, restoreFromBackup, downloadBackupFile } from '../utils/backup';
-import { exportDataForWhatsApp, importWhatsAppBridgeData } from '../services/syncService';
+import { generateBackupData, restoreFromBackup, downloadBackupFile, performAutoSnapshot } from '../utils/backup';
+import { importWhatsAppBridgeData } from '../services/syncService';
 import WhatsAppService from '../services/WhatsAppService';
 
 const SYNC_HEADER = "NS_V2_";
@@ -51,8 +51,6 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
     admin_whatsapp_number: '',
     whatsapp_group_link: ''
   });
-
-  const lastSyncTs = localStorage.getItem('last_sync_timestamp');
 
   useEffect(() => {
     if (settings) {
@@ -107,7 +105,7 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
 
   /**
    * THE BROADCAST ENGINE
-   * STRICT INSTRUCTION: Strips cost_price, salts with key, and handles large payload sharing.
+   * STRICT INSTRUCTION: Uses Web Share API for large data (>2000 chars)
    */
   const handleSendStockToWhatsApp = async () => {
     if (!settings?.sync_key) { 
@@ -117,10 +115,10 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
 
     setIsSyncing(true);
     try {
-      // Step A: Fetch all products
+      // Step A: Data Prep
       const products = await db.products.toArray();
 
-      // Step B: SECURITY - Strip cost_price. Keep name, price, stock, category.
+      // Step B: Security Filter (No cost_price for staff)
       const cleanedProducts = products.map(p => ({
         name: p.name,
         price: Number(p.price),
@@ -128,7 +126,7 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
         stock_qty: Number(p.stock_qty)
       }));
 
-      // Step C: Salting & Compression
+      // Step C: Compression & Salting
       const payload = {
         type: 'STOCK_UPDATE',
         products: cleanedProducts,
@@ -141,35 +139,37 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
       const finalCode = SYNC_HEADER + compressed;
 
       const dateStr = new Date().toLocaleDateString();
-      const message = `📦 MASTER STOCK UPDATE: [${dateStr}]\nCopy the code below and paste it in your NaijaShop Security page to update your prices and stock:\n\n${finalCode}`;
 
-      // Step D: Large Data Handling (1,500 Character Threshold)
-      if (message.length > 1500) {
-        // Generate File for Web Share
-        const blob = new Blob([finalCode], { type: 'application/json' });
-        const file = new File([blob], 'Master_Stock.json', { type: 'application/json' });
+      // Step D: Threshold Check (2,000 Characters)
+      if (finalCode.length > 2000) {
+        showSuccess("Preparing your stock file for WhatsApp...");
         
-        // Attempt Web Share API
+        // Create file object as requested
+        const file = new File([finalCode], 'Master_Stock.nshop', { type: 'text/plain' });
+        
+        // Use Web Share API
         const sharedSuccessfully = await WhatsAppService.shareFile(
           file, 
-          'Master Stock Update', 
-          `Oga, the stock list is large. I have sent it as a document. Open the file, copy the code inside, and paste it in your terminal.`
+          'NaijaShop Stock Update', 
+          `📦 MASTER STOCK UPDATE: [${dateStr}]\nOga, the stock list is large. Open the attached file, copy the code inside, and paste it into your terminal.`
         );
 
         if (!sharedSuccessfully) {
-          // Fallback to direct file download if share fails or isn't supported
-          alert("Stock list is large. Sending as a small .nshop file instead.");
-          const downloadLink = document.createElement('a');
-          downloadLink.href = URL.createObjectURL(blob);
-          downloadLink.download = `Master_Stock_${dateStr.replace(/\//g, '-')}.json`;
-          document.body.appendChild(downloadLink);
-          downloadLink.click();
-          document.body.removeChild(downloadLink);
+          // Reliability Fallback: Final safety measure
+          const blob = new Blob([finalCode], { type: 'text/plain' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `Master_Stock_${dateStr.replace(/\//g, '-')}.nshop`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
         } else {
           showSuccess("Stock Document Shared!");
         }
       } else {
-        // Send as standard WhatsApp text
+        // Standard Speed Method for small data
+        const message = `📦 MASTER STOCK UPDATE: [${dateStr}]\nCopy the code below and paste it in your NaijaShop Security page to update your prices and stock:\n\n${finalCode}`;
         await WhatsAppService.send(message, settings, 'GROUP_UPDATE');
         showSuccess("Update Sent to WhatsApp!");
       }
@@ -241,6 +241,7 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
 
   const isAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'Manager';
   const isStaff = currentUser?.role === 'Sales';
+  const snapshotTs = localStorage.getItem('naijashop_snapshot_ts');
 
   return (
     <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in duration-500 pb-24">
@@ -298,10 +299,10 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
                  <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl"><RefreshCw size={24} /></div>
                  <h3 className="text-xl font-black text-slate-800">Receive Stock</h3>
                </div>
-               {lastSyncTs && (
+               {snapshotTs && (
                  <div className="text-right">
-                    <p className="text-[8px] font-black text-slate-400 uppercase">Last Updated</p>
-                    <p className="text-[10px] font-bold text-indigo-600">{new Date(parseInt(lastSyncTs)).toLocaleDateString()}</p>
+                    <p className="text-[8px] font-black text-slate-400 uppercase">Last Sync</p>
+                    <p className="text-[10px] font-bold text-indigo-600">{new Date(parseInt(snapshotTs)).toLocaleDateString()}</p>
                  </div>
                )}
             </div>
@@ -341,7 +342,7 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
               className="w-full py-6 bg-indigo-600 text-white rounded-[2rem] font-black text-xl flex items-center justify-center gap-3 shadow-2xl active:scale-95 transition-all"
             >
               {isSyncing ? <Loader2 className="animate-spin" /> : <Send size={24} />}
-              🚀 Send Master Stock to Staff
+              🚀 Send Master Stock Update
             </button>
           </div>
 
@@ -377,7 +378,7 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
               <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center"><MessageSquareCode size={24} /></div>
               <div>
                 <h3 className="text-xl font-black text-slate-800">WhatsApp Sync Automation</h3>
-                <p className="text-[10px] font-bold text-slate-400 uppercase">Configuring destination links</p>
+                <p className="text-[10px] font-bold text-slate-400 uppercase">Direct reporting links</p>
               </div>
             </div>
             <button onClick={handleUpdateAutomation} className="px-6 py-3 bg-emerald-600 text-white rounded-xl font-black text-[10px] uppercase shadow-lg active:scale-95 transition-all"><Save size={16} className="inline mr-1"/> Update Links</button>
@@ -385,11 +386,11 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
-              <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Boss WhatsApp Number (for Staff Reports)</label>
+              <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Owner WhatsApp Number</label>
               <input type="text" placeholder="e.g. 2348184774884" className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold" value={automationData.admin_whatsapp_number} onChange={e => setAutomationData({...automationData, admin_whatsapp_number: e.target.value.replace(/\D/g, '')})} />
             </div>
             <div className="space-y-2">
-              <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Staff Group Link (for Master Updates)</label>
+              <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Staff Group Link</label>
               <input type="text" placeholder="https://chat.whatsapp.com/..." className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold" value={automationData.whatsapp_group_link} onChange={e => setAutomationData({...automationData, whatsapp_group_link: e.target.value})} />
             </div>
           </div>
