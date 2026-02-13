@@ -24,7 +24,6 @@ import {
 } from 'lucide-react';
 import { Staff, Settings as SettingsType } from '../types';
 import { generateBackupData, restoreFromBackup, downloadBackupFile, performAutoSnapshot } from '../utils/backup';
-import { importWhatsAppBridgeData } from '../services/syncService';
 import WhatsAppService from '../services/WhatsAppService';
 
 const SYNC_HEADER = "NS_V2_";
@@ -51,6 +50,8 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
     admin_whatsapp_number: '',
     whatsapp_group_link: ''
   });
+
+  const lastSyncTs = localStorage.getItem('last_sync_timestamp');
 
   useEffect(() => {
     if (settings) {
@@ -104,8 +105,8 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
   };
 
   /**
-   * THE BROADCAST ENGINE
-   * STRICT INSTRUCTION: Uses Web Share API for large data (>2000 chars)
+   * THE BROADCAST ENGINE (Admin Side)
+   * Hybrid Share Method: Native Share + Clipboard
    */
   const handleSendStockToWhatsApp = async () => {
     if (!settings?.sync_key) { 
@@ -115,10 +116,10 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
 
     setIsSyncing(true);
     try {
-      // Step A: Data Prep
+      // Step A: Fetch Products
       const products = await db.products.toArray();
 
-      // Step B: Security Filter (No cost_price for staff)
+      // Step B: SECURITY - Strip cost_price before compression
       const cleanedProducts = products.map(p => ({
         name: p.name,
         price: Number(p.price),
@@ -126,7 +127,7 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
         stock_qty: Number(p.stock_qty)
       }));
 
-      // Step C: Compression & Salting
+      // Step C: Salting & Compression
       const payload = {
         type: 'STOCK_UPDATE',
         products: cleanedProducts,
@@ -138,44 +139,78 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
       const compressed = LZString.compressToEncodedURIComponent(salted);
       const finalCode = SYNC_HEADER + compressed;
 
-      const dateStr = new Date().toLocaleDateString();
+      // STEP D: Native Share Trigger
+      const shared = await WhatsAppService.shareMasterStock(finalCode);
 
-      // Step D: Threshold Check (2,000 Characters)
-      if (finalCode.length > 2000) {
-        showSuccess("Preparing your stock file for WhatsApp...");
-        
-        // Create file object as requested
-        const file = new File([finalCode], 'Master_Stock.nshop', { type: 'text/plain' });
-        
-        // Use Web Share API
-        const sharedSuccessfully = await WhatsAppService.shareFile(
-          file, 
-          'NaijaShop Stock Update', 
-          `📦 MASTER STOCK UPDATE: [${dateStr}]\nOga, the stock list is large. Open the attached file, copy the code inside, and paste it into your terminal.`
-        );
-
-        if (!sharedSuccessfully) {
-          // Reliability Fallback: Final safety measure
-          const blob = new Blob([finalCode], { type: 'text/plain' });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `Master_Stock_${dateStr.replace(/\//g, '-')}.nshop`;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-        } else {
-          showSuccess("Stock Document Shared!");
-        }
+      if (!shared) {
+        // Ultimate Fallback: Download file if even clipboard fails
+        const blob = new Blob([finalCode], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Stock_Update_${new Date().toLocaleDateString().replace(/\//g, '-')}.nshop`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
       } else {
-        // Standard Speed Method for small data
-        const message = `📦 MASTER STOCK UPDATE: [${dateStr}]\nCopy the code below and paste it in your NaijaShop Security page to update your prices and stock:\n\n${finalCode}`;
-        await WhatsAppService.send(message, settings, 'GROUP_UPDATE');
-        showSuccess("Update Sent to WhatsApp!");
+        showSuccess("Update Broadcast Initiated!");
       }
     } catch (err) {
       console.error("Broadcast failed:", err);
       alert("Failed to generate update code.");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  /**
+   * THE RECEIVING ENGINE (Staff Side)
+   * Atomic stock update from Boss's code
+   */
+  const handleUpdateFromBoss = async () => {
+    if (!importString.trim() || !settings?.sync_key) return;
+    
+    setIsSyncing(true);
+    try {
+      if (!importString.startsWith(SYNC_HEADER)) throw new Error("Invalid format.");
+
+      const compressed = importString.replace(SYNC_HEADER, "");
+      const encrypted = LZString.decompressFromEncodedURIComponent(compressed);
+      if (!encrypted) throw new Error("Corrupt data.");
+
+      const jsonString = xorCipher(encrypted, settings.sync_key);
+      const payload = JSON.parse(jsonString);
+
+      if (payload.type !== 'STOCK_UPDATE') throw new Error("Invalid update type.");
+
+      // Atomic overwrite of local products
+      await (db as any).transaction('rw', [db.products, db.inventory_logs], async () => {
+        await db.products.clear();
+        
+        for (const p of payload.products) {
+          // STRICT INSTRUCTION: Use Number() to parse IDs and quantities
+          const sellingPrice = Number(p.price);
+          const currentStock = Number(p.stock_qty);
+          
+          // Re-calculate generic cost price for staff terminal (approx 80%)
+          const genericCost = Math.round((sellingPrice * 0.8) / 50) * 50;
+
+          await db.products.add({
+            name: p.name,
+            price: sellingPrice,
+            cost_price: genericCost,
+            stock_qty: currentStock,
+            category: p.category || 'General',
+            low_stock_threshold: 5
+          });
+        }
+      });
+
+      localStorage.setItem('last_sync_timestamp', Date.now().toString());
+      setImportString('');
+      showSuccess(`Stock Updated! ${payload.products.length} items synced.`);
+    } catch (e: any) {
+      alert("Update Failed: " + (e.message || "Invalid or mismatched key. Ensure you have the same Security Key as your Boss."));
     } finally {
       setIsSyncing(false);
     }
@@ -210,38 +245,8 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
     }
   };
 
-  const executeImport = async () => {
-    if (!importString.trim() || !settings?.sync_key) return;
-    setIsSyncing(true);
-    try {
-      const result = await importWhatsAppBridgeData(importString.trim(), settings.sync_key);
-      if (result.type === 'STOCK') {
-        showSuccess("Stock Updated from Boss!");
-      } else {
-        showSuccess(`Sync Success! Processed ${result.count || 0} items.`);
-      }
-      setImportString('');
-    } catch (e: any) {
-      alert("Import Failed: " + e.message);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  const executeRestore = async (data: string) => {
-    if (!data.trim() || !confirm("RESTORE WARNING: This will overwrite ALL local data. Proceed?")) return;
-    setIsProcessing(true);
-    const result = await restoreFromBackup(data.trim());
-    setIsProcessing(false);
-    if (result) {
-      alert("Restore Successful! App will reload.");
-      window.location.reload();
-    } else alert("Restore Failed.");
-  };
-
   const isAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'Manager';
   const isStaff = currentUser?.role === 'Sales';
-  const snapshotTs = localStorage.getItem('naijashop_snapshot_ts');
 
   return (
     <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in duration-500 pb-24">
@@ -299,24 +304,26 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
                  <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl"><RefreshCw size={24} /></div>
                  <h3 className="text-xl font-black text-slate-800">Receive Stock</h3>
                </div>
-               {snapshotTs && (
+               {lastSyncTs && (
                  <div className="text-right">
-                    <p className="text-[8px] font-black text-slate-400 uppercase">Last Sync</p>
-                    <p className="text-[10px] font-bold text-indigo-600">{new Date(parseInt(snapshotTs)).toLocaleDateString()}</p>
+                    <p className="text-[8px] font-black text-slate-400 uppercase">Last Updated</p>
+                    <p className="text-[10px] font-bold text-indigo-600">{new Date(parseInt(lastSyncTs)).toLocaleDateString()}</p>
                  </div>
                )}
             </div>
             <p className="text-sm text-slate-500 font-medium">Paste the stock update code from your Oga below.</p>
+            
             <textarea 
               placeholder="Paste master update code here..." 
-              className="w-full p-4 bg-slate-50 border rounded-2xl font-mono text-[10px] h-24 outline-none focus:ring-2 focus:ring-indigo-500" 
+              className="w-full p-4 bg-slate-50 border rounded-2xl font-mono text-[10px] h-32 outline-none focus:ring-2 focus:ring-indigo-500 resize-none shadow-inner" 
               value={importString} 
               onChange={e => setImportString(e.target.value)} 
             />
+
             <button 
-              onClick={executeImport} 
-              disabled={!importString || isSyncing}
-              className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black flex items-center justify-center gap-3 active:scale-95"
+              onClick={handleUpdateFromBoss} 
+              disabled={!importString.trim() || isSyncing}
+              className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50"
             >
               {isSyncing ? <Loader2 className="animate-spin" size={24} /> : <ClipboardPaste size={20} />}
               📥 Update My Stock
@@ -341,8 +348,17 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
               disabled={isSyncing}
               className="w-full py-6 bg-indigo-600 text-white rounded-[2rem] font-black text-xl flex items-center justify-center gap-3 shadow-2xl active:scale-95 transition-all"
             >
-              {isSyncing ? <Loader2 className="animate-spin" /> : <Send size={24} />}
-              🚀 Send Master Stock Update
+              {isSyncing ? (
+                <>
+                  <Loader2 className="animate-spin" size={24} />
+                  ⏳ Preparing Code...
+                </>
+              ) : (
+                <>
+                  <Send size={24} />
+                  🚀 Send Master Stock Update
+                </>
+              )}
             </button>
           </div>
 
@@ -352,16 +368,34 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
               <h3 className="text-xl font-black text-slate-800">Process Staff Sales</h3>
             </div>
             <p className="text-sm text-slate-500 font-medium">Paste the sales code received from your staff to update ledger.</p>
+            
             <textarea 
               placeholder="Paste sales code here..." 
-              className="w-full p-4 bg-slate-50 border rounded-2xl font-mono text-[10px] h-24 outline-none focus:ring-2 focus:ring-emerald-500" 
+              className="w-full p-4 bg-slate-50 border rounded-2xl font-mono text-[10px] h-32 outline-none focus:ring-2 focus:ring-emerald-500 resize-none shadow-inner" 
               value={importString} 
               onChange={e => setImportString(e.target.value)} 
             />
+
             <button 
-              onClick={executeImport} 
-              disabled={!importString || isSyncing}
-              className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black flex items-center justify-center gap-3 active:scale-95"
+              onClick={async () => {
+                // This uses the existing importWhatsAppBridgeData from syncService.ts
+                // but the UI logic is consistent with user needs.
+                if (!importString.trim()) return;
+                setIsSyncing(true);
+                try {
+                  // Import helper logic (kept simple for ledger updates)
+                  const { importWhatsAppBridgeData: importFn } = await import('../services/syncService');
+                  const result = await importFn(importString.trim(), settings.sync_key);
+                  showSuccess(`Sync Success! Processed ${result.count || 0} items.`);
+                  setImportString('');
+                } catch(e: any) {
+                  alert(e.message);
+                } finally {
+                  setIsSyncing(false);
+                }
+              }} 
+              disabled={!importString.trim() || isSyncing}
+              className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50"
             >
               {isSyncing ? <Loader2 className="animate-spin" size={24} /> : <Database size={20} />}
               ✅ Sync Records to Ledger
@@ -403,7 +437,7 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
           <h3 className="text-lg font-black text-slate-800">Legacy Backup Tools</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <button onClick={handleWhatsAppBackup} className="py-4 bg-white border border-slate-200 text-slate-600 rounded-2xl font-black text-xs uppercase flex items-center justify-center gap-2 shadow-sm"><MessageSquare size={16}/> Self Backup</button>
-            <button onClick={() => downloadBackupFile(settings?.shop_name || 'Store')} className="py-4 bg-white border border-slate-200 text-slate-600 rounded-2xl font-black text-xs uppercase flex items-center justify-center gap-2 shadow-sm"><Download size={16}/> Download File</button>
+            <button onClick={() => downloadBackupFile(settings?.shop_name || 'Store')} className="py-4 bg-white border border-slate-200 text-slate-600 rounded-2xl font-black text-xs uppercase flex items-center justify-center gap-2 shadow-sm"><Download size={16}/> Download .nshop File</button>
           </div>
         </div>
       )}

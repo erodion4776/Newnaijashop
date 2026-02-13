@@ -27,8 +27,38 @@ export const WhatsAppService = {
   },
 
   /**
-   * Shares a file using the Web Share API (navigator.share).
-   * Primarily used for large document sharing on WhatsApp and other platforms.
+   * Hybrid Share Method: Native Share + Clipboard Fallback
+   * Optimized for Nigerian Android environment.
+   */
+  async shareMasterStock(compressedData: string) {
+    const message = `📦 NAIJASHOP MASTER STOCK UPDATE\nCopy and send the code below to your staff:\n\n${compressedData}`;
+    
+    // STEP 1: Try Native Share (Text mode - works for long strings on Android)
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'NaijaShop Update',
+          text: message,
+        });
+        return true;
+      } catch (err) {
+        console.log("Native share failed, trying clipboard...");
+      }
+    }
+
+    // STEP 2: Fallback - Copy to Clipboard
+    try {
+      await navigator.clipboard.writeText(compressedData);
+      alert("✅ Stock Code Copied! Now paste it in your WhatsApp Group.");
+      window.open('https://wa.me/', '_blank'); // Opens WhatsApp
+      return true;
+    } catch (err) {
+      return false; // Last resort: trigger download in the component
+    }
+  },
+
+  /**
+   * Shares a file using the Web Share API (navigator.canShare).
    */
   shareFile: async (file: File, title: string, text: string): Promise<boolean> => {
     if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
