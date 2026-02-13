@@ -1,9 +1,7 @@
-
 import React, { createContext, useContext, useState, useRef, useEffect, useCallback } from 'react';
 import Peer from 'simple-peer';
-import LZString from 'lz-string';
-import { db } from '../db/db';
-import { Sale, SyncStatus, Staff } from '../types';
+import { db } from '../../db/db';
+import { Sale, SyncStatus, Staff } from '../../types';
 
 interface SyncContextType {
   status: SyncStatus;
@@ -11,33 +9,37 @@ interface SyncContextType {
   sessionId: string | null;
   initiateSync: (initiator: boolean) => any;
   broadcastSale: (sale: Sale) => void;
-  broadcastInventory: () => void;
-  processWhatsAppSync: (compressedData: string) => Promise<{ sales: number, products: number }>;
   resetConnection: () => void;
   lastHeartbeat: number;
 }
 
 const SyncContext = createContext<SyncContextType | undefined>(undefined);
 
+// Cash Register Sound Helper
+const playCashSound = () => {
+  try {
+    const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2012/2012-preview.mp3');
+    audio.play().catch(() => console.log("Sound blocked by browser policy until interaction."));
+  } catch (e) {
+    console.error("Audio error", e);
+  }
+};
+
 export const SyncProvider: React.FC<{ children: React.ReactNode, currentUser: Staff | null }> = ({ children, currentUser }) => {
   const [status, setStatus] = useState<SyncStatus>('offline');
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(localStorage.getItem('last_sync_session'));
   const [lastHeartbeat, setLastHeartbeat] = useState<number>(0);
   const peerRef = useRef<any>(null);
   const heartbeatIntervalRef = useRef<any>(null);
-  const reconnectTimeoutRef = useRef<any>(null);
   const isAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'Manager';
 
   const resetConnection = useCallback(() => {
-    console.log('[SYNC] Force Clearing Connection Objects...');
     if (peerRef.current) {
       peerRef.current.destroy();
       peerRef.current = null;
     }
     if (heartbeatIntervalRef.current) clearInterval(heartbeatIntervalRef.current);
-    if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
     setStatus('offline');
-    setLastHeartbeat(0);
   }, []);
 
   const handleIncomingData = useCallback(async (data: string) => {
@@ -50,144 +52,100 @@ export const SyncProvider: React.FC<{ children: React.ReactNode, currentUser: St
         return;
       }
 
-      if (isAdmin && payload.type === 'SALE_PUSH') {
+      if (isAdmin && payload.type === 'INSTANT_SALE_PUSH') {
         const sale = payload.sale as Sale;
-        const exists = await db.sales.where('timestamp').equals(sale.timestamp).first();
+        const exists = await db.sales.where('sale_id').equals(sale.sale_id).first();
+        
         if (!exists) {
-          await (db as any).transaction('rw', [db.sales, db.products], async () => {
+          // Play notification sound on Admin device
+          playCashSound();
+          
+          await (db as any).transaction('rw', [db.sales, db.products, db.inventory_logs], async () => {
             await db.sales.add({ ...sale, sync_status: 'synced' });
+            
+            // Mirror inventory deduction on Admin phone instantly
             for (const item of sale.items) {
               const p = await db.products.get(item.productId);
-              if (p) await db.products.update(item.productId, { stock_qty: Math.max(0, p.stock_qty - item.quantity) });
+              if (p) {
+                const oldStock = Number(p.stock_qty);
+                const newStock = Math.max(0, oldStock - Number(item.quantity));
+                await db.products.update(item.productId, { stock_qty: newStock });
+                
+                await db.inventory_logs.add({
+                  product_id: item.productId,
+                  product_name: p.name,
+                  quantity_changed: -item.quantity,
+                  old_stock: oldStock,
+                  new_stock: newStock,
+                  type: 'Sale',
+                  timestamp: Date.now(),
+                  performed_by: `Live Sync (${sale.staff_name})`
+                });
+              }
             }
           });
         }
-      } else if (!isAdmin && payload.type === 'CATALOG_UPDATE') {
-        await (db as any).transaction('rw', [db.products], async () => {
-          await db.products.clear();
-          await db.products.bulkAdd(payload.products);
-        });
-        await db.settings.update('app_settings', { last_synced_timestamp: Date.now() });
       }
     } catch (e) {
-      console.error("[SYNC] Real-time Data Error:", e);
+      console.error("[SYNC] Data Error:", e);
     }
   }, [isAdmin]);
 
   const initiateSync = useCallback((initiator: boolean) => {
     resetConnection();
     
-    // THE FRESH SESSION RULE
-    const newSessionId = Math.random().toString(36).substring(7);
+    const newSessionId = initiator ? Math.random().toString(36).substring(7) : (sessionId || 'pending');
     setSessionId(newSessionId);
+    localStorage.setItem('last_sync_session', newSessionId);
     setStatus('connecting');
 
     const p = new Peer({
       initiator,
       trickle: false,
-      config: { iceServers: [] }
+      // HOTSPOT OPTIMIZATION: Prioritize host candidates (local IPs)
+      config: { 
+        iceServers: [], // Empty iceServers forces host-only/STUN-less local discovery in many environments
+        iceTransportPolicy: 'all'
+      }
     });
 
     p.on('connect', () => {
-      console.log('[SYNC] P2P Linked Successfully!');
       setStatus('live');
       setLastHeartbeat(Date.now());
       
-      // THE HEARTBEAT RULE: Tiny ping every 10 seconds
+      // HEARTBEAT LOGIC: 15s ping
       heartbeatIntervalRef.current = setInterval(() => {
         if (p.connected) {
-          p.send(JSON.stringify({ type: 'HEARTBEAT' }));
-          // Check if we lost the other side (25s timeout)
-          if (Date.now() - lastHeartbeat > 25000) {
+          p.send(JSON.stringify({ type: 'HEARTBEAT', sessionId: newSessionId }));
+          
+          // Drop check: If no heartbeat response for 35s
+          if (Date.now() - lastHeartbeat > 35000) {
             setStatus('reconnecting');
           }
         }
-      }, 10000);
+      }, 15000);
     });
 
     p.on('data', (data: any) => handleIncomingData(data.toString()));
-
-    p.on('error', (err: any) => {
-      console.error("[SYNC] Peer Error:", err);
-      setStatus('failed');
-    });
-
-    p.on('close', () => {
-      if (status === 'live') {
-        setStatus('reconnecting');
-        // Auto-Reconnect window (60 seconds)
-        reconnectTimeoutRef.current = setTimeout(() => {
-          if (status !== 'live') setStatus('failed');
-        }, 60000);
-      } else {
-        setStatus('offline');
-      }
-    });
+    p.on('error', () => setStatus('failed'));
+    p.on('close', () => setStatus('reconnecting'));
 
     peerRef.current = p;
     return p;
-  }, [handleIncomingData, resetConnection, lastHeartbeat, status]);
+  }, [handleIncomingData, resetConnection, lastHeartbeat, sessionId]);
 
   const broadcastSale = useCallback((sale: Sale) => {
-    // THE AUTO-PUSH RULE
     if (peerRef.current?.connected) {
-      peerRef.current.send(JSON.stringify({ type: 'SALE_PUSH', sale }));
+      peerRef.current.send(JSON.stringify({ type: 'INSTANT_SALE_PUSH', sale }));
     }
   }, []);
 
-  const broadcastInventory = useCallback(async () => {
-    if (peerRef.current?.connected && isAdmin) {
-      const products = await db.products.toArray();
-      peerRef.current.send(JSON.stringify({ type: 'CATALOG_UPDATE', products }));
-    }
-  }, [isAdmin]);
-
-  const processWhatsAppSync = async (compressedData: string) => {
-    try {
-      // Ensure we use the correct decompression for encoded URI components (standard for sharing)
-      const json = LZString.decompressFromEncodedURIComponent(compressedData);
-      if (!json) throw new Error("Invalid or Corrupt Data String");
-      const payload = JSON.parse(json);
-      
-      let salesCount = 0;
-      let productCount = 0;
-
-      if (payload.type === 'WHATSAPP_EXPORT') {
-        // Handle Admin importing Staff sales
-        if (isAdmin && payload.sales) {
-          for (const sale of payload.sales) {
-            const exists = await db.sales.where('timestamp').equals(sale.timestamp).first();
-            if (!exists) {
-              await (db as any).transaction('rw', [db.sales, db.products], async () => {
-                await db.sales.add({ ...sale, sync_status: 'synced' });
-                for (const item of sale.items) {
-                  const p = await db.products.get(item.productId);
-                  if (p) await db.products.update(item.productId, { stock_qty: Math.max(0, p.stock_qty - item.quantity) });
-                }
-              });
-              salesCount++;
-            }
-          }
-        }
-        // Handle Staff importing Admin catalog
-        else if (!isAdmin && payload.products) {
-          await (db as any).transaction('rw', [db.products], async () => {
-            await db.products.clear();
-            await db.products.bulkAdd(payload.products);
-          });
-          productCount = payload.products.length;
-          await db.settings.update('app_settings', { last_synced_timestamp: Date.now() });
-        }
-      }
-      return { sales: salesCount, products: productCount };
-    } catch (e: any) {
-      throw new Error("Sync Failed: " + e.message);
-    }
-  };
-
+  // AUTO-RECONNECT LOGIC: If offline/failed but have a session, try to keep visible status
   useEffect(() => {
-    return () => resetConnection();
-  }, [resetConnection]);
+    if (status === 'offline' && sessionId) {
+      // Logic for background handshake can go here or be triggered by UI
+    }
+  }, [status, sessionId]);
 
   return (
     <SyncContext.Provider value={{ 
@@ -196,8 +154,6 @@ export const SyncProvider: React.FC<{ children: React.ReactNode, currentUser: St
       sessionId,
       initiateSync, 
       broadcastSale, 
-      broadcastInventory,
-      processWhatsAppSync,
       resetConnection,
       lastHeartbeat 
     }}>

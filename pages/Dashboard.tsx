@@ -1,11 +1,16 @@
 import React, { useState, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
-import { TrendingUp, PiggyBank, TrendingDown, Package, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { TrendingUp, PiggyBank, TrendingDown, Package, Eye, EyeOff, Loader2, RefreshCw, AlertCircle, Wifi } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { useSync } from '../hooks/context/SyncProvider';
 
 const Dashboard: React.FC<any> = ({ currentUser, setView, trialRemaining, isSubscribed, onSubscribe }) => {
   const [showSensitive, setShowSensitive] = useState(false);
+  
+  // Sync Status Hook
+  const { status } = useSync();
+  
   const sales = useLiveQuery(() => db.sales.toArray()) || [];
   const products = useLiveQuery(() => db.products.toArray()) || [];
   const expenses = useLiveQuery(() => db.expenses.toArray()) || [];
@@ -18,10 +23,41 @@ const Dashboard: React.FC<any> = ({ currentUser, setView, trialRemaining, isSubs
     return { todaySales, totalProducts, todayExp };
   }, [sales, products, expenses]);
 
+  const renderSyncIndicator = () => {
+    switch (status) {
+      case 'live':
+        return (
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 text-emerald-600 rounded-full border border-emerald-100 animate-in fade-in">
+            <Wifi size={14} className="animate-pulse" />
+            <span className="text-[10px] font-black uppercase tracking-widest">Always-On Live</span>
+          </div>
+        );
+      case 'reconnecting':
+        return (
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 text-amber-600 rounded-full border border-amber-100 animate-in fade-in">
+            <RefreshCw size={14} className="animate-spin" />
+            <span className="text-[10px] font-black uppercase tracking-widest">Reconnecting...</span>
+          </div>
+        );
+      case 'failed':
+        return (
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-rose-50 text-rose-600 rounded-full border border-rose-100 animate-in fade-in">
+            <AlertCircle size={14} />
+            <span className="text-[10px] font-black uppercase tracking-widest">Sync Lost</span>
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-black text-slate-800">Store Performance</h2>
+        <div className="flex items-center gap-4">
+          <h2 className="text-2xl font-black text-slate-800">Store Performance</h2>
+          {renderSyncIndicator()}
+        </div>
         <button onClick={() => setShowSensitive(!showSensitive)} className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl shadow-sm text-xs font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50 transition-all">
           {showSensitive ? <EyeOff size={16}/> : <Eye size={16}/>} {showSensitive ? 'Hide Profits' : 'Show Profits'}
         </button>
