@@ -4,6 +4,9 @@ import Pusher from 'pusher-js';
 const PUSHER_KEY = (import.meta as any).env?.VITE_PUSHER_KEY || '8448b11165606d156641';
 const PUSHER_CLUSTER = (import.meta as any).env?.VITE_PUSHER_CLUSTER || 'mt1';
 
+// STRICT INSTRUCTION: Enable logging for terminal debugging
+Pusher.logToConsole = true;
+
 class RelayService {
   private pusher: Pusher | null = null;
   private channel: any = null;

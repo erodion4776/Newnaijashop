@@ -82,6 +82,8 @@ const Layout: React.FC<LayoutProps> = ({
   const [unlockPin, setUnlockPin] = useState('');
 
   const { status } = useSync();
+  const isLiveSyncConnected = status === 'live';
+  
   const settings = useLiveQuery(() => db.settings.get('app_settings'));
   const showAllFeatures = currentUser?.role === 'Admin' || (currentUser?.role === 'Manager' && !isStaffLock);
 
@@ -190,18 +192,17 @@ const Layout: React.FC<LayoutProps> = ({
             <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-2 hover:bg-slate-100 rounded-lg"><Menu size={24} /></button>
             <div className="flex items-center gap-3">
               <h2 className="text-lg font-bold text-slate-800">{navItems.find(i => i.id === activeView)?.label || 'Terminal'}</h2>
-              {status === 'live' && (
-                <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full border border-emerald-100 animate-in fade-in zoom-in">
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                  </span>
-                  <span className="text-[9px] font-black uppercase tracking-widest">Live Link Active</span>
-                </div>
-              )}
             </div>
           </div>
           <div className="flex items-center gap-4">
+            {/* STRICT INSTRUCTION: Live Sync Indicator Injection */}
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-50 border border-slate-100 shadow-inner mr-2">
+              <div className={`w-2 h-2 rounded-full animate-pulse ${isLiveSyncConnected ? 'bg-emerald-500 shadow-[0_0_8px_#10b981]' : 'bg-slate-300'}`}></div>
+              <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">
+                {isLiveSyncConnected ? 'Live Link Active' : 'Offline Mode'}
+              </span>
+            </div>
+
             {isStaffLock && currentUser?.role !== 'Admin' && (
               <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 border border-amber-100 rounded-full text-amber-600">
                 <ShieldAlert size={14} />
