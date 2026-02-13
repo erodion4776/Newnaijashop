@@ -1,445 +1,138 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
-import LZString from 'lz-string';
 import { 
+  ShieldCheck, 
   Database, 
+  MessageSquare, 
   Download, 
   Upload, 
-  CheckCircle2, 
+  Share2, 
   Loader2, 
-  Zap, 
-  MessageSquare,
-  FileUp,
-  MessageSquareCode,
-  Save,
-  Send,
-  ShieldCheck,
-  ShieldAlert,
-  ClipboardPaste,
-  RefreshCw,
-  Users,
-  Clock,
-  Share2
+  Copy,
+  CheckCircle2,
+  AlertCircle,
+  Smartphone
 } from 'lucide-react';
 import { Staff, Settings as SettingsType } from '../types';
-import { generateBackupData, restoreFromBackup, downloadBackupFile, performAutoSnapshot } from '../utils/backup';
+import LZString from 'lz-string';
+import { generateBackupData, restoreFromBackup, downloadBackupFile } from '../utils/backup';
 import WhatsAppService from '../services/WhatsAppService';
 
-const SYNC_HEADER = "NS_V2_";
+interface SecurityBackupsProps {
+  currentUser: Staff | null;
+}
 
-/**
- * Local XOR Cipher to salt the data with the Master Security Key
- */
-const xorCipher = (text: string, key: string): string => {
-  if (!key) return text;
-  return text.split('').map((char, i) => 
-    String.fromCharCode(char.charCodeAt(0) ^ key.charCodeAt(i % key.length))
-  ).join('');
-};
-
-const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser }) => {
+const SecurityBackups: React.FC<SecurityBackupsProps> = ({ currentUser }) => {
+  const settings = useLiveQuery(() => db.settings.get('app_settings'));
   const [isProcessing, setIsProcessing] = useState(false);
-  const [success, setSuccess] = useState<string | null>(null);
-  const [importString, setImportString] = useState('');
-  const [isSyncing, setIsSyncing] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [importCode, setImportCode] = useState('');
+  const [localWhatsApp, setLocalWhatsApp] = useState('');
+  const [localGroup, setLocalGroup] = useState('');
 
-  const settings = useLiveQuery(() => db.settings.get('app_settings')) as SettingsType | undefined;
-  const [automationData, setAutomationData] = useState({
-    admin_whatsapp_number: '',
-    whatsapp_group_link: ''
-  });
+  const isAdmin = currentUser?.role?.toLowerCase() === 'admin';
 
-  const lastSyncTs = localStorage.getItem('last_sync_timestamp');
-  const isAdmin = currentUser?.role.toLowerCase() === 'admin';
-  const isStaff = !isAdmin;
-
+  // Load initial values safely
   useEffect(() => {
     if (settings) {
-      setAutomationData({
-        admin_whatsapp_number: settings.admin_whatsapp_number || '',
-        whatsapp_group_link: settings.whatsapp_group_link || ''
-      });
+      setLocalWhatsApp(settings.admin_whatsapp_number || '');
+      setLocalGroup(settings.whatsapp_group_link || '');
     }
   }, [settings]);
-
-  const showSuccess = (msg: string) => {
-    setSuccess(msg);
-    setTimeout(() => setSuccess(null), 3000);
-  };
 
   const handleUpdateAutomation = async () => {
     setIsProcessing(true);
     try {
       await db.settings.update('app_settings', {
-        admin_whatsapp_number: automationData.admin_whatsapp_number.replace(/\D/g, ''),
-        whatsapp_group_link: automationData.whatsapp_group_link.trim()
+        admin_whatsapp_number: localWhatsApp,
+        whatsapp_group_link: localGroup
       });
-      showSuccess("Automation Links Updated!");
+      alert("✅ Automation Links Updated!");
     } catch (err) {
-      alert("Failed to update links");
+      alert("Failed to save. Try again.");
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const generateShopKey = async () => {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ0123456789';
-    const part = () => Array.from({ length: 4 }, () => chars.charAt(Math.floor(Math.random() * chars.length))).join('');
-    const newKey = `NS-${part()}-${part()}`;
-    await db.settings.update('app_settings', { sync_key: newKey });
-    showSuccess("Security Key Generated!");
-  };
-
-  const handleWhatsAppBackup = async () => {
+  const handleWhatsAppExport = async () => {
     setIsProcessing(true);
     try {
       const data = await generateBackupData();
-      const text = `📦 NAIJASHOP BACKUP - ${new Date().toLocaleDateString()}\n\nCopy this code to restore:\n\n${data}`;
-      await WhatsAppService.send(text, settings, 'DIRECT_REPORT');
-      showSuccess("Backup Sent!");
-    } catch (e) {
-      alert("Failed to send");
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  /**
-   * THE BROADCAST ENGINE (Admin Side)
-   * Hybrid Share Method: Native Share + Clipboard
-   */
-  const handleSendStockToWhatsApp = async () => {
-    if (!settings?.sync_key) { 
-      alert("Security Key missing. Visit Settings to set one."); 
-      return; 
-    }
-
-    setIsSyncing(true);
-    try {
-      // Step A: Fetch Products
-      const products = await db.products.toArray();
-
-      // Step B: SECURITY - Strip cost_price before compression
-      const cleanedProducts = products.map(p => ({
-        name: p.name,
-        price: Number(p.price),
-        category: p.category,
-        stock_qty: Number(p.stock_qty)
-      }));
-
-      // Step C: Salting & Compression
-      const payload = {
-        type: 'STOCK_UPDATE',
-        products: cleanedProducts,
-        timestamp: Date.now()
-      };
-
-      const jsonString = JSON.stringify(payload);
-      const salted = xorCipher(jsonString, settings.sync_key);
-      const compressed = LZString.compressToEncodedURIComponent(salted);
-      const finalCode = SYNC_HEADER + compressed;
-
-      // STEP D: Native Share Trigger
-      const shared = await WhatsAppService.shareMasterStock(finalCode);
-
-      if (!shared) {
-        // Ultimate Fallback: Download file if even clipboard fails
-        const blob = new Blob([finalCode], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `Stock_Update_${new Date().toLocaleDateString().replace(/\//g, '-')}.nshop`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
+      if (isAdmin) {
+         // Logic for Admin to broadcast to group
+         window.open(`https://wa.me/?text=${encodeURIComponent('📦 MASTER STOCK UPDATE: ' + data)}`, '_blank');
       } else {
-        showSuccess("Update Broadcast Initiated!");
+         // Logic for Staff to send to Boss
+         const bossNum = settings?.admin_whatsapp_number || '';
+         window.open(`https://wa.me/${bossNum}?text=${encodeURIComponent('📥 STAFF SALES REPORT: ' + data)}`, '_blank');
       }
-    } catch (err) {
-      console.error("Broadcast failed:", err);
-      alert("Failed to generate update code.");
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  /**
-   * THE RECEIVING ENGINE
-   * Atomic stock update from Boss's code
-   */
-  const handleUpdateFromBoss = async () => {
-    if (!importString.trim() || !settings?.sync_key) return;
-    
-    setIsSyncing(true);
-    try {
-      if (!importString.startsWith(SYNC_HEADER)) throw new Error("Invalid format.");
-
-      const compressed = importString.replace(SYNC_HEADER, "");
-      const encrypted = LZString.decompressFromEncodedURIComponent(compressed);
-      if (!encrypted) throw new Error("Corrupt data.");
-
-      const jsonString = xorCipher(encrypted, settings.sync_key);
-      const payload = JSON.parse(jsonString);
-
-      if (payload.type !== 'STOCK_UPDATE') throw new Error("Invalid update type.");
-
-      // Atomic overwrite of local products
-      await (db as any).transaction('rw', [db.products, db.inventory_logs], async () => {
-        await db.products.clear();
-        
-        for (const p of payload.products) {
-          const sellingPrice = Number(p.price);
-          const currentStock = Number(p.stock_qty);
-          const genericCost = Math.round((sellingPrice * 0.8) / 50) * 50;
-
-          await db.products.add({
-            name: p.name,
-            price: sellingPrice,
-            cost_price: genericCost,
-            stock_qty: currentStock,
-            category: p.category || 'General',
-            low_stock_threshold: 5
-          });
-        }
-      });
-
-      localStorage.setItem('last_sync_timestamp', Date.now().toString());
-      setImportString('');
-      showSuccess(`Stock Updated! ${payload.products.length} items synced.`);
-    } catch (e: any) {
-      alert("Update Failed: " + (e.message || "Invalid or mismatched key. Ensure you have the same Security Key as your Boss."));
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  const handleStaffSendReport = async () => {
-    if (!settings?.sync_key) { alert("Security Key missing."); return; }
-    setIsSyncing(true);
-    try {
-      const today = new Date().setHours(0,0,0,0);
-      const pendingSales = await db.sales.where('timestamp').aboveOrEqual(today).toArray();
-      const totalRevenue = pendingSales.reduce((acc, s) => acc + s.total_amount, 0);
-
-      const payload = {
-        type: 'SALES_REPORT',
-        staff_name: currentUser?.name || 'Staff',
-        sales: pendingSales,
-        timestamp: Date.now()
-      };
-
-      const salted = xorCipher(JSON.stringify(payload), settings.sync_key);
-      const finalCode = SYNC_HEADER + LZString.compressToEncodedURIComponent(salted);
-
-      const text = `🏁 Daily Sales Report from ${currentUser?.name || 'Staff'} | Revenue: ₦${totalRevenue.toLocaleString()}\n\nCopy this code to Boss phone:\n\n${finalCode}`;
-      
-      await WhatsAppService.send(text, settings, 'DIRECT_REPORT');
-      showSuccess("Report Sent to Boss!");
     } catch (e) {
-      alert("Sync failed");
+      alert("Export failed");
     } finally {
-      setIsSyncing(false);
+      setIsProcessing(true);
+      setTimeout(() => setIsProcessing(false), 2000);
     }
   };
 
-  const snapshotTs = localStorage.getItem('naijashop_snapshot_ts');
+  if (!settings) return <div className="p-10 text-center"><Loader2 className="animate-spin mx-auto" /></div>;
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in duration-500 pb-24">
-      {success && (
-        <div className="fixed top-4 right-4 z-[200] bg-emerald-600 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 animate-in slide-in-from-top-4">
-          <CheckCircle2 size={20} /> <span className="font-bold">{success}</span>
-        </div>
-      )}
-
+    <div className="max-w-4xl mx-auto space-y-8 pb-24">
       <div className="bg-slate-900 rounded-[3rem] p-10 text-white relative overflow-hidden shadow-2xl">
         <div className="absolute right-[-20px] top-[-20px] opacity-10"><ShieldCheck size={180} /></div>
         <div className="relative z-10">
-          <h2 className="text-4xl font-black">WhatsApp Sync Station</h2>
-          <p className="text-emerald-400 font-bold uppercase tracking-widest text-[10px] mt-1">
-            {isStaff ? 'Terminal Records' : 'Master Control Station'}
-          </p>
+          <h2 className="text-4xl font-black italic">Security & Backups</h2>
+          <p className="text-emerald-400 font-bold uppercase tracking-widest text-[10px] mt-1">Data Fortress System</p>
         </div>
       </div>
 
-      {/* STAFF VIEW */}
-      {isStaff && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <div className="bg-white p-10 rounded-[3rem] border-4 border-emerald-100 shadow-xl space-y-6 flex flex-col items-center text-center">
-            <div className="w-20 h-20 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center">
-              <Send size={40} />
-            </div>
-            <div className="space-y-2">
-              <h3 className="text-2xl font-black text-slate-800">Submit Daily Work</h3>
-              <p className="text-slate-500 font-medium">Send today's sales to your Oga's phone instantly.</p>
-            </div>
-            <button 
-              onClick={handleStaffSendReport} 
-              disabled={isSyncing}
-              className="w-full py-6 bg-emerald-600 text-white rounded-[2rem] font-black text-xl flex items-center justify-center gap-3 shadow-2xl active:scale-95 transition-all"
-            >
-              {isSyncing ? <Loader2 className="animate-spin" /> : <MessageSquare size={24} />}
-              📤 Send Today's Sales to Boss
-            </button>
+      {/* ADMIN ONLY: Automation Config */}
+      {isAdmin && (
+        <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-lg space-y-6">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center"><MessageSquare size={20} /></div>
+            <h3 className="font-black text-slate-800 uppercase text-xs tracking-widest">WhatsApp Sync Automation</h3>
           </div>
-
-          <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6 flex flex-col">
-            <div className="flex items-center justify-between">
-               <div className="flex items-center gap-3">
-                 <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl"><RefreshCw size={24} /></div>
-                 <h3 className="text-xl font-black text-slate-800">Receive Stock</h3>
-               </div>
-               {lastSyncTs && (
-                 <div className="text-right">
-                    <p className="text-[8px] font-black text-slate-400 uppercase">Last Updated</p>
-                    <p className="text-[10px] font-bold text-indigo-600">{new Date(parseInt(lastSyncTs)).toLocaleDateString()}</p>
-                 </div>
-               )}
-            </div>
-            <p className="text-sm text-slate-500 font-medium">Paste the stock update code from your Oga below.</p>
-            
-            <textarea 
-              placeholder="Paste master update code here..." 
-              className="w-full p-4 bg-slate-50 border rounded-2xl font-mono text-[10px] h-32 outline-none focus:ring-2 focus:ring-indigo-500 resize-none shadow-inner" 
-              value={importString} 
-              onChange={e => setImportString(e.target.value)} 
-            />
-
-            <button 
-              onClick={handleUpdateFromBoss} 
-              disabled={!importString.trim() || isSyncing}
-              className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50"
-            >
-              {isSyncing ? <Loader2 className="animate-spin" size={24} /> : <ClipboardPaste size={20} />}
-              📥 Update My Stock
-            </button>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <input type="text" placeholder="Owner WhatsApp (e.g. 234...)" className="w-full px-5 py-4 bg-slate-50 border rounded-2xl font-bold outline-none focus:ring-2 focus:ring-emerald-500" value={localWhatsApp} onChange={e => setLocalWhatsApp(e.target.value)} />
+            <input type="text" placeholder="Group Invite Link" className="w-full px-5 py-4 bg-slate-50 border rounded-2xl font-bold outline-none focus:ring-2 focus:ring-emerald-500" value={localGroup} onChange={e => setLocalGroup(e.target.value)} />
           </div>
+          <button onClick={handleUpdateAutomation} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-xs tracking-widest">Update Links</button>
         </div>
       )}
 
-      {/* ADMIN VIEW */}
-      {isAdmin && (
-        <>
-          {!settings?.sync_key && (
-            <div className="bg-amber-50 border-2 border-dashed border-amber-300 p-8 rounded-[2.5rem] text-center space-y-4">
-              <ShieldAlert className="mx-auto text-amber-600" size={48} />
-              <h3 className="text-xl font-black text-amber-900">Security Key Missing</h3>
-              <p className="text-amber-800 font-medium">Both Boss and Staff must use the same key to sync data securely.</p>
-              <button onClick={generateShopKey} className="bg-emerald-600 text-white px-8 py-4 rounded-2xl font-black flex items-center justify-center gap-3 mx-auto shadow-xl">
-                <Zap size={20} /> 🔐 Generate My Shop Security Key
+      {/* ACTION SECTION */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm space-y-6">
+          <h3 className="font-black text-slate-800 uppercase text-xs">Export Data</h3>
+          <div className="space-y-3">
+            <button onClick={handleWhatsAppExport} className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black flex items-center justify-center gap-3 shadow-lg hover:bg-emerald-700 transition-all">
+              <Share2 size={20} /> {isAdmin ? 'Broadcast Master Stock' : 'Send Sales to Boss'}
+            </button>
+            {isAdmin && (
+              <button onClick={() => downloadBackupFile(settings.shop_name)} className="w-full py-4 bg-slate-50 text-slate-600 rounded-2xl font-black flex items-center justify-center gap-3 hover:bg-slate-100 border border-slate-200">
+                <Download size={20} /> Download .nshop File
               </button>
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div className="bg-white p-10 rounded-[3rem] border-4 border-indigo-100 shadow-xl space-y-6 flex flex-col items-center text-center">
-              <div className="w-20 h-20 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center">
-                <RefreshCw size={40} />
-              </div>
-              <div className="space-y-2">
-                <h3 className="text-2xl font-black text-slate-800">Broadcast Stock</h3>
-                <p className="text-slate-500 font-medium">Update prices and items on all staff phones at once.</p>
-              </div>
-              <button 
-                onClick={handleSendStockToWhatsApp} 
-                disabled={isSyncing}
-                className="w-full py-6 bg-indigo-600 text-white rounded-[2rem] font-black text-xl flex items-center justify-center gap-3 shadow-2xl active:scale-95 transition-all"
-              >
-                {isSyncing ? (
-                  <>
-                    <Loader2 className="animate-spin" size={24} />
-                    ⏳ Preparing Code...
-                  </>
-                ) : (
-                  <>
-                    <Send size={24} />
-                    🚀 Send Master Stock Update
-                  </>
-                )}
-              </button>
-            </div>
-
-            <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
-              <div className="flex items-center gap-3">
-                <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl"><Users size={24} /></div>
-                <h3 className="text-xl font-black text-slate-800">Process Staff Sales</h3>
-              </div>
-              <p className="text-sm text-slate-500 font-medium">Paste the sales code received from your staff to update ledger.</p>
-              
-              <textarea 
-                placeholder="Paste sales code here..." 
-                className="w-full p-4 bg-slate-50 border rounded-2xl font-mono text-[10px] h-32 outline-none focus:ring-2 focus:ring-emerald-500 resize-none shadow-inner" 
-                value={importString} 
-                onChange={e => setImportString(e.target.value)} 
-              />
-
-              <button 
-                onClick={async () => {
-                  if (!importString.trim()) return;
-                  setIsSyncing(true);
-                  try {
-                    const { importWhatsAppBridgeData: importFn } = await import('../services/syncService');
-                    const result = await importFn(importString.trim(), settings?.sync_key || '');
-                    showSuccess(`Sync Success! Processed ${result.count || 0} items.`);
-                    setImportString('');
-                  } catch(e: any) {
-                    alert(e.message);
-                  } finally {
-                    setIsSyncing(false);
-                  }
-                }} 
-                disabled={!importString.trim() || isSyncing}
-                className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50"
-              >
-                {isSyncing ? <Loader2 className="animate-spin" size={24} /> : <Database size={20} />}
-                ✅ Sync Records to Ledger
-              </button>
-            </div>
+            )}
           </div>
+        </div>
 
-          <div className="bg-white p-8 rounded-[3rem] border border-emerald-100 shadow-xl space-y-8">
-            <div className="flex items-center justify-between flex-wrap gap-4">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center"><MessageSquareCode size={24} /></div>
-                <div>
-                  <h3 className="text-xl font-black text-slate-800">WhatsApp Sync Automation</h3>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase">Direct reporting links</p>
-                </div>
-              </div>
-              <button onClick={handleUpdateAutomation} className="px-6 py-3 bg-emerald-600 text-white rounded-xl font-black text-[10px] uppercase shadow-lg active:scale-95 transition-all"><Save size={16} className="inline mr-1"/> Update Links</button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-2">
-                <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Owner WhatsApp Number</label>
-                <input type="text" placeholder="e.g. 2348184774884" className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold" value={automationData.admin_whatsapp_number} onChange={e => setAutomationData({...automationData, admin_whatsapp_number: e.target.value.replace(/\D/g, '')})} />
-              </div>
-              <div className="space-y-2">
-                <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Staff Group Link</label>
-                <input type="text" placeholder="https://chat.whatsapp.com/..." className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold" value={automationData.whatsapp_group_link} onChange={e => setAutomationData({...automationData, whatsapp_group_link: e.target.value})} />
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-slate-50 p-8 rounded-[3rem] border border-slate-200 space-y-6">
-            <h3 className="text-lg font-black text-slate-800">Legacy Backup Tools</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <button onClick={handleWhatsAppBackup} className="py-4 bg-white border border-slate-200 text-slate-600 rounded-2xl font-black text-xs uppercase flex items-center justify-center gap-2 shadow-sm"><MessageSquare size={16}/> Self Backup</button>
-              <button onClick={() => downloadBackupFile(settings?.shop_name || 'Store')} className="py-4 bg-white border border-slate-200 text-slate-600 rounded-2xl font-black text-xs uppercase flex items-center justify-center gap-2 shadow-sm"><Download size={16}/> Download .nshop File</button>
-            </div>
-          </div>
-        </>
-      )}
-
-      <div className="bg-emerald-50 border border-emerald-100 p-8 rounded-[2.5rem] flex flex-col md:flex-row items-center gap-6">
-         <History size={32} className="text-emerald-600 shrink-0" />
-         <div className="flex-1 text-center md:text-left">
-            <h4 className="font-black text-slate-800">Auto-Snapshot System</h4>
-            {snapshotTs && <p className="text-[10px] text-emerald-600 font-black uppercase">Last: {new Date(parseInt(snapshotTs)).toLocaleString()}</p>}
-         </div>
-         <button onClick={async () => { await performAutoSnapshot(); showSuccess("Snapshot captured!"); }} className="px-6 py-3 bg-white border border-emerald-200 text-emerald-600 rounded-xl font-black text-xs">Force Snapshot</button>
+        <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm space-y-6 text-center">
+          <h3 className="font-black text-slate-800 uppercase text-xs">Restore System</h3>
+          <textarea 
+            placeholder="Paste code here..." 
+            className="w-full h-24 p-4 bg-slate-50 border border-slate-100 rounded-2xl text-[10px] font-mono outline-none focus:ring-2 focus:ring-emerald-500 resize-none"
+            value={importCode}
+            onChange={e => setImportCode(e.target.value)}
+          />
+          <button 
+            onClick={() => restoreFromBackup(importCode)}
+            className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black flex items-center justify-center gap-3"
+          >
+            <Upload size={20} /> Perform Recovery
+          </button>
+        </div>
       </div>
     </div>
   );
