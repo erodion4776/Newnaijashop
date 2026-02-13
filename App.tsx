@@ -87,12 +87,9 @@ const AppContent: React.FC = () => {
     const runInit = async () => {
       await initSettings();
       const currentSettings = await db.settings.get('app_settings');
-      
-      // AUTO-ACTIVATION: Join the relay room as soon as we have a key
       if (currentSettings?.sync_key) {
         RelayService.init(currentSettings.sync_key);
       }
-      
       setIsInitialized(true);
     };
     runInit();
