@@ -57,17 +57,34 @@ const SecurityBackups: React.FC<SecurityBackupsProps> = ({ currentUser }) => {
     }
   };
 
+  /**
+   * ADMIN STANDARDIZED EXPORT
+   * Standardizes the package type and strips sensitive data for staff sync.
+   */
   const handleWhatsAppExport = async () => {
+    if (!settings) return;
     setIsProcessing(true);
     try {
-      const data = await generateBackupData();
       if (isAdmin) {
-         // Logic for Admin to broadcast to group
-         window.open(`https://wa.me/?text=${encodeURIComponent('📦 MASTER STOCK UPDATE: ' + data)}`, '_blank');
+        // Logic for Admin to broadcast specialized Master Stock package
+        const products = await db.products.toArray();
+        // SECURITY: Remove sensitive cost data before sending to staff
+        const safeProducts = products.map(({ cost_price, ...rest }) => rest);
+
+        const syncPackage = {
+          type: 'MASTER_STOCK_UPDATE',
+          products: safeProducts,
+          shopName: settings.shop_name,
+          license_expiry: settings.license_expiry,
+          timestamp: Date.now()
+        };
+        const compressed = LZString.compressToEncodedURIComponent(JSON.stringify(syncPackage));
+        window.open(`https://wa.me/?text=${encodeURIComponent('📦 MASTER STOCK UPDATE: ' + compressed)}`, '_blank');
       } else {
-         // Logic for Staff to send to Boss
-         const bossNum = settings?.admin_whatsapp_number || '';
-         window.open(`https://wa.me/${bossNum}?text=${encodeURIComponent('📥 STAFF SALES REPORT: ' + data)}`, '_blank');
+        // Logic for Staff to send sales data back to Boss
+        const data = await generateBackupData(); // Staff sends full local snapshot for boss to merge/audit
+        const bossNum = settings?.admin_whatsapp_number || '';
+        window.open(`https://wa.me/${bossNum}?text=${encodeURIComponent('📥 STAFF SALES REPORT: ' + data)}`, '_blank');
       }
     } catch (e) {
       alert("Export failed");
@@ -78,8 +95,7 @@ const SecurityBackups: React.FC<SecurityBackupsProps> = ({ currentUser }) => {
   };
 
   /**
-   * ADMIN RECOVERY HANDLER
-   * Strictly follows the instruction to wipe and reload all tables.
+   * ADMIN FULL RECOVERY HANDLER
    */
   const handleRestoreAction = async () => {
     if (!importCode.trim()) return alert("Oga, please paste your code first!");
@@ -98,55 +114,52 @@ const SecurityBackups: React.FC<SecurityBackupsProps> = ({ currentUser }) => {
   };
 
   /**
-   * STAFF STOCK SYNC HANDLER
-   * Safely updates products and basic settings without touching staff/PINs.
+   * RECEIVING LOGIC (Standardized)
+   * Handles both specialized Master Stock packages and legacy structures.
    */
-  const handleStaffStockUpdate = async () => {
-    if (!importCode.trim()) return alert("Oga, please paste your code first!");
-    
+  const handleImport = async () => {
+    const code = importCode.trim();
+    if (!code) return alert("Oga, please paste your code first!");
+
     setIsProcessing(true);
     try {
-      const decoded = LZString.decompressFromEncodedURIComponent(importCode);
-      if (!decoded) throw new Error("Invalid code");
+      const decoded = LZString.decompressFromEncodedURIComponent(code);
+      if (!decoded) throw new Error("Could not decode string");
       
       const data = JSON.parse(decoded);
       
-      if (!data.products) {
-        throw new Error("This code does not contain stock data.");
-      }
-
-      await (db as any).transaction('rw', [db.products, db.settings, db.inventory_logs], async () => {
-        // Clear and reload products
-        await db.products.clear();
-        await db.products.bulkAdd(data.products);
-        
-        // Update basic shop settings if available
-        if (data.settings) {
-          await db.settings.update('app_settings', { 
-            shop_name: data.settings.shop_name,
-            license_expiry: data.settings.license_expiry 
-          });
-        }
-
-        // Log the sync event
-        await db.inventory_logs.add({
-          product_id: 0,
-          product_name: "Master Sync",
-          quantity_changed: 0,
-          old_stock: 0,
-          new_stock: 0,
-          type: 'Sync',
-          timestamp: Date.now(),
-          performed_by: `Staff: ${currentUser?.name || 'User'}`
+      // Check if it is a specialized Stock Update or has products array
+      if (data.type === 'MASTER_STOCK_UPDATE' || data.products) {
+        // Fix: Cast db to any to resolve transaction property missing on custom NaijaShopDB type
+        await (db as any).transaction('rw', [db.products, db.settings], async () => {
+          await db.products.clear();
+          
+          // Ensure Numeric Conversion for all price and stock fields
+          const formattedProducts = data.products.map((p: any) => ({
+            ...p,
+            price: Number(p.price),
+            stock_qty: Number(p.stock_qty),
+            low_stock_threshold: Number(p.low_stock_threshold || 5)
+          }));
+          
+          await db.products.bulkAdd(formattedProducts);
+          
+          // Update only non-sensitive terminal settings (license)
+          if (data.license_expiry) {
+            await db.settings.update('app_settings', { 
+              license_expiry: Number(data.license_expiry)
+            });
+          }
         });
-      });
-
-      alert("✅ Stock and Prices Updated!");
-      window.location.reload();
-    } catch (e: any) {
-      console.error(e);
-      alert("❌ Update Failed: " + (e.message || "Invalid backup code. Ensure you copied the full message from the Boss."));
-    } finally {
+        alert("✅ Stock Successfully Updated from Boss!");
+        window.location.reload();
+      } else {
+        alert("❌ Invalid Code: This is not a stock update file.");
+        setIsProcessing(false);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("❌ Error: Invalid or Corrupted Sync Code.");
       setIsProcessing(false);
     }
   };
@@ -154,7 +167,7 @@ const SecurityBackups: React.FC<SecurityBackupsProps> = ({ currentUser }) => {
   if (!settings) return <div className="p-10 text-center"><Loader2 className="animate-spin mx-auto" /></div>;
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8 pb-24">
+    <div className="max-w-4xl mx-auto space-y-8 pb-24 animate-in fade-in duration-500">
       <div className="bg-slate-900 rounded-[3rem] p-10 text-white relative overflow-hidden shadow-2xl">
         <div className="absolute right-[-20px] top-[-20px] opacity-10"><ShieldCheck size={180} /></div>
         <div className="relative z-10">
@@ -209,19 +222,26 @@ const SecurityBackups: React.FC<SecurityBackupsProps> = ({ currentUser }) => {
           <h3 className="font-black text-slate-800 uppercase text-xs">
             {isAdmin ? 'Restore System' : '📥 Update Shop Stock'}
           </h3>
-          <p className="text-xs text-slate-500 font-medium px-4">
+          <p className="text-xs text-slate-500 font-medium px-4 leading-relaxed">
             {isAdmin 
-              ? 'Restore your entire terminal from a backup code.' 
-              : 'Copy the long code sent by the Boss on WhatsApp and paste it here to see new stock and prices.'}
+              ? 'Restore your entire terminal from a backup code. Warning: This overwrites all data.' 
+              : 'Paste the code sent by the Boss on WhatsApp here to update your products and prices.'}
           </p>
-          <textarea 
-            placeholder={isAdmin ? "Paste backup code here..." : "Paste code from Boss here"}
-            className="w-full h-24 p-4 bg-slate-50 border border-slate-100 rounded-2xl text-[10px] font-mono outline-none focus:ring-2 focus:ring-emerald-500 resize-none shadow-inner"
-            value={importCode}
-            onChange={e => setImportCode(e.target.value)}
-          />
+          <div className="space-y-2">
+            <textarea 
+              placeholder={isAdmin ? "Paste backup code here..." : "Paste code from Boss here"}
+              className="w-full h-24 p-4 bg-slate-50 border border-slate-100 rounded-2xl text-[10px] font-mono outline-none focus:ring-2 focus:ring-emerald-500 resize-none shadow-inner"
+              value={importCode}
+              onChange={e => setImportCode(e.target.value)}
+            />
+            {isStaff && (
+              <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">
+                Tip: Long-press in the box above to paste the code you copied from WhatsApp.
+              </p>
+            )}
+          </div>
           <button 
-            onClick={isAdmin ? handleRestoreAction : handleStaffStockUpdate}
+            onClick={isAdmin ? handleRestoreAction : handleImport}
             disabled={isProcessing}
             className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black flex items-center justify-center gap-3 disabled:opacity-50 active:scale-95 transition-all shadow-lg"
           >

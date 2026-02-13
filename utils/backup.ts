@@ -3,6 +3,7 @@ import { db } from '../db/db';
 
 /**
  * Packs all shop data into a compressed string for backup/sharing.
+ * Standardized for Full Recovery (Admin only).
  */
 export const generateBackupData = async () => {
   const products = await db.products.toArray();
@@ -19,6 +20,7 @@ export const generateBackupData = async () => {
   const refs = await db.used_references.toArray();
 
   const bundle = {
+    type: 'FULL_BACKUP_NS',
     products,
     sales,
     debts,
@@ -32,7 +34,7 @@ export const generateBackupData = async () => {
     wallet_tx,
     refs,
     timestamp: Date.now(),
-    version: '3.3'
+    version: '3.4'
   };
 
   const jsonString = JSON.stringify(bundle);
@@ -75,15 +77,21 @@ export const restoreFromBackup = async (compressedData: string): Promise<boolean
       ]);
 
       // STEP 2: INJECT BACKUP DATA
-      if (data.products?.length) await db.products.bulkAdd(data.products);
+      if (data.products?.length) {
+        await db.products.bulkAdd(data.products.map((p: any) => ({
+          ...p,
+          price: Number(p.price),
+          cost_price: Number(p.cost_price || 0),
+          stock_qty: Number(p.stock_qty)
+        })));
+      }
+      
       if (data.sales?.length) await db.sales.bulkAdd(data.sales);
       if (data.debts?.length) await db.debts.bulkAdd(data.debts);
       if (data.staff?.length) await db.staff.bulkAdd(data.staff);
       if (data.logs?.length) await db.inventory_logs.bulkAdd(data.logs);
       if (data.snapshots?.length) await db.stock_snapshots.bulkAdd(data.snapshots);
       if (data.settings) await db.settings.put(data.settings);
-      
-      // Handle optional/newer tables for backwards compatibility
       if (data.wallets?.length) await db.wallets.bulkAdd(data.wallets);
       if (data.wallet_tx?.length) await db.wallet_transactions.bulkAdd(data.wallet_tx);
       if (data.refs?.length) await db.used_references.bulkAdd(data.refs);
