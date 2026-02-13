@@ -52,6 +52,8 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
   });
 
   const lastSyncTs = localStorage.getItem('last_sync_timestamp');
+  const isAdmin = currentUser?.role.toLowerCase() === 'admin';
+  const isStaff = !isAdmin;
 
   useEffect(() => {
     if (settings) {
@@ -164,7 +166,7 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
   };
 
   /**
-   * THE RECEIVING ENGINE (Staff Side)
+   * THE RECEIVING ENGINE
    * Atomic stock update from Boss's code
    */
   const handleUpdateFromBoss = async () => {
@@ -188,11 +190,8 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
         await db.products.clear();
         
         for (const p of payload.products) {
-          // STRICT INSTRUCTION: Use Number() to parse IDs and quantities
           const sellingPrice = Number(p.price);
           const currentStock = Number(p.stock_qty);
-          
-          // Re-calculate generic cost price for staff terminal (approx 80%)
           const genericCost = Math.round((sellingPrice * 0.8) / 50) * 50;
 
           await db.products.add({
@@ -245,8 +244,7 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
     }
   };
 
-  const isAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'Manager';
-  const isStaff = currentUser?.role === 'Sales';
+  const snapshotTs = localStorage.getItem('naijashop_snapshot_ts');
 
   return (
     <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in duration-500 pb-24">
@@ -265,17 +263,6 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
           </p>
         </div>
       </div>
-
-      {!settings?.sync_key && isAdmin && (
-        <div className="bg-amber-50 border-2 border-dashed border-amber-300 p-8 rounded-[2.5rem] text-center space-y-4">
-          <ShieldAlert className="mx-auto text-amber-600" size={48} />
-          <h3 className="text-xl font-black text-amber-900">Security Key Missing</h3>
-          <p className="text-amber-800 font-medium">Both Boss and Staff must use the same key to sync data securely.</p>
-          <button onClick={generateShopKey} className="bg-emerald-600 text-white px-8 py-4 rounded-2xl font-black flex items-center justify-center gap-3 mx-auto shadow-xl">
-            <Zap size={20} /> 🔐 Generate My Shop Security Key
-          </button>
-        </div>
-      )}
 
       {/* STAFF VIEW */}
       {isStaff && (
@@ -333,114 +320,127 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
       )}
 
       {/* ADMIN VIEW */}
-      {isAdmin && settings?.sync_key && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <div className="bg-white p-10 rounded-[3rem] border-4 border-indigo-100 shadow-xl space-y-6 flex flex-col items-center text-center">
-            <div className="w-20 h-20 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center">
-              <RefreshCw size={40} />
-            </div>
-            <div className="space-y-2">
-              <h3 className="text-2xl font-black text-slate-800">Broadcast Stock</h3>
-              <p className="text-slate-500 font-medium">Update prices and items on all staff phones at once.</p>
-            </div>
-            <button 
-              onClick={handleSendStockToWhatsApp} 
-              disabled={isSyncing}
-              className="w-full py-6 bg-indigo-600 text-white rounded-[2rem] font-black text-xl flex items-center justify-center gap-3 shadow-2xl active:scale-95 transition-all"
-            >
-              {isSyncing ? (
-                <>
-                  <Loader2 className="animate-spin" size={24} />
-                  ⏳ Preparing Code...
-                </>
-              ) : (
-                <>
-                  <Send size={24} />
-                  🚀 Send Master Stock Update
-                </>
-              )}
-            </button>
-          </div>
-
-          <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
-            <div className="flex items-center gap-3">
-              <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl"><Users size={24} /></div>
-              <h3 className="text-xl font-black text-slate-800">Process Staff Sales</h3>
-            </div>
-            <p className="text-sm text-slate-500 font-medium">Paste the sales code received from your staff to update ledger.</p>
-            
-            <textarea 
-              placeholder="Paste sales code here..." 
-              className="w-full p-4 bg-slate-50 border rounded-2xl font-mono text-[10px] h-32 outline-none focus:ring-2 focus:ring-emerald-500 resize-none shadow-inner" 
-              value={importString} 
-              onChange={e => setImportString(e.target.value)} 
-            />
-
-            <button 
-              onClick={async () => {
-                // This uses the existing importWhatsAppBridgeData from syncService.ts
-                // but the UI logic is consistent with user needs.
-                if (!importString.trim()) return;
-                setIsSyncing(true);
-                try {
-                  // Import helper logic (kept simple for ledger updates)
-                  const { importWhatsAppBridgeData: importFn } = await import('../services/syncService');
-                  const result = await importFn(importString.trim(), settings.sync_key);
-                  showSuccess(`Sync Success! Processed ${result.count || 0} items.`);
-                  setImportString('');
-                } catch(e: any) {
-                  alert(e.message);
-                } finally {
-                  setIsSyncing(false);
-                }
-              }} 
-              disabled={!importString.trim() || isSyncing}
-              className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50"
-            >
-              {isSyncing ? <Loader2 className="animate-spin" size={24} /> : <Database size={20} />}
-              ✅ Sync Records to Ledger
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* AUTOMATION CONFIG (ADMIN ONLY) */}
       {isAdmin && (
-        <div className="bg-white p-8 rounded-[3rem] border border-emerald-100 shadow-xl space-y-8">
-          <div className="flex items-center justify-between flex-wrap gap-4">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center"><MessageSquareCode size={24} /></div>
-              <div>
-                <h3 className="text-xl font-black text-slate-800">WhatsApp Sync Automation</h3>
-                <p className="text-[10px] font-bold text-slate-400 uppercase">Direct reporting links</p>
+        <>
+          {!settings?.sync_key && (
+            <div className="bg-amber-50 border-2 border-dashed border-amber-300 p-8 rounded-[2.5rem] text-center space-y-4">
+              <ShieldAlert className="mx-auto text-amber-600" size={48} />
+              <h3 className="text-xl font-black text-amber-900">Security Key Missing</h3>
+              <p className="text-amber-800 font-medium">Both Boss and Staff must use the same key to sync data securely.</p>
+              <button onClick={generateShopKey} className="bg-emerald-600 text-white px-8 py-4 rounded-2xl font-black flex items-center justify-center gap-3 mx-auto shadow-xl">
+                <Zap size={20} /> 🔐 Generate My Shop Security Key
+              </button>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="bg-white p-10 rounded-[3rem] border-4 border-indigo-100 shadow-xl space-y-6 flex flex-col items-center text-center">
+              <div className="w-20 h-20 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center">
+                <RefreshCw size={40} />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-2xl font-black text-slate-800">Broadcast Stock</h3>
+                <p className="text-slate-500 font-medium">Update prices and items on all staff phones at once.</p>
+              </div>
+              <button 
+                onClick={handleSendStockToWhatsApp} 
+                disabled={isSyncing}
+                className="w-full py-6 bg-indigo-600 text-white rounded-[2rem] font-black text-xl flex items-center justify-center gap-3 shadow-2xl active:scale-95 transition-all"
+              >
+                {isSyncing ? (
+                  <>
+                    <Loader2 className="animate-spin" size={24} />
+                    ⏳ Preparing Code...
+                  </>
+                ) : (
+                  <>
+                    <Send size={24} />
+                    🚀 Send Master Stock Update
+                  </>
+                )}
+              </button>
+            </div>
+
+            <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl"><Users size={24} /></div>
+                <h3 className="text-xl font-black text-slate-800">Process Staff Sales</h3>
+              </div>
+              <p className="text-sm text-slate-500 font-medium">Paste the sales code received from your staff to update ledger.</p>
+              
+              <textarea 
+                placeholder="Paste sales code here..." 
+                className="w-full p-4 bg-slate-50 border rounded-2xl font-mono text-[10px] h-32 outline-none focus:ring-2 focus:ring-emerald-500 resize-none shadow-inner" 
+                value={importString} 
+                onChange={e => setImportString(e.target.value)} 
+              />
+
+              <button 
+                onClick={async () => {
+                  if (!importString.trim()) return;
+                  setIsSyncing(true);
+                  try {
+                    const { importWhatsAppBridgeData: importFn } = await import('../services/syncService');
+                    const result = await importFn(importString.trim(), settings?.sync_key || '');
+                    showSuccess(`Sync Success! Processed ${result.count || 0} items.`);
+                    setImportString('');
+                  } catch(e: any) {
+                    alert(e.message);
+                  } finally {
+                    setIsSyncing(false);
+                  }
+                }} 
+                disabled={!importString.trim() || isSyncing}
+                className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50"
+              >
+                {isSyncing ? <Loader2 className="animate-spin" size={24} /> : <Database size={20} />}
+                ✅ Sync Records to Ledger
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-white p-8 rounded-[3rem] border border-emerald-100 shadow-xl space-y-8">
+            <div className="flex items-center justify-between flex-wrap gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center"><MessageSquareCode size={24} /></div>
+                <div>
+                  <h3 className="text-xl font-black text-slate-800">WhatsApp Sync Automation</h3>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase">Direct reporting links</p>
+                </div>
+              </div>
+              <button onClick={handleUpdateAutomation} className="px-6 py-3 bg-emerald-600 text-white rounded-xl font-black text-[10px] uppercase shadow-lg active:scale-95 transition-all"><Save size={16} className="inline mr-1"/> Update Links</button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Owner WhatsApp Number</label>
+                <input type="text" placeholder="e.g. 2348184774884" className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold" value={automationData.admin_whatsapp_number} onChange={e => setAutomationData({...automationData, admin_whatsapp_number: e.target.value.replace(/\D/g, '')})} />
+              </div>
+              <div className="space-y-2">
+                <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Staff Group Link</label>
+                <input type="text" placeholder="https://chat.whatsapp.com/..." className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold" value={automationData.whatsapp_group_link} onChange={e => setAutomationData({...automationData, whatsapp_group_link: e.target.value})} />
               </div>
             </div>
-            <button onClick={handleUpdateAutomation} className="px-6 py-3 bg-emerald-600 text-white rounded-xl font-black text-[10px] uppercase shadow-lg active:scale-95 transition-all"><Save size={16} className="inline mr-1"/> Update Links</button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-2">
-              <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Owner WhatsApp Number</label>
-              <input type="text" placeholder="e.g. 2348184774884" className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold" value={automationData.admin_whatsapp_number} onChange={e => setAutomationData({...automationData, admin_whatsapp_number: e.target.value.replace(/\D/g, '')})} />
-            </div>
-            <div className="space-y-2">
-              <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Staff Group Link</label>
-              <input type="text" placeholder="https://chat.whatsapp.com/..." className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold" value={automationData.whatsapp_group_link} onChange={e => setAutomationData({...automationData, whatsapp_group_link: e.target.value})} />
+          <div className="bg-slate-50 p-8 rounded-[3rem] border border-slate-200 space-y-6">
+            <h3 className="text-lg font-black text-slate-800">Legacy Backup Tools</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <button onClick={handleWhatsAppBackup} className="py-4 bg-white border border-slate-200 text-slate-600 rounded-2xl font-black text-xs uppercase flex items-center justify-center gap-2 shadow-sm"><MessageSquare size={16}/> Self Backup</button>
+              <button onClick={() => downloadBackupFile(settings?.shop_name || 'Store')} className="py-4 bg-white border border-slate-200 text-slate-600 rounded-2xl font-black text-xs uppercase flex items-center justify-center gap-2 shadow-sm"><Download size={16}/> Download .nshop File</button>
             </div>
           </div>
-        </div>
+        </>
       )}
 
-      {/* LEGACY BACKUP OPTIONS (ADMIN ONLY) */}
-      {isAdmin && (
-        <div className="bg-slate-50 p-8 rounded-[3rem] border border-slate-200 space-y-6">
-          <h3 className="text-lg font-black text-slate-800">Legacy Backup Tools</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <button onClick={handleWhatsAppBackup} className="py-4 bg-white border border-slate-200 text-slate-600 rounded-2xl font-black text-xs uppercase flex items-center justify-center gap-2 shadow-sm"><MessageSquare size={16}/> Self Backup</button>
-            <button onClick={() => downloadBackupFile(settings?.shop_name || 'Store')} className="py-4 bg-white border border-slate-200 text-slate-600 rounded-2xl font-black text-xs uppercase flex items-center justify-center gap-2 shadow-sm"><Download size={16}/> Download .nshop File</button>
-          </div>
-        </div>
-      )}
+      <div className="bg-emerald-50 border border-emerald-100 p-8 rounded-[2.5rem] flex flex-col md:flex-row items-center gap-6">
+         <History size={32} className="text-emerald-600 shrink-0" />
+         <div className="flex-1 text-center md:text-left">
+            <h4 className="font-black text-slate-800">Auto-Snapshot System</h4>
+            {snapshotTs && <p className="text-[10px] text-emerald-600 font-black uppercase">Last: {new Date(parseInt(snapshotTs)).toLocaleString()}</p>}
+         </div>
+         <button onClick={async () => { await performAutoSnapshot(); showSuccess("Snapshot captured!"); }} className="px-6 py-3 bg-white border border-emerald-200 text-emerald-600 rounded-xl font-black text-xs">Force Snapshot</button>
+      </div>
     </div>
   );
 };
