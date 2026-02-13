@@ -11,6 +11,10 @@ export const generateSyncKey = (): string => {
   return `NS-${part()}-${part()}-${part()}`;
 };
 
+/**
+ * XOR Cipher used as a 'Salt' to ensure data from Shop A 
+ * cannot be decrypted by Shop B without the same Master Key.
+ */
 const xorCipher = (text: string, key: string): string => {
   if (!key) return text;
   return text.split('').map((char, i) => 
@@ -18,9 +22,6 @@ const xorCipher = (text: string, key: string): string => {
   ).join('');
 };
 
-/**
- * Enhanced export function for Chain-Sync and Master Push
- */
 export const exportDataForWhatsApp = async (
   type: 'SALES' | 'STOCK' | 'KEY_UPDATE' | 'URGENT_SYNC' | 'STAFF_INVITE', 
   key: string, 
@@ -51,6 +52,11 @@ export const exportDataForWhatsApp = async (
 
   } else if (type === 'STOCK') {
     const masterStock = await db.products.toArray();
+    
+    /**
+     * SECURITY FILTER: Remove cost_price before sending to staff.
+     * Staff must only see name, price, stock, and category.
+     */
     const filteredProducts = masterStock.map(p => ({
       name: p.name,
       price: Number(p.price),
@@ -63,28 +69,29 @@ export const exportDataForWhatsApp = async (
       products: filteredProducts,
       timestamp: Date.now()
     };
-    summary = `🚀 NAIJASHOP MASTER UPDATE: ${filteredProducts.length} Items. \nShare this in the Shop Group so all staff can click and update their phones! \nCode: [CompressedJSON]`;
+    const dateStr = new Date().toLocaleDateString();
+    summary = `📦 MASTER STOCK UPDATE [${dateStr}] \nCopy this code to update your terminal: \n\n[CompressedJSON]`;
   } else if (type === 'KEY_UPDATE') {
     dataToExport = { type: 'KEY_UPDATE', new_key: key, timestamp: Date.now() };
     summary = "🔐 Security Bridge Key Update";
   } else if (type === 'STAFF_INVITE') {
     const settings = await db.settings.get('app_settings');
-    encryptionKey = INVITE_HANDSHAKE_KEY; // Use fixed handshake key for invites
+    encryptionKey = INVITE_HANDSHAKE_KEY;
     dataToExport = {
       type: 'STAFF_INVITE',
       shop_name: settings?.shop_name || 'NaijaShop',
       master_sync_key: settings?.sync_key || key,
       admin_whatsapp_number: settings?.admin_whatsapp_number || '',
       whatsapp_group_link: settings?.whatsapp_group_link || '',
-      staffMember: invitedStaff, // Include the invited staff details
+      staffMember: invitedStaff,
       timestamp: Date.now()
     };
-    summary = `👋 ${settings?.shop_name} Terminal Invite.\nUse this link to join the shop as ${invitedStaff?.name || 'staff'} and sync your records automatically.\n\nLink: [Link]`;
+    summary = `👋 ${settings?.shop_name} Terminal Invite.\nUse this link to join the shop as ${invitedStaff?.name || 'staff'}.\n\nLink: [Link]`;
   }
 
   const jsonString = JSON.stringify(dataToExport);
-  const encrypted = xorCipher(jsonString, encryptionKey);
-  const compressed = LZString.compressToEncodedURIComponent(encrypted);
+  const salted = xorCipher(jsonString, encryptionKey);
+  const compressed = LZString.compressToEncodedURIComponent(salted);
   const finalString = SYNC_HEADER + compressed;
 
   if (finalString.length > 1800 && type !== 'STAFF_INVITE') {
@@ -99,7 +106,7 @@ export const exportDataForWhatsApp = async (
     URL.revokeObjectURL(url);
     return {
       raw: "FILE_DOWNLOADED",
-      summary: `${summary}\n\n⚠️ Data too large for WhatsApp link. A file has been downloaded. Send this file to the other terminal.`
+      summary: `${summary}\n\n⚠️ Data too large for WhatsApp. A file has been downloaded. Send this file to the other terminal.`
     };
   }
   
@@ -114,8 +121,6 @@ export const importWhatsAppBridgeData = async (rawString: string, localKey: stri
     const encrypted = LZString.decompressFromEncodedURIComponent(compressed);
     if (!encrypted) throw new Error("Corrupt data.");
     
-    // Determine decryption key: If it starts with INVITE indicators, use handshake key
-    // We attempt handshake key first if it looks like an invite
     let payload: any = null;
     try {
       const inviteJson = xorCipher(encrypted, INVITE_HANDSHAKE_KEY);
@@ -127,7 +132,7 @@ export const importWhatsAppBridgeData = async (rawString: string, localKey: stri
 
     if (!payload) {
       const jsonString = xorCipher(encrypted, localKey);
-      try { payload = JSON.parse(jsonString); } catch (e) { throw new Error("Sync Key Mismatch."); }
+      try { payload = JSON.parse(jsonString); } catch (e) { throw new Error("Sync Key Mismatch. This update is for a different shop."); }
     }
 
     if (payload.type === 'SALES_REPORT') {
@@ -154,8 +159,6 @@ export const importWhatsAppBridgeData = async (rawString: string, localKey: stri
                   timestamp: Date.now(),
                   performed_by: `Sync Bridge (${payload.staff_name})`
                 });
-                const snap = await db.stock_snapshots.where({ date: todayStr, product_id: item.productId }).first();
-                if (snap && snap.id) await db.stock_snapshots.update(snap.id, { sold_qty: (snap.sold_qty || 0) + item.quantity });
               }
             }
             importedCount++;
@@ -167,26 +170,25 @@ export const importWhatsAppBridgeData = async (rawString: string, localKey: stri
 
     if (payload.type === 'STOCK_UPDATE') {
       await (db as any).transaction('rw', [db.products, db.inventory_logs], async () => {
+        // Clear local products to match Boss records exactly
+        await db.products.clear();
+        
         for (const p of payload.products) {
-          const existing = await db.products.where('name').equals(p.name).first();
-          if (existing) {
-            await db.products.update(existing.id!, { 
-              price: Number(p.price), 
-              stock_qty: Number(p.stock_qty), 
-              category: p.category 
-            });
-          } else {
-            await db.products.add({ ...p, cost_price: Math.round(p.price * 0.8 / 50) * 50, low_stock_threshold: 5 });
-          }
+           // We re-calculate a generic cost price (80%) since it was stripped for security
+           const genericCost = Math.round((p.price * 0.8) / 50) * 50;
+           await db.products.add({ 
+             ...p, 
+             cost_price: genericCost, 
+             low_stock_threshold: 5 
+           });
         }
       });
-      localStorage.setItem('last_force_sync', Date.now().toString());
+      localStorage.setItem('last_sync_timestamp', Date.now().toString());
       return { success: true, type: 'STOCK', count: payload.products.length };
     }
 
     if (payload.type === 'STAFF_INVITE') {
       await (db as any).transaction('rw', [db.settings, db.staff], async () => {
-        // Save shop configuration
         await db.settings.update('app_settings', {
           shop_name: payload.shop_name,
           sync_key: payload.master_sync_key,
@@ -196,13 +198,12 @@ export const importWhatsAppBridgeData = async (rawString: string, localKey: stri
           isSubscribed: true
         });
 
-        // Add the specific staff member if provided
         if (payload.staffMember) {
           const exists = await db.staff.where('name').equals(payload.staffMember.name).first();
           if (!exists) {
             await db.staff.add({
               ...payload.staffMember,
-              id: undefined, // Let Dexie generate a new local ID
+              id: undefined,
               created_at: Date.now()
             });
           }

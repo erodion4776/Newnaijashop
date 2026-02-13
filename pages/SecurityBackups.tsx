@@ -17,10 +17,11 @@ import {
   ShieldAlert,
   ClipboardPaste,
   RefreshCw,
-  Users
+  Users,
+  Clock
 } from 'lucide-react';
 import { Staff, Settings as SettingsType } from '../types';
-import { generateBackupData, restoreFromBackup, downloadBackupFile, performAutoSnapshot } from '../utils/backup';
+import { generateBackupData, restoreFromBackup, downloadBackupFile } from '../utils/backup';
 import { exportDataForWhatsApp, importWhatsAppBridgeData } from '../services/syncService';
 import WhatsAppService from '../services/WhatsAppService';
 
@@ -36,6 +37,8 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
     admin_whatsapp_number: '',
     whatsapp_group_link: ''
   });
+
+  const lastSyncTs = localStorage.getItem('last_sync_timestamp');
 
   useEffect(() => {
     if (settings) {
@@ -88,15 +91,15 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
     }
   };
 
-  const handlePushUpdate = async () => {
-    if (!settings?.sync_key) { alert("Security Key missing."); return; }
+  const handlePushMasterStock = async () => {
+    if (!settings?.sync_key) { alert("Security Key missing. Visit Settings to set one."); return; }
     setIsSyncing(true);
     try {
       const result = await exportDataForWhatsApp('STOCK', settings.sync_key, currentUser?.name);
       if (result.raw !== "FILE_DOWNLOADED") {
         const text = result.summary.replace('[CompressedJSON]', result.raw);
         await WhatsAppService.send(text, settings, 'GROUP_UPDATE');
-        showSuccess("Inventory Pushed!");
+        showSuccess("Master Update Sent!");
       }
     } finally { setIsSyncing(false); }
   };
@@ -119,7 +122,11 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
     setIsSyncing(true);
     try {
       const result = await importWhatsAppBridgeData(importString.trim(), settings.sync_key);
-      alert(`Sync Success! Imported ${result.count || 0} items.`);
+      if (result.type === 'STOCK') {
+        showSuccess("Stock Updated from Boss!");
+      } else {
+        showSuccess(`Sync Success! Processed ${result.count || 0} items.`);
+      }
       setImportString('');
     } catch (e: any) {
       alert("Import Failed: " + e.message);
@@ -155,7 +162,7 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
         <div className="relative z-10">
           <h2 className="text-4xl font-black">WhatsApp Sync Station</h2>
           <p className="text-emerald-400 font-bold uppercase tracking-widest text-[10px] mt-1">
-            {isStaff ? 'Send Sales to Oga' : 'Manage All Terminals'}
+            {isStaff ? 'Terminal Records' : 'Master Control Station'}
           </p>
         </div>
       </div>
@@ -192,10 +199,18 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
             </button>
           </div>
 
-          <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
-            <div className="flex items-center gap-3">
-              <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl"><RefreshCw size={24} /></div>
-              <h3 className="text-xl font-black text-slate-800">Receive Master Stock</h3>
+          <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6 flex flex-col">
+            <div className="flex items-center justify-between">
+               <div className="flex items-center gap-3">
+                 <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl"><RefreshCw size={24} /></div>
+                 <h3 className="text-xl font-black text-slate-800">Receive Stock</h3>
+               </div>
+               {lastSyncTs && (
+                 <div className="text-right">
+                    <p className="text-[8px] font-black text-slate-400 uppercase">Last Updated</p>
+                    <p className="text-[10px] font-bold text-indigo-600">{new Date(parseInt(lastSyncTs)).toLocaleDateString()}</p>
+                 </div>
+               )}
             </div>
             <p className="text-sm text-slate-500 font-medium">Paste the stock update code from your Oga below.</p>
             <textarea 
@@ -210,7 +225,7 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
               className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black flex items-center justify-center gap-3 active:scale-95"
             >
               {isSyncing ? <Loader2 className="animate-spin" /> : <ClipboardPaste size={20} />}
-              📥 Update My Terminal Stock
+              📥 Update My Stock
             </button>
           </div>
         </div>
@@ -224,16 +239,16 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
               <RefreshCw size={40} />
             </div>
             <div className="space-y-2">
-              <h3 className="text-2xl font-black text-slate-800">Push Master Stock</h3>
-              <p className="text-slate-500 font-medium">Send latest prices and items to all your staff phones.</p>
+              <h3 className="text-2xl font-black text-slate-800">Broadcast Stock</h3>
+              <p className="text-slate-500 font-medium">Update prices and items on all staff phones at once.</p>
             </div>
             <button 
-              onClick={handlePushUpdate} 
+              onClick={handlePushMasterStock} 
               disabled={isSyncing}
               className="w-full py-6 bg-indigo-600 text-white rounded-[2rem] font-black text-xl flex items-center justify-center gap-3 shadow-2xl active:scale-95 transition-all"
             >
               {isSyncing ? <Loader2 className="animate-spin" /> : <Send size={24} />}
-              🚀 Send Master Stock Update
+              🚀 Send Master Stock to Staff
             </button>
           </div>
 
@@ -242,7 +257,7 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
               <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl"><Users size={24} /></div>
               <h3 className="text-xl font-black text-slate-800">Process Staff Sales</h3>
             </div>
-            <p className="text-sm text-slate-500 font-medium">Paste the sales code received from your staff.</p>
+            <p className="text-sm text-slate-500 font-medium">Paste the sales code received from your staff to update ledger.</p>
             <textarea 
               placeholder="Paste sales code here..." 
               className="w-full p-4 bg-slate-50 border rounded-2xl font-mono text-[10px] h-24 outline-none focus:ring-2 focus:ring-emerald-500" 
