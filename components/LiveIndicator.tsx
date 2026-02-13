@@ -7,7 +7,7 @@ const LiveIndicator: React.FC = () => {
   useEffect(() => {
     const interval = setInterval(() => {
       setIsConnected(RelayService.isConnected());
-    }, 2000);
+    }, 3000);
     return () => clearInterval(interval);
   }, []);
 
@@ -19,7 +19,7 @@ const LiveIndicator: React.FC = () => {
       <span className={`text-[8px] font-black uppercase tracking-widest ${
         isConnected ? 'text-emerald-600' : 'text-slate-400'
       }`}>
-        {isConnected ? 'Live' : 'Offline'}
+        {isConnected ? 'Live Link' : 'Offline'}
       </span>
     </div>
   );

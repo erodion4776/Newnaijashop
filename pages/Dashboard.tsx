@@ -28,21 +28,57 @@ const Dashboard: React.FC<any> = ({ currentUser, setView, trialRemaining, isSubs
 
   const isAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'Manager';
 
-  // HANDLE REAL-TIME RELAY SALES
+  // HOOK INTO DASHBOARD (ADMIN LISTENER)
   useEffect(() => {
     if (isAdmin) {
       RelayService.listen('new-sale', async (sale) => {
-        // Double Check Duplicate (ID Check)
+        /**
+         * ADMIN RECEIVER: 
+         * 1. Safety Check (Avoid duplicates)
+         * 2. Atomic Ingestion (Update master ledger & stock)
+         * 3. UI Feedback (Chime + Toast)
+         */
         const exists = await db.sales.where('sale_id').equals(sale.sale_id).first();
         if (!exists) {
-          // Play Chime
-          if (!chimeRef.current) {
-            chimeRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2012/2012-preview.mp3');
+          try {
+            await (db as any).transaction('rw', [db.sales, db.products, db.inventory_logs], async () => {
+              // Save sale record
+              await db.sales.add({ ...sale, sync_status: 'synced' });
+              
+              // Deduct Master Stock
+              for (const item of sale.items) {
+                const p = await db.products.get(item.productId);
+                if (p) {
+                  const oldStock = Number(p.stock_qty);
+                  const newStock = Math.max(0, oldStock - Number(item.quantity));
+                  await db.products.update(item.productId, { stock_qty: newStock });
+                  
+                  // Audit movement
+                  await db.inventory_logs.add({
+                    product_id: item.productId,
+                    product_name: p.name,
+                    quantity_changed: -item.quantity,
+                    old_stock: oldStock,
+                    new_stock: newStock,
+                    type: 'Sale',
+                    timestamp: Date.now(),
+                    performed_by: `Live Relay: ${sale.staff_name}`
+                  });
+                }
+              }
+            });
+
+            // UI Feedback
+            if (!chimeRef.current) {
+              chimeRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2012/2012-preview.mp3');
+            }
+            chimeRef.current.play().catch(() => console.log("Sound muted"));
+            
+            setLastRelaySale(sale);
+            setTimeout(() => setLastRelaySale(null), 8000);
+          } catch (err) {
+            console.error("[Relay] Ingestion failed:", err);
           }
-          chimeRef.current.play().catch(e => console.log("Sound muted by browser"));
-          
-          setLastRelaySale(sale);
-          setTimeout(() => setLastRelaySale(null), 8000);
         }
       });
     }
@@ -58,7 +94,7 @@ const Dashboard: React.FC<any> = ({ currentUser, setView, trialRemaining, isSubs
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 relative">
-      {/* Real-time Toast Notification */}
+      {/* REAL-TIME TOAST NOTIFICATION */}
       {lastRelaySale && (
         <div className="fixed top-20 right-6 z-[200] animate-in slide-in-from-right duration-500">
           <div className="bg-emerald-600 text-white p-5 rounded-3xl shadow-2xl border-4 border-emerald-500 flex items-center gap-4">

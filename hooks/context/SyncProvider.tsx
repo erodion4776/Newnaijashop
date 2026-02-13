@@ -18,43 +18,6 @@ export const SyncProvider: React.FC<{ children: React.ReactNode, currentUser: St
   const isAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'Manager';
 
   /**
-   * ADMIN HANDLER: Accepts sales from other phones
-   */
-  const handleIncomingSale = useCallback(async (sale: Sale) => {
-    if (!isAdmin) return;
-    try {
-      const exists = await db.sales.where('sale_id').equals(sale.sale_id).first();
-      if (!exists) {
-        await (db as any).transaction('rw', [db.sales, db.products, db.inventory_logs], async () => {
-          await db.sales.add({ ...sale, sync_status: 'synced' });
-          for (const item of sale.items) {
-            const p = await db.products.get(item.productId);
-            if (p) {
-              const oldStock = Number(p.stock_qty);
-              const newStock = Math.max(0, oldStock - Number(item.quantity));
-              await db.products.update(item.productId, { stock_qty: newStock });
-              await db.inventory_logs.add({
-                product_id: item.productId,
-                product_name: p.name,
-                quantity_changed: -item.quantity,
-                old_stock: oldStock,
-                new_stock: newStock,
-                type: 'Sale',
-                timestamp: Date.now(),
-                performed_by: `Live Link: ${sale.staff_name}`
-              });
-            }
-          }
-        });
-        setLastIncomingSale(sale);
-        setTimeout(() => setLastIncomingSale(null), 8000);
-      }
-    } catch (e) {
-      console.error("[Sync] Incoming sale sync error:", e);
-    }
-  }, [isAdmin]);
-
-  /**
    * STAFF HANDLER: Accepts inventory pushes from Admin
    */
   const handleIncomingStock = useCallback(async (data: { products: Product[] }) => {
@@ -89,14 +52,11 @@ export const SyncProvider: React.FC<{ children: React.ReactNode, currentUser: St
       const settings = await db.settings.get('app_settings');
       if (settings?.sync_key) {
         // AUTOMATIC ACTIVATION: Initialize room for this shop
-        // Fix: Changed .connect() to .init() as per RelayService definition
         RelayService.init(settings.sync_key);
         
-        if (isAdmin) {
-          // Fix: Changed .subscribeToSales() to .listen('new-sale', ...) as per RelayService definition
-          RelayService.listen('new-sale', handleIncomingSale);
-        } else {
-          // Fix: Changed .subscribeToStockUpdates() to .listen('stock-update', ...) as per RelayService definition
+        if (!isAdmin) {
+          // Staff only needs to listen for stock updates here
+          // Admin listens for sales in Dashboard.tsx as requested
           RelayService.listen('stock-update', handleIncomingStock);
         }
 
@@ -112,11 +72,9 @@ export const SyncProvider: React.FC<{ children: React.ReactNode, currentUser: St
       if (interval) clearInterval(interval);
       RelayService.disconnect();
     };
-  }, [currentUser, isAdmin, handleIncomingSale, handleIncomingStock]);
+  }, [currentUser, isAdmin, handleIncomingStock]);
 
-  // Fix: Changed .broadcastSale() to .send('new-sale', ...) as per RelayService definition
   const broadcastSale = useCallback((sale: Sale) => RelayService.send('new-sale', sale), []);
-  // Fix: Changed .broadcastStockUpdate() to .send('stock-update', ...) as per RelayService definition
   const broadcastStockUpdate = useCallback((products: Product[]) => RelayService.send('stock-update', { products }), []);
 
   return (

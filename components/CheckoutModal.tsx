@@ -157,7 +157,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
         }
       });
 
-      // REAL-TIME BROADCAST
+      // DATA TRIGGER: Broadcast to other terminals immediately
       RelayService.send('new-sale', saleData);
 
       setIsProcessing(false);
