@@ -194,8 +194,20 @@ const Layout: React.FC<LayoutProps> = ({
           
           <div className="flex items-center gap-6">
             <div className={`flex items-center gap-2 px-3 py-1 rounded-full border transition-all ${status === 'live' ? 'bg-emerald-50 border-emerald-100 text-emerald-600' : 'bg-slate-50 border-slate-100 text-slate-400'}`}>
-              {status === 'live' ? <Wifi size={14} className="animate-pulse" /> : <WifiOff size={14} />}
-              <span className="text-[9px] font-black uppercase tracking-widest">{status === 'live' ? 'Always-On Live' : 'Offline Sync'}</span>
+              {status === 'live' ? (
+                <>
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                  </span>
+                  <span className="text-[9px] font-black uppercase tracking-widest">Live Link Active</span>
+                </>
+              ) : (
+                <>
+                  <WifiOff size={14} />
+                  <span className="text-[9px] font-black uppercase tracking-widest">Working Offline</span>
+                </>
+              )}
             </div>
             <div className="hidden sm:block text-right">
                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Local Terminal</p>

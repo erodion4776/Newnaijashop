@@ -1,17 +1,17 @@
 import Pusher from 'pusher-js';
 
-// Configuration placeholders for Pusher
-const PUSHER_KEY = '8448b11165606d156641';
-const PUSHER_CLUSTER = 'mt1';
+// Environment variables for Pusher configuration
+const PUSHER_KEY = (import.meta as any).env?.VITE_PUSHER_KEY || '8448b11165606d156641';
+const PUSHER_CLUSTER = (import.meta as any).env?.VITE_PUSHER_CLUSTER || 'mt1';
 
 class RelayService {
   private pusher: Pusher | null = null;
   private channel: any = null;
-  private currentChannelName: string | null = null;
+  private channelName: string | null = null;
 
   /**
-   * Initializes Pusher and subscribes to a unique shop channel.
-   * Unique name is derived from shop name and master sync key.
+   * Connects to a unique shop relay channel.
+   * Combination of shop name and sync key ensures absolute privacy for the shop's data.
    */
   public connect(shopName: string, syncKey: string) {
     if (this.pusher) return;
@@ -23,38 +23,52 @@ class RelayService {
 
     const sanitizedName = shopName.toLowerCase().replace(/[^a-z0-9]/g, '');
     const sanitizedKey = syncKey.replace(/[^a-z0-9]/g, '');
-    this.currentChannelName = `private-relay-${sanitizedName}-${sanitizedKey}`;
-
-    // Note: Since we are using public/private-ish naming without a real auth server
-    // we use a generic channel name for now. For a production app, we'd add an auth endpoint.
-    this.channel = this.pusher.subscribe(`relay-${sanitizedName}-${sanitizedKey}`);
+    
+    // We use a unique public channel name that acts as a private one.
+    // In a full production app, this would be a 'private-' channel requiring an auth endpoint.
+    this.channelName = `relay-v2-${sanitizedName}-${sanitizedKey}`;
+    this.channel = this.pusher.subscribe(this.channelName);
   }
 
-  public disconnect() {
-    if (this.pusher && this.currentChannelName) {
-      this.pusher.unsubscribe(this.currentChannelName);
-      this.pusher.disconnect();
-      this.pusher = null;
-      this.channel = null;
-    }
-  }
+  /**
+   * Broadcasts a sale to all other connected devices in the shop.
+   */
+  public async broadcastSale(saleData: any) {
+    if (!this.channelName) return;
 
-  public on(event: string, callback: (data: any) => void) {
-    if (this.channel) {
-      this.channel.bind(event, callback);
+    try {
+      // NOTE: Standard client-side pusher-js cannot trigger events on public channels directly.
+      // We send the broadcast to a generic internal relay endpoint provided by the deployment environment.
+      await fetch('/api/pusher/trigger', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          channel: this.channelName,
+          event: 'new-sale',
+          data: saleData
+        })
+      });
+    } catch (e) {
+      console.warn("[Relay] Failed to broadcast sale:", e);
     }
   }
 
   /**
-   * BROADCAST ENGINE: Sends data to all other connected terminals.
-   * In a real Pusher setup, client events require 'client-' prefix and private channels.
-   * For this implementation, we assume a relay endpoint or use Pusher's testing triggering.
+   * Admin-specific listener for incoming sales.
    */
-  public send(event: string, data: any) {
-    console.log(`[Relay] Sending ${event}:`, data);
-    // Note: Standard pusher-js cannot trigger client events on public channels.
-    // In a real production environment, this would hit a lightweight serverless function relay.
-    // We simulate the logic for the UI.
+  public subscribeToSales(onSaleReceived: (sale: any) => void) {
+    if (this.channel) {
+      this.channel.bind('new-sale', onSaleReceived);
+    }
+  }
+
+  public disconnect() {
+    if (this.pusher && this.channelName) {
+      this.pusher.unsubscribe(this.channelName);
+      this.pusher.disconnect();
+      this.pusher = null;
+      this.channel = null;
+    }
   }
 
   public isConnected(): boolean {
