@@ -75,6 +75,27 @@ const SecurityBackups: React.FC<SecurityBackupsProps> = ({ currentUser }) => {
     }
   };
 
+  /**
+   * RECOVERY HANDLER
+   * Strictly follows the instruction to wipe and reload.
+   */
+  const handleRestoreAction = async () => {
+    if (!importCode.trim()) return alert("Oga, please paste your code first!");
+    if (!confirm("Warning: This will delete all current data and restore your backup. Continue?")) return;
+    
+    setIsProcessing(true);
+    const success = await restoreFromBackup(importCode);
+    
+    if (success) {
+      alert("✅ Shop Restored Successfully!");
+      // CRITICAL: Force a full page reload to refresh the entire app state from the new DB
+      window.location.href = '/'; 
+    } else {
+      alert("❌ Recovery Failed: Invalid backup code.");
+      setIsProcessing(false);
+    }
+  };
+
   if (!settings) return <div className="p-10 text-center"><Loader2 className="animate-spin mx-auto" /></div>;
 
   return (
@@ -98,7 +119,9 @@ const SecurityBackups: React.FC<SecurityBackupsProps> = ({ currentUser }) => {
             <input type="text" placeholder="Owner WhatsApp (e.g. 234...)" className="w-full px-5 py-4 bg-slate-50 border rounded-2xl font-bold outline-none focus:ring-2 focus:ring-emerald-500" value={localWhatsApp} onChange={e => setLocalWhatsApp(e.target.value)} />
             <input type="text" placeholder="Group Invite Link" className="w-full px-5 py-4 bg-slate-50 border rounded-2xl font-bold outline-none focus:ring-2 focus:ring-emerald-500" value={localGroup} onChange={e => setLocalGroup(e.target.value)} />
           </div>
-          <button onClick={handleUpdateAutomation} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-xs tracking-widest">Update Links</button>
+          <button onClick={handleUpdateAutomation} disabled={isProcessing} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-xs tracking-widest disabled:opacity-50">
+            {isProcessing ? 'Updating...' : 'Update Links'}
+          </button>
         </div>
       )}
 
@@ -107,7 +130,7 @@ const SecurityBackups: React.FC<SecurityBackupsProps> = ({ currentUser }) => {
         <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm space-y-6">
           <h3 className="font-black text-slate-800 uppercase text-xs">Export Data</h3>
           <div className="space-y-3">
-            <button onClick={handleWhatsAppExport} className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black flex items-center justify-center gap-3 shadow-lg hover:bg-emerald-700 transition-all">
+            <button onClick={handleWhatsAppExport} disabled={isProcessing} className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black flex items-center justify-center gap-3 shadow-lg hover:bg-emerald-700 transition-all active:scale-95 disabled:opacity-50">
               <Share2 size={20} /> {isAdmin ? 'Broadcast Master Stock' : 'Send Sales to Boss'}
             </button>
             {isAdmin && (
@@ -127,10 +150,15 @@ const SecurityBackups: React.FC<SecurityBackupsProps> = ({ currentUser }) => {
             onChange={e => setImportCode(e.target.value)}
           />
           <button 
-            onClick={() => restoreFromBackup(importCode)}
-            className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black flex items-center justify-center gap-3"
+            onClick={handleRestoreAction}
+            disabled={isProcessing}
+            className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black flex items-center justify-center gap-3 disabled:opacity-50 active:scale-95 transition-all"
           >
-            <Upload size={20} /> Perform Recovery
+            {isProcessing ? (
+              <><Loader2 className="animate-spin" size={20} /> ⏳ Restoring Shop...</>
+            ) : (
+              <><Upload size={20} /> Perform Recovery</>
+            )}
           </button>
         </div>
       </div>
