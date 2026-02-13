@@ -12,7 +12,8 @@ import {
   AlertTriangle,
   ShieldAlert,
   Share2,
-  Loader2
+  Loader2,
+  QrCode
 } from 'lucide-react';
 import { Staff } from '../types';
 import { exportDataForWhatsApp } from '../services/syncService';
@@ -26,7 +27,7 @@ const StaffManagement: React.FC = () => {
   const [editingStaff, setEditingStaff] = useState<Staff | null>(null);
   const [staffToDelete, setStaffToDelete] = useState<Staff | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isSharing, setIsSharing] = useState(false);
+  const [isSharing, setIsSharing] = useState<number | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   
   const [formData, setFormData] = useState({ 
@@ -50,19 +51,19 @@ const StaffManagement: React.FC = () => {
     }
   };
 
-  const handleShareInvite = async () => {
+  const handleShareInvite = async (staff: Staff) => {
     if (!settings?.sync_key) {
       alert("Security Key not set. Visit 'Security & Backups' to generate one first.");
       return;
     }
-    setIsSharing(true);
+    setIsSharing(staff.id || 0);
     try {
-      const result = await exportDataForWhatsApp('STAFF_INVITE', settings.sync_key);
+      const result = await exportDataForWhatsApp('STAFF_INVITE', settings.sync_key, 'Admin', staff);
       const inviteUrl = `${window.location.origin}/?invite=${result.raw}`;
       const message = result.summary.replace('[Link]', inviteUrl);
       window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
     } finally {
-      setIsSharing(false);
+      setIsSharing(null);
     }
   };
 
@@ -153,22 +154,14 @@ const StaffManagement: React.FC = () => {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h3 className="text-2xl font-black text-slate-800 tracking-tight">Staff Registry</h3>
-          <p className="text-sm text-slate-500 font-medium">Manage same-device terminal accounts</p>
+          <p className="text-sm text-slate-500 font-medium">Manage and onboard remote terminals</p>
         </div>
         <div className="flex gap-2 w-full md:w-auto">
-          <button 
-            onClick={handleShareInvite} 
-            disabled={isSharing}
-            className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-indigo-600 text-white px-6 py-3 rounded-2xl font-black hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-600/20 active:scale-95 disabled:opacity-50"
-          >
-            {isSharing ? <Loader2 className="animate-spin" size={20} /> : <Share2 size={20} />} 
-            Invite Staff
-          </button>
           <button 
             onClick={() => { setEditingStaff(null); setFormData({ name: '', role: 'Sales', password: '' }); setIsModalOpen(true); }} 
             className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-emerald-600 text-white px-6 py-3 rounded-2xl font-black hover:bg-emerald-700 transition-all shadow-xl shadow-emerald-600/20 active:scale-95"
           >
-            <UserPlus size={20} /> Add Account
+            <UserPlus size={20} /> Create New Account
           </button>
         </div>
       </div>
@@ -186,9 +179,19 @@ const StaffManagement: React.FC = () => {
               <p className="text-xs text-slate-400 font-bold">Access PIN: <span className="font-mono text-slate-900 ml-1">{staff.password}</span></p>
             </div>
 
-            <div className="mt-8 pt-4 border-t border-slate-100 flex items-center justify-end gap-1">
-              <button onClick={() => openEditModal(staff)} className="p-2.5 text-slate-400 hover:text-blue-600 transition-all"><Edit size={18} /></button>
-              <button onClick={() => { setStaffToDelete(staff); setIsDeleteModalOpen(true); }} className="p-2.5 text-slate-400 hover:text-rose-600 transition-all"><Trash2 size={18} /></button>
+            <div className="mt-8 pt-4 border-t border-slate-100 flex items-center justify-between">
+              <button 
+                onClick={() => handleShareInvite(staff)} 
+                disabled={isSharing !== null}
+                className="flex items-center gap-2 py-2 px-4 bg-indigo-50 text-indigo-700 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-indigo-600 hover:text-white transition-all active:scale-95"
+              >
+                {isSharing === staff.id ? <Loader2 className="animate-spin" size={14} /> : <Share2 size={14} />}
+                Invite to Device
+              </button>
+              <div className="flex items-center gap-1">
+                <button onClick={() => openEditModal(staff)} className="p-2.5 text-slate-400 hover:text-blue-600 transition-all"><Edit size={18} /></button>
+                <button onClick={() => { setStaffToDelete(staff); setIsDeleteModalOpen(true); }} className="p-2.5 text-slate-400 hover:text-rose-600 transition-all"><Trash2 size={18} /></button>
+              </div>
             </div>
           </div>
         ))}

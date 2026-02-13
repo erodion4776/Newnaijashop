@@ -1,8 +1,9 @@
 import LZString from 'lz-string';
 import { db } from '../db/db';
-import { Sale, Product, StockSnapshot } from '../types';
+import { Sale, Product, StockSnapshot, Staff } from '../types';
 
 const SYNC_HEADER = "NS_V2_";
+const INVITE_HANDSHAKE_KEY = "NS_INVITE_SECURE_77";
 
 export const generateSyncKey = (): string => {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ0123456789';
@@ -20,9 +21,15 @@ const xorCipher = (text: string, key: string): string => {
 /**
  * Enhanced export function for Chain-Sync and Master Push
  */
-export const exportDataForWhatsApp = async (type: 'SALES' | 'STOCK' | 'KEY_UPDATE' | 'URGENT_SYNC' | 'STAFF_INVITE', key: string, staffName: string = 'Staff') => {
+export const exportDataForWhatsApp = async (
+  type: 'SALES' | 'STOCK' | 'KEY_UPDATE' | 'URGENT_SYNC' | 'STAFF_INVITE', 
+  key: string, 
+  staffName: string = 'Staff',
+  invitedStaff?: Staff
+) => {
   let dataToExport: any = {};
   let summary = "";
+  let encryptionKey = key;
   
   if (type === 'SALES' || type === 'URGENT_SYNC') {
     const today = new Date().setHours(0,0,0,0);
@@ -44,8 +51,6 @@ export const exportDataForWhatsApp = async (type: 'SALES' | 'STOCK' | 'KEY_UPDAT
 
   } else if (type === 'STOCK') {
     const masterStock = await db.products.toArray();
-    
-    // SECURITY: Only include name, price, category, stock_qty. EXCLUDE cost_price.
     const filteredProducts = masterStock.map(p => ({
       name: p.name,
       price: Number(p.price),
@@ -64,23 +69,24 @@ export const exportDataForWhatsApp = async (type: 'SALES' | 'STOCK' | 'KEY_UPDAT
     summary = "🔐 Security Bridge Key Update";
   } else if (type === 'STAFF_INVITE') {
     const settings = await db.settings.get('app_settings');
+    encryptionKey = INVITE_HANDSHAKE_KEY; // Use fixed handshake key for invites
     dataToExport = {
       type: 'STAFF_INVITE',
       shop_name: settings?.shop_name || 'NaijaShop',
-      sync_key: settings?.sync_key || key,
+      master_sync_key: settings?.sync_key || key,
       admin_whatsapp_number: settings?.admin_whatsapp_number || '',
       whatsapp_group_link: settings?.whatsapp_group_link || '',
+      staffMember: invitedStaff, // Include the invited staff details
       timestamp: Date.now()
     };
-    summary = `👋 ${settings?.shop_name} Terminal Invite.\nUse this link to join the shop as staff and sync your records automatically.\n\nLink: [Link]`;
+    summary = `👋 ${settings?.shop_name} Terminal Invite.\nUse this link to join the shop as ${invitedStaff?.name || 'staff'} and sync your records automatically.\n\nLink: [Link]`;
   }
 
   const jsonString = JSON.stringify(dataToExport);
-  const encrypted = xorCipher(jsonString, key);
+  const encrypted = xorCipher(jsonString, encryptionKey);
   const compressed = LZString.compressToEncodedURIComponent(encrypted);
   const finalString = SYNC_HEADER + compressed;
 
-  // Fallback for large payloads (Download .nshop file)
   if (finalString.length > 1800 && type !== 'STAFF_INVITE') {
     const blob = new Blob([finalString], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
@@ -108,11 +114,21 @@ export const importWhatsAppBridgeData = async (rawString: string, localKey: stri
     const encrypted = LZString.decompressFromEncodedURIComponent(compressed);
     if (!encrypted) throw new Error("Corrupt data.");
     
-    // We try to decrypt with the key. For invites, we might not have a local key yet, 
-    // but the system usually has a default key or the key is passed.
-    const jsonString = xorCipher(encrypted, localKey);
-    let payload;
-    try { payload = JSON.parse(jsonString); } catch (e) { throw new Error("Sync Key Mismatch."); }
+    // Determine decryption key: If it starts with INVITE indicators, use handshake key
+    // We attempt handshake key first if it looks like an invite
+    let payload: any = null;
+    try {
+      const inviteJson = xorCipher(encrypted, INVITE_HANDSHAKE_KEY);
+      payload = JSON.parse(inviteJson);
+      if (payload.type !== 'STAFF_INVITE') payload = null;
+    } catch (e) {
+      payload = null;
+    }
+
+    if (!payload) {
+      const jsonString = xorCipher(encrypted, localKey);
+      try { payload = JSON.parse(jsonString); } catch (e) { throw new Error("Sync Key Mismatch."); }
+    }
 
     if (payload.type === 'SALES_REPORT') {
       let importedCount = 0;
@@ -151,7 +167,6 @@ export const importWhatsAppBridgeData = async (rawString: string, localKey: stri
 
     if (payload.type === 'STOCK_UPDATE') {
       await (db as any).transaction('rw', [db.products, db.inventory_logs], async () => {
-        // We only overwrite name, price, category, stock_qty. We try to preserve local IDs if matching by name.
         for (const p of payload.products) {
           const existing = await db.products.where('name').equals(p.name).first();
           if (existing) {
@@ -165,19 +180,35 @@ export const importWhatsAppBridgeData = async (rawString: string, localKey: stri
           }
         }
       });
-      // Chain-Sync Resume: Reset the 1-hour cooldown timer
       localStorage.setItem('last_force_sync', Date.now().toString());
       return { success: true, type: 'STOCK', count: payload.products.length };
     }
 
     if (payload.type === 'STAFF_INVITE') {
-      await db.settings.update('app_settings', {
-        shop_name: payload.shop_name,
-        sync_key: payload.sync_key,
-        admin_whatsapp_number: payload.admin_whatsapp_number,
-        whatsapp_group_link: payload.whatsapp_group_link
+      await (db as any).transaction('rw', [db.settings, db.staff], async () => {
+        // Save shop configuration
+        await db.settings.update('app_settings', {
+          shop_name: payload.shop_name,
+          sync_key: payload.master_sync_key,
+          admin_whatsapp_number: payload.admin_whatsapp_number,
+          whatsapp_group_link: payload.whatsapp_group_link,
+          is_setup_complete: true,
+          isSubscribed: true
+        });
+
+        // Add the specific staff member if provided
+        if (payload.staffMember) {
+          const exists = await db.staff.where('name').equals(payload.staffMember.name).first();
+          if (!exists) {
+            await db.staff.add({
+              ...payload.staffMember,
+              id: undefined, // Let Dexie generate a new local ID
+              created_at: Date.now()
+            });
+          }
+        }
       });
-      return { success: true, type: 'STAFF_INVITE', shop_name: payload.shop_name };
+      return { success: true, type: 'STAFF_INVITE', shop_name: payload.shop_name, staffName: payload.staffMember?.name };
     }
 
     return { success: true, type: payload.type };

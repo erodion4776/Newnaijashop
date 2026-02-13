@@ -23,7 +23,8 @@ import StockAudit from './pages/StockAudit';
 import { 
   AlertTriangle,
   ShieldAlert,
-  CreditCard
+  CreditCard,
+  Loader2
 } from 'lucide-react';
 import { importWhatsAppBridgeData } from './services/syncService';
 
@@ -73,6 +74,8 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 const AppContent: React.FC = () => {
   const [currentView, setCurrentView] = useState<View>('landing');
   const [isInitialized, setIsInitialized] = useState(false);
+  const [isJoining, setIsJoining] = useState(false);
+  const [joiningShopName, setJoiningShopName] = useState('');
   const [showSplash, setShowSplash] = useState(true);
   const [currentUser, setCurrentUser] = useState<Staff | null>(null);
   const [selectedStaffId, setSelectedStaffId] = useState<number | ''>('');
@@ -84,36 +87,51 @@ const AppContent: React.FC = () => {
   const settings = useLiveQuery(() => db.settings.get('app_settings'));
   const staffList = useLiveQuery(() => db.staff.toArray()) || [];
 
+  /**
+   * THE JOIN ENGINE: Early Interception
+   * STRICT INSTRUCTION: Priority check for invites before any routing.
+   */
   useEffect(() => {
     const runInit = async () => {
       await initSettings();
       
-      // JOIN LOGIC: Automatically save sync details from invite link
       const urlParams = new URLSearchParams(window.location.search);
-      const inviteData = urlParams.get('invite');
+      const inviteData = urlParams.get('invite') || urlParams.get('data');
+      
       if (inviteData) {
+        setIsJoining(true);
         try {
-          // Use a dummy key to try initial import if STAFF_INVITE type handles its own key extraction 
-          // or if the sync station logic is updated to handle it.
-          // Note: importWhatsAppBridgeData currently requires a local key. 
-          // However, for STAFF_INVITE, we expect it to be handled slightly differently or for the staff to enter the key once.
-          // For now, we assume the STAFF_INVITE process in syncService is robust.
-          const result = await importWhatsAppBridgeData(inviteData, ''); // Key is inside invite payload for STAFF_INVITE
+          // Handshake logic inside importWhatsAppBridgeData for STAFF_INVITE type
+          const result = await importWhatsAppBridgeData(inviteData, ''); 
           if (result.success && result.type === 'STAFF_INVITE') {
-            alert(`Joined ${result.shop_name} successfully! Please register your staff account or login.`);
-            // Strip the invite from URL
-            window.history.replaceState({}, document.title, "/");
+            setJoiningShopName(result.shop_name);
+            // Allow 1 second for DB to commit and for visual feedback
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            // Clean URL and switch view to login (null currentUser shows login screen)
+            window.history.replaceState({}, '', '/');
           }
         } catch (err) {
-          console.error("Invite Join Error:", err);
+          console.error("Critical Invite Join Error:", err);
+        } finally {
+          setIsJoining(false);
         }
       }
       
       setIsInitialized(true);
+      setTimeout(() => setShowSplash(false), 1500);
     };
     runInit();
-    setTimeout(() => setShowSplash(false), 1500);
   }, []);
+
+  // Pre-fill logic: If we just joined, auto-select the invited staff in dropdown
+  useEffect(() => {
+    if (staffList.length > 0 && !selectedStaffId) {
+      // Find the most recently added staff (likely the invited one)
+      const latestStaff = [...staffList].sort((a, b) => (b.created_at || 0) - (a.created_at || 0))[0];
+      if (latestStaff?.id) setSelectedStaffId(latestStaff.id);
+    }
+  }, [staffList]);
 
   const handleStartSubscription = async () => {
     const currentSettings = await db.settings.get('app_settings');
@@ -141,11 +159,20 @@ const AppContent: React.FC = () => {
     } else alert("Invalid PIN");
   };
 
-  if (showSplash || !isInitialized) {
+  if (showSplash || !isInitialized || isJoining) {
     return (
-      <div className="min-h-screen bg-emerald-900 flex flex-col items-center justify-center">
+      <div className="min-h-screen bg-emerald-900 flex flex-col items-center justify-center p-6 text-center">
         <img src={LOGO_URL} className="w-32 h-32 object-contain animate-pulse" alt="Logo" />
         <h1 className="text-white text-4xl font-black mt-8">NaijaShop</h1>
+        {isJoining && (
+          <div className="mt-8 space-y-3 animate-in fade-in slide-in-from-bottom-4 duration-700">
+             <div className="flex items-center justify-center gap-3 text-emerald-300">
+                <Loader2 className="animate-spin" size={20} />
+                <p className="font-bold tracking-widest uppercase text-xs">Connecting to terminal...</p>
+             </div>
+             {joiningShopName && <p className="text-white font-black text-xl tracking-tight italic">"{joiningShopName}"</p>}
+          </div>
+        )}
       </div>
     );
   }
@@ -175,7 +202,7 @@ const AppContent: React.FC = () => {
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
-        <div className="w-full max-sm:px-4 max-w-sm space-y-10">
+        <div className="w-full max-sm:px-4 max-w-sm space-y-10 animate-in fade-in duration-700">
           <div className="text-center flex flex-col items-center">
              <div className="w-24 h-24 bg-white rounded-[2rem] p-4 shadow-2xl border border-slate-100 mb-6">
                 <img src={LOGO_URL} className="w-full h-full object-contain" alt="Logo" />
@@ -184,11 +211,17 @@ const AppContent: React.FC = () => {
           </div>
           <div className="bg-white p-10 rounded-[3rem] shadow-2xl border border-slate-200">
             <form onSubmit={handleLoginSubmit} className="space-y-6">
-              <select required className="w-full px-5 py-4 bg-slate-50 border rounded-2xl font-bold outline-none focus:ring-2 focus:ring-emerald-500" value={selectedStaffId} onChange={(e) => setSelectedStaffId(Number(e.target.value))}>
-                <option value="">Select Account</option>
-                {staffList.map(s => <option key={s.id} value={s.id!}>{s.name} ({s.role})</option>)}
-              </select>
-              <input required type="password" placeholder="PIN" className="w-full px-5 py-4 bg-slate-50 border rounded-2xl font-bold outline-none focus:ring-2 focus:ring-emerald-500" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} />
+              <div className="space-y-2">
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Terminal Account</label>
+                <select required className="w-full px-5 py-4 bg-slate-50 border rounded-2xl font-bold outline-none focus:ring-2 focus:ring-emerald-500" value={selectedStaffId} onChange={(e) => setSelectedStaffId(Number(e.target.value))}>
+                  <option value="">Select Account</option>
+                  {staffList.map(s => <option key={s.id} value={s.id!}>{s.name} ({s.role})</option>)}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Access PIN</label>
+                <input required type="password" inputMode="numeric" placeholder="••••" className="w-full px-5 py-4 bg-slate-50 border rounded-2xl font-black text-center text-3xl tracking-[0.5em] outline-none focus:ring-2 focus:ring-emerald-500" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value.replace(/\D/g, ''))} />
+              </div>
               <button type="submit" className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black text-xl shadow-xl hover:bg-emerald-700 transition-all active:scale-[0.98]">Unlock Terminal</button>
             </form>
           </div>
@@ -224,7 +257,6 @@ const AppContent: React.FC = () => {
       {currentView === 'staff-management' && <StaffManagement />}
       {currentView === 'security-backups' && <SecurityBackups currentUser={currentUser} />}
       {currentView === 'activation' && <ActivationPage sessionRef={new URLSearchParams(window.location.search).get('session')!} onActivated={() => window.location.href = '/'} />}
-      {currentView === 'setup' && <SetupShop onComplete={() => window.location.reload()} />}
     </Layout>
   );
 };
