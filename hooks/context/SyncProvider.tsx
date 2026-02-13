@@ -6,6 +6,7 @@ import RelayService from '../../services/RelayService';
 interface SyncContextType {
   status: SyncStatus;
   broadcastSale: (sale: Sale) => void;
+  broadcastStockUpdate: (products: Product[]) => void;
   lastIncomingSale: Sale | null;
 }
 
@@ -17,23 +18,18 @@ export const SyncProvider: React.FC<{ children: React.ReactNode, currentUser: St
   const isAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'Manager';
 
   const handleIncomingSale = useCallback(async (sale: Sale) => {
-    // Only admins "catch" sales for the ledger
     if (!isAdmin) return;
-
     try {
       const exists = await db.sales.where('sale_id').equals(sale.sale_id).first();
       if (!exists) {
         await (db as any).transaction('rw', [db.sales, db.products, db.inventory_logs], async () => {
           await db.sales.add({ ...sale, sync_status: 'synced' });
-          
-          // Mirror inventory deduction on Admin phone instantly
           for (const item of sale.items) {
             const p = await db.products.get(item.productId);
             if (p) {
               const oldStock = Number(p.stock_qty);
               const newStock = Math.max(0, oldStock - Number(item.quantity));
               await db.products.update(item.productId, { stock_qty: newStock });
-              
               await db.inventory_logs.add({
                 product_id: item.productId,
                 product_name: p.name,
@@ -47,51 +43,71 @@ export const SyncProvider: React.FC<{ children: React.ReactNode, currentUser: St
             }
           }
         });
-        
-        // Trigger UI notification in Dashboard
         setLastIncomingSale(sale);
         setTimeout(() => setLastIncomingSale(null), 8000);
       }
     } catch (e) {
-      console.error("[Sync] Error processing incoming sale:", e);
+      console.error("[Sync] Incoming sale error:", e);
+    }
+  }, [isAdmin]);
+
+  const handleIncomingStock = useCallback(async (data: { products: Product[] }) => {
+    if (isAdmin) return; // Only staff accept stock pushes
+    try {
+      await (db as any).transaction('rw', [db.products, db.inventory_logs], async () => {
+        await db.products.clear();
+        await db.products.bulkAdd(data.products.map(p => ({
+          ...p,
+          price: Number(p.price),
+          stock_qty: Number(p.stock_qty)
+        })));
+        await db.inventory_logs.add({
+          product_id: 0,
+          product_name: "Live Master Update",
+          quantity_changed: 0,
+          old_stock: 0,
+          new_stock: 0,
+          type: 'Sync',
+          timestamp: Date.now(),
+          performed_by: 'Admin (Live Relay)'
+        });
+      });
+      console.log("[Sync] POS stock updated via Live Link.");
+    } catch (e) {
+      console.error("[Sync] Stock update error:", e);
     }
   }, [isAdmin]);
 
   useEffect(() => {
     let interval: any;
-    
     const initRelay = async () => {
       const settings = await db.settings.get('app_settings');
-      if (settings?.shop_name && settings?.sync_key) {
-        RelayService.connect(settings.shop_name, settings.sync_key);
-        
+      if (settings?.sync_key) {
+        RelayService.connect(settings.shop_name || 'Shop', settings.sync_key);
         if (isAdmin) {
           RelayService.subscribeToSales(handleIncomingSale);
+        } else {
+          RelayService.subscribeToStockUpdates(handleIncomingStock);
         }
-
-        // Monitoring Loop
         interval = setInterval(() => {
           setStatus(RelayService.isConnected() ? 'live' : 'offline');
         }, 3000);
       }
     };
 
-    if (currentUser) {
-      initRelay();
-    }
+    if (currentUser) initRelay();
 
     return () => {
       if (interval) clearInterval(interval);
       RelayService.disconnect();
     };
-  }, [currentUser, isAdmin, handleIncomingSale]);
+  }, [currentUser, isAdmin, handleIncomingSale, handleIncomingStock]);
 
-  const broadcastSale = useCallback((sale: Sale) => {
-    RelayService.broadcastSale(sale);
-  }, []);
+  const broadcastSale = useCallback((sale: Sale) => RelayService.broadcastSale(sale), []);
+  const broadcastStockUpdate = useCallback((products: Product[]) => RelayService.broadcastStockUpdate(products), []);
 
   return (
-    <SyncContext.Provider value={{ status, broadcastSale, lastIncomingSale }}>
+    <SyncContext.Provider value={{ status, broadcastSale, broadcastStockUpdate, lastIncomingSale }}>
       {children}
     </SyncContext.Provider>
   );

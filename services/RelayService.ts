@@ -11,8 +11,6 @@ class RelayService {
 
   /**
    * Connects to a unique shop relay channel using Client Events.
-   * Combination of shop name and sync key ensures absolute privacy.
-   * Uses a custom authorizer to enable phone-to-phone communication without a backend.
    */
   public connect(shopName: string, syncKey: string) {
     if (this.pusher) return;
@@ -20,8 +18,6 @@ class RelayService {
     this.pusher = new Pusher(PUSHER_KEY, {
       cluster: PUSHER_CLUSTER,
       forceTLS: true,
-      // THE "MAGIC" LOCAL AUTHORIZER
-      // Tells Pusher to trust this client connection for private channels locally
       authorizer: (channel, options) => {
         return {
           authorize: (socketId, callback) => {
@@ -33,8 +29,6 @@ class RelayService {
     });
 
     const sanitizedKey = syncKey.replace(/[^a-z0-9]/g, '').toLowerCase();
-    
-    // STRICT REQUIREMENT: Client events MUST use a private channel
     this.channelName = `private-shop-${sanitizedKey}`;
     this.channel = this.pusher.subscribe(this.channelName);
     
@@ -42,32 +36,36 @@ class RelayService {
   }
 
   /**
-   * DIRECT PHONE-TO-PHONE BROADCAST
-   * Uses mandatory 'client-' prefix to send data directly to other phones.
+   * BROADCAST SALE (Staff -> Admin)
    */
   public broadcastSale(saleData: any) {
-    if (!this.channel || this.pusher?.connection.state !== 'connected') {
-      console.warn("[Relay] Cannot broadcast: Not connected to pipe.");
-      return;
-    }
-
+    if (!this.channel || this.pusher?.connection.state !== 'connected') return;
     try {
-      // Direct trigger on the private channel
       this.channel.trigger('client-new-sale', saleData);
-      console.log("[Relay] Sale thrown into pipe successfully.");
     } catch (e) {
-      console.error("[Relay] Trigger failed:", e);
+      console.error("[Relay] Sale broadcast failed:", e);
     }
   }
 
   /**
-   * Admin-specific listener for incoming Client Events.
+   * BROADCAST STOCK (Admin -> Staff)
    */
-  public subscribeToSales(onSaleReceived: (sale: any) => void) {
-    if (this.channel) {
-      // Catch the 'client-new-sale' event
-      this.channel.bind('client-new-sale', onSaleReceived);
+  public broadcastStockUpdate(products: any[]) {
+    if (!this.channel || this.pusher?.connection.state !== 'connected') return;
+    try {
+      this.channel.trigger('client-stock-update', { products, timestamp: Date.now() });
+      console.log("[Relay] Master Stock broadcasted to staff.");
+    } catch (e) {
+      console.error("[Relay] Stock broadcast failed:", e);
     }
+  }
+
+  public subscribeToSales(onSaleReceived: (sale: any) => void) {
+    if (this.channel) this.channel.bind('client-new-sale', onSaleReceived);
+  }
+
+  public subscribeToStockUpdates(onUpdateReceived: (data: any) => void) {
+    if (this.channel) this.channel.bind('client-stock-update', onUpdateReceived);
   }
 
   public disconnect() {

@@ -23,13 +23,15 @@ import {
   Lightbulb,
   Moon,
   Zap,
-  ClipboardCheck
+  ClipboardCheck,
+  Wifi
 } from 'lucide-react';
 import { View, Staff } from '../types';
 import ClosingReport from './ClosingReport';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
 import SmartSupportChat from './SupportChat';
+import { useSync } from '../hooks/context/SyncProvider';
 
 const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-9987-b4ed4c0e3c36.png";
 
@@ -45,7 +47,6 @@ interface LayoutProps {
   onLogout: () => void;
   canInstall?: boolean;
   onInstall?: () => void;
-  // Fix: Added hours and minutes to trialRemaining type to resolve mismatch error in App.tsx
   trialRemaining?: { 
     days: number, 
     hours: number, 
@@ -80,6 +81,7 @@ const Layout: React.FC<LayoutProps> = ({
   const [showClosingModal, setShowClosingModal] = useState(false);
   const [unlockPin, setUnlockPin] = useState('');
 
+  const { status } = useSync();
   const settings = useLiveQuery(() => db.settings.get('app_settings'));
   const showAllFeatures = currentUser?.role === 'Admin' || (currentUser?.role === 'Manager' && !isStaffLock);
 
@@ -165,7 +167,7 @@ const Layout: React.FC<LayoutProps> = ({
             </button>
           )}
           {currentUser?.role === 'Admin' && (
-            <button onClick={() => isStaffLock ? setShowUnlockModal(true) : toggleStaffLock(true)} className={`w-full flex items-center justify-center gap-2 py-3 rounded-2xl font-black text-[10px] uppercase transition-all ${isStaffLock ? 'bg-amber-500 text-white animate-pulse' : 'bg-white/10 text-emerald-400'}`}>
+            <button onClick={() => isStaffLock ? setShowUnlockModal(true) : toggleStaffLock(true)} className={`w-full flex items-center justify-center gap-2 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all ${isStaffLock ? 'bg-amber-500 text-white animate-pulse' : 'bg-white/10 text-emerald-400'}`}>
               {isStaffLock ? <ShieldAlert size={16} /> : <ShieldCheck size={16} />}
               {isStaffLock ? 'Staff Locked' : 'Switch to Staff'}
             </button>
@@ -186,18 +188,36 @@ const Layout: React.FC<LayoutProps> = ({
         <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 shrink-0">
           <div className="flex items-center gap-4">
             <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-2 hover:bg-slate-100 rounded-lg"><Menu size={24} /></button>
-            <h2 className="text-lg font-bold text-slate-800">{navItems.find(i => i.id === activeView)?.label || 'Terminal'}</h2>
+            <div className="flex items-center gap-3">
+              <h2 className="text-lg font-bold text-slate-800">{navItems.find(i => i.id === activeView)?.label || 'Terminal'}</h2>
+              {status === 'live' && (
+                <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full border border-emerald-100 animate-in fade-in zoom-in">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                  </span>
+                  <span className="text-[9px] font-black uppercase tracking-widest">Live Link Active</span>
+                </div>
+              )}
+            </div>
           </div>
-          <div className="hidden sm:block text-right">
-             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Local Terminal</p>
-             <p className="text-xs font-bold text-slate-800 leading-none">{shopName}</p>
+          <div className="flex items-center gap-4">
+            {isStaffLock && currentUser?.role !== 'Admin' && (
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 border border-amber-100 rounded-full text-amber-600">
+                <ShieldAlert size={14} />
+                <span className="text-[10px] font-black uppercase tracking-widest">Locked Mode</span>
+              </div>
+            )}
+            <div className="hidden sm:block text-right">
+               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Local Terminal</p>
+               <p className="text-xs font-bold text-slate-800 leading-none">{shopName}</p>
+            </div>
           </div>
         </header>
         <section className="flex-1 overflow-y-auto p-4 lg:p-8">
           {children}
         </section>
 
-        {/* Global Smart Assistant */}
         <SmartSupportChat 
           currentUser={currentUser}
           onNavigate={(view) => setView(view as any)}
@@ -205,7 +225,7 @@ const Layout: React.FC<LayoutProps> = ({
       </main>
       {showUnlockModal && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-          <div className="bg-white rounded-[3rem] w-full max-w-sm p-10 text-center space-y-8 animate-in zoom-in duration-300">
+          <div className="bg-white rounded-[3rem] w-full max-sm:px-6 max-w-sm p-10 text-center space-y-8 animate-in zoom-in duration-300">
             <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-3xl flex items-center justify-center mx-auto shadow-inner"><Lock size={40} /></div>
             <h3 className="text-2xl font-black text-slate-900">Admin Unlock</h3>
             <form onSubmit={handleUnlockChallenge} className="space-y-6">
