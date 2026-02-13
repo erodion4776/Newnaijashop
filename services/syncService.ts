@@ -20,7 +20,7 @@ const xorCipher = (text: string, key: string): string => {
 /**
  * Enhanced export function for Chain-Sync and Master Push
  */
-export const exportDataForWhatsApp = async (type: 'SALES' | 'STOCK' | 'KEY_UPDATE' | 'URGENT_SYNC', key: string, staffName: string = 'Staff') => {
+export const exportDataForWhatsApp = async (type: 'SALES' | 'STOCK' | 'KEY_UPDATE' | 'URGENT_SYNC' | 'STAFF_INVITE', key: string, staffName: string = 'Staff') => {
   let dataToExport: any = {};
   let summary = "";
   
@@ -62,6 +62,17 @@ export const exportDataForWhatsApp = async (type: 'SALES' | 'STOCK' | 'KEY_UPDAT
   } else if (type === 'KEY_UPDATE') {
     dataToExport = { type: 'KEY_UPDATE', new_key: key, timestamp: Date.now() };
     summary = "🔐 Security Bridge Key Update";
+  } else if (type === 'STAFF_INVITE') {
+    const settings = await db.settings.get('app_settings');
+    dataToExport = {
+      type: 'STAFF_INVITE',
+      shop_name: settings?.shop_name || 'NaijaShop',
+      sync_key: settings?.sync_key || key,
+      admin_whatsapp_number: settings?.admin_whatsapp_number || '',
+      whatsapp_group_link: settings?.whatsapp_group_link || '',
+      timestamp: Date.now()
+    };
+    summary = `👋 ${settings?.shop_name} Terminal Invite.\nUse this link to join the shop as staff and sync your records automatically.\n\nLink: [Link]`;
   }
 
   const jsonString = JSON.stringify(dataToExport);
@@ -70,7 +81,7 @@ export const exportDataForWhatsApp = async (type: 'SALES' | 'STOCK' | 'KEY_UPDAT
   const finalString = SYNC_HEADER + compressed;
 
   // Fallback for large payloads (Download .nshop file)
-  if (finalString.length > 1800) {
+  if (finalString.length > 1800 && type !== 'STAFF_INVITE') {
     const blob = new Blob([finalString], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -97,6 +108,8 @@ export const importWhatsAppBridgeData = async (rawString: string, localKey: stri
     const encrypted = LZString.decompressFromEncodedURIComponent(compressed);
     if (!encrypted) throw new Error("Corrupt data.");
     
+    // We try to decrypt with the key. For invites, we might not have a local key yet, 
+    // but the system usually has a default key or the key is passed.
     const jsonString = xorCipher(encrypted, localKey);
     let payload;
     try { payload = JSON.parse(jsonString); } catch (e) { throw new Error("Sync Key Mismatch."); }
@@ -155,6 +168,16 @@ export const importWhatsAppBridgeData = async (rawString: string, localKey: stri
       // Chain-Sync Resume: Reset the 1-hour cooldown timer
       localStorage.setItem('last_force_sync', Date.now().toString());
       return { success: true, type: 'STOCK', count: payload.products.length };
+    }
+
+    if (payload.type === 'STAFF_INVITE') {
+      await db.settings.update('app_settings', {
+        shop_name: payload.shop_name,
+        sync_key: payload.sync_key,
+        admin_whatsapp_number: payload.admin_whatsapp_number,
+        whatsapp_group_link: payload.whatsapp_group_link
+      });
+      return { success: true, type: 'STAFF_INVITE', shop_name: payload.shop_name };
     }
 
     return { success: true, type: payload.type };

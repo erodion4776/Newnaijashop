@@ -9,6 +9,8 @@ import {
   ShoppingCart, 
   Package,
   Camera,
+  Grid3x3,
+  List,
   X,
   CheckCircle2,
   Clock,
@@ -239,6 +241,11 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
     }
   };
 
+  const handleRequestStockList = async () => {
+    const text = 'Hello Boss, I have installed the app. Please send me the Master Stock update so I can start selling!';
+    await WhatsAppService.send(text, settings, 'DIRECT_REPORT');
+  };
+
   // Fix: Renamed onCompleteSale to handleCheckoutComplete to match the name used in line 546
   const handleCheckoutComplete = async (sale: any, lowItems: string[]) => {
     setCart([]);
@@ -403,34 +410,53 @@ const POS: React.FC<POSProps> = ({ setView, currentUser, cart, setCart, parkTrig
 
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
         <div className="flex-1 overflow-y-auto p-4 pb-32 scrollbar-hide">
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-            {filteredProducts.map(product => {
-              const isLowStock = product.stock_qty > 0 && product.stock_qty <= 5;
-              const isOutOfStock = product.stock_qty <= 0;
-              
-              return (
-                <button 
-                  key={product.id} 
-                  onClick={() => !isOutOfStock && addToCart(product, 1)} 
-                  disabled={isOutOfStock}
-                  className={`group bg-white border border-slate-200 rounded-2xl p-4 text-left transition-all flex flex-col h-full ${isOutOfStock ? 'opacity-60 cursor-not-allowed bg-slate-50' : 'hover:border-emerald-500 hover:shadow-lg active:scale-95'}`}
-                >
-                  <span className="text-[10px] font-black px-2 py-1 bg-slate-100 rounded-lg text-slate-500 uppercase self-start mb-3">{product.category}</span>
-                  <h4 className="font-bold text-sm text-slate-800 line-clamp-2 mb-2 flex-1">{product.name}</h4>
-                  <div className="mt-auto pt-2">
-                    <div className={`text-[10px] mb-1 font-bold ${isOutOfStock ? 'text-rose-600 font-black' : isLowStock ? 'text-amber-600 font-black' : 'text-slate-400'}`}>
-                      {isOutOfStock ? 'OUT OF STOCK' : isLowStock ? `⚠️ Only ${product.stock_qty} Left` : `${product.stock_qty} Units Available`}
+          {isSales && products.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center text-center p-10 space-y-8 animate-in fade-in zoom-in">
+              <div className="w-32 h-32 bg-indigo-50 text-indigo-600 rounded-[2.5rem] flex items-center justify-center shadow-inner animate-bounce-soft">
+                <Package size={64} />
+              </div>
+              <div className="space-y-3">
+                <h3 className="text-2xl font-black text-slate-800">No Stock in Terminal</h3>
+                <p className="text-slate-500 font-medium max-w-xs">Ask your Boss to send the Master Stock update to your WhatsApp.</p>
+              </div>
+              <button 
+                onClick={handleRequestStockList}
+                className="w-full max-w-sm py-6 bg-emerald-600 text-white rounded-[2rem] font-black text-xl flex items-center justify-center gap-4 shadow-2xl shadow-emerald-600/20 active:scale-95 transition-all"
+              >
+                <MessageSquare size={28} />
+                📥 Get Stock List from Boss
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              {filteredProducts.map(product => {
+                const isLowStock = product.stock_qty > 0 && product.stock_qty <= 5;
+                const isOutOfStock = product.stock_qty <= 0;
+                
+                return (
+                  <button 
+                    key={product.id} 
+                    onClick={() => !isOutOfStock && addToCart(product, 1)} 
+                    disabled={isOutOfStock}
+                    className={`group bg-white border border-slate-200 rounded-2xl p-4 text-left transition-all flex flex-col h-full ${isOutOfStock ? 'opacity-60 cursor-not-allowed bg-slate-50' : 'hover:border-emerald-500 hover:shadow-lg active:scale-95'}`}
+                  >
+                    <span className="text-[10px] font-black px-2 py-1 bg-slate-100 rounded-lg text-slate-500 uppercase self-start mb-3">{product.category}</span>
+                    <h4 className="font-bold text-sm text-slate-800 line-clamp-2 mb-2 flex-1">{product.name}</h4>
+                    <div className="mt-auto pt-2">
+                      <div className={`text-[10px] mb-1 font-bold ${isOutOfStock ? 'text-rose-600 font-black' : isLowStock ? 'text-amber-600 font-black' : 'text-slate-400'}`}>
+                        {isOutOfStock ? 'OUT OF STOCK' : isLowStock ? `⚠️ Only ${product.stock_qty} Left` : `${product.stock_qty} Units Available`}
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className={`text-lg font-black ${isOutOfStock ? 'text-slate-400' : 'text-emerald-600'}`}>
+                          ₦{product.price.toLocaleString()}
+                        </span>
+                      </div>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span className={`text-lg font-black ${isOutOfStock ? 'text-slate-400' : 'text-emerald-600'}`}>
-                        ₦{product.price.toLocaleString()}
-                      </span>
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         <div className={`lg:w-[400px] bg-white border-l border-slate-200 flex flex-col h-full lg:h-auto ${showMobileCart ? 'fixed inset-0 z-[150]' : 'hidden lg:flex'}`}>

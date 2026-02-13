@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
@@ -11,9 +10,12 @@ import {
   ChevronRight, 
   Edit, 
   AlertTriangle,
-  ShieldAlert
+  ShieldAlert,
+  Share2,
+  Loader2
 } from 'lucide-react';
 import { Staff } from '../types';
+import { exportDataForWhatsApp } from '../services/syncService';
 
 const StaffManagement: React.FC = () => {
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
@@ -24,6 +26,7 @@ const StaffManagement: React.FC = () => {
   const [editingStaff, setEditingStaff] = useState<Staff | null>(null);
   const [staffToDelete, setStaffToDelete] = useState<Staff | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   
   const [formData, setFormData] = useState({ 
@@ -44,6 +47,22 @@ const StaffManagement: React.FC = () => {
     } else {
       setPinError(true);
       setAdminPinInput('');
+    }
+  };
+
+  const handleShareInvite = async () => {
+    if (!settings?.sync_key) {
+      alert("Security Key not set. Visit 'Security & Backups' to generate one first.");
+      return;
+    }
+    setIsSharing(true);
+    try {
+      const result = await exportDataForWhatsApp('STAFF_INVITE', settings.sync_key);
+      const inviteUrl = `${window.location.origin}/?invite=${result.raw}`;
+      const message = result.summary.replace('[Link]', inviteUrl);
+      window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
+    } finally {
+      setIsSharing(false);
     }
   };
 
@@ -136,7 +155,22 @@ const StaffManagement: React.FC = () => {
           <h3 className="text-2xl font-black text-slate-800 tracking-tight">Staff Registry</h3>
           <p className="text-sm text-slate-500 font-medium">Manage same-device terminal accounts</p>
         </div>
-        <button onClick={() => { setEditingStaff(null); setFormData({ name: '', role: 'Sales', password: '' }); setIsModalOpen(true); }} className="w-full md:w-auto flex items-center justify-center gap-2 bg-emerald-600 text-white px-8 py-3 rounded-2xl font-black hover:bg-emerald-700 transition-all shadow-xl shadow-emerald-600/20"><UserPlus size={20} /> Add Account</button>
+        <div className="flex gap-2 w-full md:w-auto">
+          <button 
+            onClick={handleShareInvite} 
+            disabled={isSharing}
+            className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-indigo-600 text-white px-6 py-3 rounded-2xl font-black hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-600/20 active:scale-95 disabled:opacity-50"
+          >
+            {isSharing ? <Loader2 className="animate-spin" size={20} /> : <Share2 size={20} />} 
+            Invite Staff
+          </button>
+          <button 
+            onClick={() => { setEditingStaff(null); setFormData({ name: '', role: 'Sales', password: '' }); setIsModalOpen(true); }} 
+            className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-emerald-600 text-white px-6 py-3 rounded-2xl font-black hover:bg-emerald-700 transition-all shadow-xl shadow-emerald-600/20 active:scale-95"
+          >
+            <UserPlus size={20} /> Add Account
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
