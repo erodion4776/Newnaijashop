@@ -12,7 +12,8 @@ import {
   Copy,
   CheckCircle2,
   AlertCircle,
-  Smartphone
+  Smartphone,
+  RefreshCw
 } from 'lucide-react';
 import { Staff, Settings as SettingsType } from '../types';
 import LZString from 'lz-string';
@@ -31,6 +32,7 @@ const SecurityBackups: React.FC<SecurityBackupsProps> = ({ currentUser }) => {
   const [localGroup, setLocalGroup] = useState('');
 
   const isAdmin = currentUser?.role?.toLowerCase() === 'admin';
+  const isStaff = !isAdmin;
 
   // Load initial values safely
   useEffect(() => {
@@ -76,8 +78,8 @@ const SecurityBackups: React.FC<SecurityBackupsProps> = ({ currentUser }) => {
   };
 
   /**
-   * RECOVERY HANDLER
-   * Strictly follows the instruction to wipe and reload.
+   * ADMIN RECOVERY HANDLER
+   * Strictly follows the instruction to wipe and reload all tables.
    */
   const handleRestoreAction = async () => {
     if (!importCode.trim()) return alert("Oga, please paste your code first!");
@@ -88,10 +90,63 @@ const SecurityBackups: React.FC<SecurityBackupsProps> = ({ currentUser }) => {
     
     if (success) {
       alert("✅ Shop Restored Successfully!");
-      // CRITICAL: Force a full page reload to refresh the entire app state from the new DB
       window.location.href = '/'; 
     } else {
       alert("❌ Recovery Failed: Invalid backup code.");
+      setIsProcessing(false);
+    }
+  };
+
+  /**
+   * STAFF STOCK SYNC HANDLER
+   * Safely updates products and basic settings without touching staff/PINs.
+   */
+  const handleStaffStockUpdate = async () => {
+    if (!importCode.trim()) return alert("Oga, please paste your code first!");
+    
+    setIsProcessing(true);
+    try {
+      const decoded = LZString.decompressFromEncodedURIComponent(importCode);
+      if (!decoded) throw new Error("Invalid code");
+      
+      const data = JSON.parse(decoded);
+      
+      if (!data.products) {
+        throw new Error("This code does not contain stock data.");
+      }
+
+      await (db as any).transaction('rw', [db.products, db.settings, db.inventory_logs], async () => {
+        // Clear and reload products
+        await db.products.clear();
+        await db.products.bulkAdd(data.products);
+        
+        // Update basic shop settings if available
+        if (data.settings) {
+          await db.settings.update('app_settings', { 
+            shop_name: data.settings.shop_name,
+            license_expiry: data.settings.license_expiry 
+          });
+        }
+
+        // Log the sync event
+        await db.inventory_logs.add({
+          product_id: 0,
+          product_name: "Master Sync",
+          quantity_changed: 0,
+          old_stock: 0,
+          new_stock: 0,
+          type: 'Sync',
+          timestamp: Date.now(),
+          performed_by: `Staff: ${currentUser?.name || 'User'}`
+        });
+      });
+
+      alert("✅ Stock and Prices Updated!");
+      window.location.reload();
+    } catch (e: any) {
+      console.error(e);
+      alert("❌ Update Failed: " + (e.message || "Invalid backup code. Ensure you copied the full message from the Boss."));
+    } finally {
       setIsProcessing(false);
     }
   };
@@ -116,8 +171,14 @@ const SecurityBackups: React.FC<SecurityBackupsProps> = ({ currentUser }) => {
             <h3 className="font-black text-slate-800 uppercase text-xs tracking-widest">WhatsApp Sync Automation</h3>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <input type="text" placeholder="Owner WhatsApp (e.g. 234...)" className="w-full px-5 py-4 bg-slate-50 border rounded-2xl font-bold outline-none focus:ring-2 focus:ring-emerald-500" value={localWhatsApp} onChange={e => setLocalWhatsApp(e.target.value)} />
-            <input type="text" placeholder="Group Invite Link" className="w-full px-5 py-4 bg-slate-50 border rounded-2xl font-bold outline-none focus:ring-2 focus:ring-emerald-500" value={localGroup} onChange={e => setLocalGroup(e.target.value)} />
+            <div className="space-y-1">
+              <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Owner WhatsApp</label>
+              <input type="text" placeholder="e.g. 234..." className="w-full px-5 py-4 bg-slate-50 border rounded-2xl font-bold outline-none focus:ring-2 focus:ring-emerald-500" value={localWhatsApp} onChange={e => setLocalWhatsApp(e.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Group Invite Link</label>
+              <input type="text" placeholder="https://chat.whatsapp.com/..." className="w-full px-5 py-4 bg-slate-50 border rounded-2xl font-bold outline-none focus:ring-2 focus:ring-emerald-500" value={localGroup} onChange={e => setLocalGroup(e.target.value)} />
+            </div>
           </div>
           <button onClick={handleUpdateAutomation} disabled={isProcessing} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-xs tracking-widest disabled:opacity-50">
             {isProcessing ? 'Updating...' : 'Update Links'}
@@ -139,25 +200,35 @@ const SecurityBackups: React.FC<SecurityBackupsProps> = ({ currentUser }) => {
               </button>
             )}
           </div>
+          {isStaff && (
+            <p className="text-[10px] text-slate-400 font-bold text-center italic">Use this to send today's work to the Boss on WhatsApp.</p>
+          )}
         </div>
 
         <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm space-y-6 text-center">
-          <h3 className="font-black text-slate-800 uppercase text-xs">Restore System</h3>
+          <h3 className="font-black text-slate-800 uppercase text-xs">
+            {isAdmin ? 'Restore System' : '📥 Update Shop Stock'}
+          </h3>
+          <p className="text-xs text-slate-500 font-medium px-4">
+            {isAdmin 
+              ? 'Restore your entire terminal from a backup code.' 
+              : 'Copy the long code sent by the Boss on WhatsApp and paste it here to see new stock and prices.'}
+          </p>
           <textarea 
-            placeholder="Paste code here..." 
-            className="w-full h-24 p-4 bg-slate-50 border border-slate-100 rounded-2xl text-[10px] font-mono outline-none focus:ring-2 focus:ring-emerald-500 resize-none"
+            placeholder={isAdmin ? "Paste backup code here..." : "Paste code from Boss here"}
+            className="w-full h-24 p-4 bg-slate-50 border border-slate-100 rounded-2xl text-[10px] font-mono outline-none focus:ring-2 focus:ring-emerald-500 resize-none shadow-inner"
             value={importCode}
             onChange={e => setImportCode(e.target.value)}
           />
           <button 
-            onClick={handleRestoreAction}
+            onClick={isAdmin ? handleRestoreAction : handleStaffStockUpdate}
             disabled={isProcessing}
-            className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black flex items-center justify-center gap-3 disabled:opacity-50 active:scale-95 transition-all"
+            className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black flex items-center justify-center gap-3 disabled:opacity-50 active:scale-95 transition-all shadow-lg"
           >
             {isProcessing ? (
-              <><Loader2 className="animate-spin" size={20} /> ⏳ Restoring Shop...</>
+              <><Loader2 className="animate-spin" size={20} /> ⏳ Processing...</>
             ) : (
-              <><Upload size={20} /> Perform Recovery</>
+              isAdmin ? <><Upload size={20} /> Perform Recovery</> : <><RefreshCw size={20} /> Sync My Inventory</>
             )}
           </button>
         </div>

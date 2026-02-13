@@ -23,16 +23,13 @@ import {
   Lightbulb,
   Moon,
   Zap,
-  ClipboardCheck,
-  Wifi,
-  WifiOff
+  ClipboardCheck
 } from 'lucide-react';
 import { View, Staff } from '../types';
 import ClosingReport from './ClosingReport';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
 import SmartSupportChat from './SupportChat';
-import { useSync } from '../hooks/context/SyncProvider';
 
 const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-9987-b4ed4c0e3c36.png";
 
@@ -48,6 +45,7 @@ interface LayoutProps {
   onLogout: () => void;
   canInstall?: boolean;
   onInstall?: () => void;
+  // Fix: Added hours and minutes to trialRemaining type to resolve mismatch error in App.tsx
   trialRemaining?: { 
     days: number, 
     hours: number, 
@@ -82,7 +80,6 @@ const Layout: React.FC<LayoutProps> = ({
   const [showClosingModal, setShowClosingModal] = useState(false);
   const [unlockPin, setUnlockPin] = useState('');
 
-  const { status } = useSync();
   const settings = useLiveQuery(() => db.settings.get('app_settings'));
   const showAllFeatures = currentUser?.role === 'Admin' || (currentUser?.role === 'Manager' && !isStaffLock);
 
@@ -191,34 +188,16 @@ const Layout: React.FC<LayoutProps> = ({
             <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-2 hover:bg-slate-100 rounded-lg"><Menu size={24} /></button>
             <h2 className="text-lg font-bold text-slate-800">{navItems.find(i => i.id === activeView)?.label || 'Terminal'}</h2>
           </div>
-          
-          <div className="flex items-center gap-6">
-            <div className={`flex items-center gap-2 px-3 py-1 rounded-full border transition-all ${status === 'live' ? 'bg-emerald-50 border-emerald-100 text-emerald-600' : 'bg-slate-50 border-slate-100 text-slate-400'}`}>
-              {status === 'live' ? (
-                <>
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                  </span>
-                  <span className="text-[9px] font-black uppercase tracking-widest">Live Link Active</span>
-                </>
-              ) : (
-                <>
-                  <WifiOff size={14} />
-                  <span className="text-[9px] font-black uppercase tracking-widest">Working Offline</span>
-                </>
-              )}
-            </div>
-            <div className="hidden sm:block text-right">
-               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Local Terminal</p>
-               <p className="text-xs font-bold text-slate-800 leading-none">{shopName}</p>
-            </div>
+          <div className="hidden sm:block text-right">
+             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Local Terminal</p>
+             <p className="text-xs font-bold text-slate-800 leading-none">{shopName}</p>
           </div>
         </header>
         <section className="flex-1 overflow-y-auto p-4 lg:p-8">
           {children}
         </section>
 
+        {/* Global Smart Assistant */}
         <SmartSupportChat 
           currentUser={currentUser}
           onNavigate={(view) => setView(view as any)}
