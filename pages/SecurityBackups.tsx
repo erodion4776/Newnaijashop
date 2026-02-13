@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
+import LZString from 'lz-string';
 import { 
   Database, 
   Download, 
@@ -22,8 +23,20 @@ import {
 } from 'lucide-react';
 import { Staff, Settings as SettingsType } from '../types';
 import { generateBackupData, restoreFromBackup, downloadBackupFile } from '../utils/backup';
-import { exportDataForWhatsApp, importWhatsAppBridgeData } from '../services/syncService';
+import { importWhatsAppBridgeData } from '../services/syncService';
 import WhatsAppService from '../services/WhatsAppService';
+
+const SYNC_HEADER = "NS_V2_";
+
+/**
+ * Local XOR Cipher to salt the data with the Master Security Key
+ */
+const xorCipher = (text: string, key: string): string => {
+  if (!key) return text;
+  return text.split('').map((char, i) => 
+    String.fromCharCode(char.charCodeAt(0) ^ key.charCodeAt(i % key.length))
+  ).join('');
+};
 
 const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser }) => {
   const [isProcessing, setIsProcessing] = useState(false);
@@ -91,30 +104,95 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
     }
   };
 
-  const handlePushMasterStock = async () => {
-    if (!settings?.sync_key) { alert("Security Key missing. Visit Settings to set one."); return; }
+  /**
+   * THE BROADCAST ENGINE
+   * Strictly follows user instructions for salting, stripping cost, and WhatsApp delivery.
+   */
+  const handleSendStockToWhatsApp = async () => {
+    if (!settings?.sync_key) { 
+      alert("Security Key missing. Visit Settings to set one."); 
+      return; 
+    }
+
     setIsSyncing(true);
     try {
-      const result = await exportDataForWhatsApp('STOCK', settings.sync_key, currentUser?.name);
-      if (result.raw !== "FILE_DOWNLOADED") {
-        const text = result.summary.replace('[CompressedJSON]', result.raw);
-        await WhatsAppService.send(text, settings, 'GROUP_UPDATE');
-        showSuccess("Master Update Sent!");
+      // Step A: Fetch all products
+      const products = await db.products.toArray();
+
+      // Step B: SECURITY - Strip cost_price. Keep name, price, stock, category.
+      const cleanedProducts = products.map(p => ({
+        name: p.name,
+        price: Number(p.price),
+        category: p.category,
+        stock_qty: Number(p.stock_qty)
+      }));
+
+      // Step C: Salting & Compression
+      const payload = {
+        type: 'STOCK_UPDATE',
+        products: cleanedProducts,
+        timestamp: Date.now()
+      };
+
+      const jsonString = JSON.stringify(payload);
+      const salted = xorCipher(jsonString, settings.sync_key);
+      const compressed = LZString.compressToEncodedURIComponent(salted);
+      const finalCode = SYNC_HEADER + compressed;
+
+      // Step D: WhatsApp Trigger & Large Data Fallback
+      const dateStr = new Date().toLocaleDateString();
+      const message = `📦 MASTER STOCK UPDATE: [${dateStr}]\nCopy the code below and paste it in your NaijaShop Security page to update your prices and stock:\n\n${finalCode}`;
+
+      if (message.length > 2000) {
+        alert("Stock list is very large. Sending as a small .nshop file instead.");
+        const blob = new Blob([finalCode], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Master_Stock_Update_${dateStr.replace(/\//g, '-')}.nshop`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } else {
+        await WhatsAppService.send(message, settings, 'GROUP_UPDATE');
+        showSuccess("Update Sent to WhatsApp!");
       }
-    } finally { setIsSyncing(false); }
+    } catch (err) {
+      alert("Failed to generate update code.");
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   const handleStaffSendReport = async () => {
     if (!settings?.sync_key) { alert("Security Key missing."); return; }
     setIsSyncing(true);
     try {
-      const result = await exportDataForWhatsApp('SALES', settings.sync_key, currentUser?.name);
-      if (result.raw !== "FILE_DOWNLOADED") {
-        const text = result.summary.replace('[CompressedJSON]', result.raw);
-        await WhatsAppService.send(text, settings, 'DIRECT_REPORT');
-        showSuccess("Report Sent to Boss!");
-      }
-    } finally { setIsSyncing(false); }
+      // Get today's sales specifically
+      const today = new Date().setHours(0,0,0,0);
+      const pendingSales = await db.sales.where('timestamp').aboveOrEqual(today).toArray();
+      const totalRevenue = pendingSales.reduce((acc, s) => acc + s.total_amount, 0);
+
+      const payload = {
+        type: 'SALES_REPORT',
+        staff_name: currentUser?.name || 'Staff',
+        sales: pendingSales,
+        timestamp: Date.now()
+      };
+
+      const salted = xorCipher(JSON.stringify(payload), settings.sync_key);
+      const finalCode = SYNC_HEADER + LZString.compressToEncodedURIComponent(salted);
+
+      const text = `🏁 Daily Sales Report from ${currentUser?.name || 'Staff'} | Revenue: ₦${totalRevenue.toLocaleString()}\n\nCopy this code to Boss phone:\n\n${finalCode}`;
+      
+      await WhatsAppService.send(text, settings, 'DIRECT_REPORT');
+      showSuccess("Report Sent to Boss!");
+    } catch (e) {
+      alert("Sync failed");
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   const executeImport = async () => {
@@ -224,7 +302,7 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
               disabled={!importString || isSyncing}
               className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black flex items-center justify-center gap-3 active:scale-95"
             >
-              {isSyncing ? <Loader2 className="animate-spin" /> : <ClipboardPaste size={20} />}
+              {isSyncing ? <Loader2 className="animate-spin" size={24} /> : <ClipboardPaste size={20} />}
               📥 Update My Stock
             </button>
           </div>
@@ -243,7 +321,7 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
               <p className="text-slate-500 font-medium">Update prices and items on all staff phones at once.</p>
             </div>
             <button 
-              onClick={handlePushMasterStock} 
+              onClick={handleSendStockToWhatsApp} 
               disabled={isSyncing}
               className="w-full py-6 bg-indigo-600 text-white rounded-[2rem] font-black text-xl flex items-center justify-center gap-3 shadow-2xl active:scale-95 transition-all"
             >
@@ -269,7 +347,7 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
               disabled={!importString || isSyncing}
               className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black flex items-center justify-center gap-3 active:scale-95"
             >
-              {isSyncing ? <Loader2 className="animate-spin" /> : <Database size={20} />}
+              {isSyncing ? <Loader2 className="animate-spin" size={24} /> : <Database size={20} />}
               ✅ Sync Records to Ledger
             </button>
           </div>
