@@ -19,11 +19,12 @@ import {
   ClipboardPaste,
   RefreshCw,
   Users,
-  Clock
+  Clock,
+  Share2
 } from 'lucide-react';
 import { Staff, Settings as SettingsType } from '../types';
 import { generateBackupData, restoreFromBackup, downloadBackupFile } from '../utils/backup';
-import { importWhatsAppBridgeData } from '../services/syncService';
+import { exportDataForWhatsApp, importWhatsAppBridgeData } from '../services/syncService';
 import WhatsAppService from '../services/WhatsAppService';
 
 const SYNC_HEADER = "NS_V2_";
@@ -106,7 +107,7 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
 
   /**
    * THE BROADCAST ENGINE
-   * Strictly follows user instructions for salting, stripping cost, and WhatsApp delivery.
+   * STRICT INSTRUCTION: Strips cost_price, salts with key, and handles large payload sharing.
    */
   const handleSendStockToWhatsApp = async () => {
     if (!settings?.sync_key) { 
@@ -139,26 +140,41 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
       const compressed = LZString.compressToEncodedURIComponent(salted);
       const finalCode = SYNC_HEADER + compressed;
 
-      // Step D: WhatsApp Trigger & Large Data Fallback
       const dateStr = new Date().toLocaleDateString();
       const message = `📦 MASTER STOCK UPDATE: [${dateStr}]\nCopy the code below and paste it in your NaijaShop Security page to update your prices and stock:\n\n${finalCode}`;
 
-      if (message.length > 2000) {
-        alert("Stock list is very large. Sending as a small .nshop file instead.");
-        const blob = new Blob([finalCode], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `Master_Stock_Update_${dateStr.replace(/\//g, '-')}.nshop`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+      // Step D: Large Data Handling (1,500 Character Threshold)
+      if (message.length > 1500) {
+        // Generate File for Web Share
+        const blob = new Blob([finalCode], { type: 'application/json' });
+        const file = new File([blob], 'Master_Stock.json', { type: 'application/json' });
+        
+        // Attempt Web Share API
+        const sharedSuccessfully = await WhatsAppService.shareFile(
+          file, 
+          'Master Stock Update', 
+          `Oga, the stock list is large. I have sent it as a document. Open the file, copy the code inside, and paste it in your terminal.`
+        );
+
+        if (!sharedSuccessfully) {
+          // Fallback to direct file download if share fails or isn't supported
+          alert("Stock list is large. Sending as a small .nshop file instead.");
+          const downloadLink = document.createElement('a');
+          downloadLink.href = URL.createObjectURL(blob);
+          downloadLink.download = `Master_Stock_${dateStr.replace(/\//g, '-')}.json`;
+          document.body.appendChild(downloadLink);
+          downloadLink.click();
+          document.body.removeChild(downloadLink);
+        } else {
+          showSuccess("Stock Document Shared!");
+        }
       } else {
+        // Send as standard WhatsApp text
         await WhatsAppService.send(message, settings, 'GROUP_UPDATE');
         showSuccess("Update Sent to WhatsApp!");
       }
     } catch (err) {
+      console.error("Broadcast failed:", err);
       alert("Failed to generate update code.");
     } finally {
       setIsSyncing(false);
@@ -169,7 +185,6 @@ const SecurityBackups: React.FC<{ currentUser?: Staff | null }> = ({ currentUser
     if (!settings?.sync_key) { alert("Security Key missing."); return; }
     setIsSyncing(true);
     try {
-      // Get today's sales specifically
       const today = new Date().setHours(0,0,0,0);
       const pendingSales = await db.sales.where('timestamp').aboveOrEqual(today).toArray();
       const totalRevenue = pendingSales.reduce((acc, s) => acc + s.total_amount, 0);

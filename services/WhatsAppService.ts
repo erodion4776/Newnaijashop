@@ -24,6 +24,27 @@ export const WhatsAppService = {
     // Fallback for non-configured terminals
     const url = `https://wa.me/?text=${encoded}`;
     window.open(url, '_blank');
+  },
+
+  /**
+   * Shares a file using the Web Share API (navigator.share).
+   * Primarily used for large document sharing on WhatsApp and other platforms.
+   */
+  shareFile: async (file: File, title: string, text: string): Promise<boolean> => {
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({
+          files: [file],
+          title: title,
+          text: text
+        });
+        return true;
+      } catch (err) {
+        console.warn('Share API failed or was cancelled:', err);
+        return false;
+      }
+    }
+    return false;
   }
 };
 
