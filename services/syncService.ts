@@ -32,6 +32,9 @@ export const exportDataForWhatsApp = async (
   let summary = "";
   let encryptionKey = key;
   
+  // FETCH SETTINGS ONCE FOR LICENSE SYNC
+  const settings = await db.settings.get('app_settings');
+  
   if (type === 'SALES' || type === 'URGENT_SYNC') {
     const today = new Date().setHours(0,0,0,0);
     const pendingSales = await db.sales.where('timestamp').aboveOrEqual(today).toArray();
@@ -55,7 +58,6 @@ export const exportDataForWhatsApp = async (
     
     /**
      * SECURITY FILTER: Remove cost_price before sending to staff.
-     * Staff must only see name, price, stock, and category.
      */
     const filteredProducts = masterStock.map(p => ({
       name: p.name,
@@ -67,7 +69,10 @@ export const exportDataForWhatsApp = async (
     dataToExport = {
       type: 'STOCK_UPDATE',
       products: filteredProducts,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      // STRICT INSTRUCTION: Include exact license details
+      license_expiry: settings?.license_expiry,
+      isSubscribed: settings?.isSubscribed
     };
     const dateStr = new Date().toLocaleDateString();
     summary = `📦 MASTER STOCK UPDATE [${dateStr}] \nCopy this code to update your terminal: \n\n[CompressedJSON]`;
@@ -75,7 +80,6 @@ export const exportDataForWhatsApp = async (
     dataToExport = { type: 'KEY_UPDATE', new_key: key, timestamp: Date.now() };
     summary = "🔐 Security Bridge Key Update";
   } else if (type === 'STAFF_INVITE') {
-    const settings = await db.settings.get('app_settings');
     encryptionKey = INVITE_HANDSHAKE_KEY;
     dataToExport = {
       type: 'STAFF_INVITE',
@@ -84,7 +88,10 @@ export const exportDataForWhatsApp = async (
       admin_whatsapp_number: settings?.admin_whatsapp_number || '',
       whatsapp_group_link: settings?.whatsapp_group_link || '',
       staffMember: invitedStaff,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      // STRICT INSTRUCTION: Sync license on first join
+      license_expiry: settings?.license_expiry,
+      isSubscribed: settings?.isSubscribed
     };
     summary = `👋 ${settings?.shop_name} Terminal Invite.\nUse this link to join the shop as ${invitedStaff?.name || 'staff'}.\n\nLink: [Link]`;
   }
@@ -137,7 +144,6 @@ export const importWhatsAppBridgeData = async (rawString: string, localKey: stri
 
     if (payload.type === 'SALES_REPORT') {
       let importedCount = 0;
-      const todayStr = new Date().toISOString().split('T')[0];
       await (db as any).transaction('rw', [db.sales, db.products, db.inventory_logs, db.stock_snapshots], async () => {
         for (const sale of payload.sales) {
           const exists = await db.sales.where('sale_id').equals(sale.sale_id).first();
@@ -169,12 +175,17 @@ export const importWhatsAppBridgeData = async (rawString: string, localKey: stri
     }
 
     if (payload.type === 'STOCK_UPDATE') {
-      await (db as any).transaction('rw', [db.products, db.inventory_logs], async () => {
-        // Clear local products to match Boss records exactly
+      await (db as any).transaction('rw', [db.products, db.inventory_logs, db.settings], async () => {
+        // STRICT INSTRUCTION: Sync license date from Boss
+        if (payload.license_expiry !== undefined) {
+          await db.settings.update('app_settings', {
+            license_expiry: payload.license_expiry,
+            isSubscribed: payload.isSubscribed
+          });
+        }
+
         await db.products.clear();
-        
         for (const p of payload.products) {
-           // We re-calculate a generic cost price (80%) since it was stripped for security
            const genericCost = Math.round((p.price * 0.8) / 50) * 50;
            await db.products.add({ 
              ...p, 
@@ -195,7 +206,8 @@ export const importWhatsAppBridgeData = async (rawString: string, localKey: stri
           admin_whatsapp_number: payload.admin_whatsapp_number,
           whatsapp_group_link: payload.whatsapp_group_link,
           is_setup_complete: true,
-          isSubscribed: true
+          isSubscribed: payload.isSubscribed || true,
+          license_expiry: payload.license_expiry // STRICT INSTRUCTION: Save Boss's timestamp
         });
 
         if (payload.staffMember) {

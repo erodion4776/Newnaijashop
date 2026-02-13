@@ -32,20 +32,40 @@ const LOGO_URL = "https://i.ibb.co/BH8pgbJc/1767139026100-019b71b1-5718-7b92-998
 const MASTER_RECOVERY_PIN = "9999";
 const PAYSTACK_PUBLIC_KEY = (import.meta as any).env?.VITE_PAYSTACK_PUBLIC_KEY || "pk_live_f001150495f27092c42d3d34d35e07663f707f15";
 
-// Fix: Updated getLicenseRemainingTime to include hours and minutes to resolve type mismatch on Layout prop
+/**
+ * THE CALCULATION ENGINE
+ * STRICT INSTRUCTION: Priority alignment with Boss terminal
+ */
 export const getLicenseRemainingTime = (settings: any) => {
   const now = Date.now();
   const isSubscribed = !!settings?.isSubscribed;
   const trialPeriod = 30 * 24 * 60 * 60 * 1000;
   const proPeriod = 365 * 24 * 60 * 60 * 1000;
   const totalPeriod = isSubscribed ? proPeriod : trialPeriod;
-  let expiry = isSubscribed ? (settings?.license_expiry || (now + proPeriod)) : ((settings?.installationDate || now) + trialPeriod);
+
+  // LOGIC: If a synced license_expiry exists, use it as the absolute truth
+  let expiry = settings?.license_expiry;
+  
+  if (!expiry) {
+    // Fallback if no sync has occurred yet
+    expiry = isSubscribed ? (now + proPeriod) : ((settings?.installationDate || now) + trialPeriod);
+  }
+
   const totalMs = Math.max(0, expiry - now);
   const days = Math.floor(totalMs / (24 * 60 * 60 * 1000));
   const hours = Math.floor((totalMs % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
   const minutes = Math.floor((totalMs % (60 * 60 * 1000)) / (60 * 1000));
   const percentage = (totalMs / totalPeriod) * 100;
-  return { days, hours, minutes, percentage, totalMs, totalPeriod, label: isSubscribed ? 'Pro License' : 'Free Trial' };
+
+  return { 
+    days, 
+    hours, 
+    minutes, 
+    percentage, 
+    totalMs, 
+    totalPeriod, 
+    label: isSubscribed ? 'Pro License' : 'Free Trial' 
+  };
 };
 
 interface ErrorBoundaryProps { children?: ReactNode; }
@@ -87,10 +107,6 @@ const AppContent: React.FC = () => {
   const settings = useLiveQuery(() => db.settings.get('app_settings'));
   const staffList = useLiveQuery(() => db.staff.toArray()) || [];
 
-  /**
-   * THE JOIN ENGINE: Early Interception
-   * STRICT INSTRUCTION: Priority check for invites before any routing.
-   */
   useEffect(() => {
     const runInit = async () => {
       await initSettings();
@@ -101,14 +117,10 @@ const AppContent: React.FC = () => {
       if (inviteData) {
         setIsJoining(true);
         try {
-          // Handshake logic inside importWhatsAppBridgeData for STAFF_INVITE type
           const result = await importWhatsAppBridgeData(inviteData, ''); 
           if (result.success && result.type === 'STAFF_INVITE') {
             setJoiningShopName(result.shop_name);
-            // Allow 1 second for DB to commit and for visual feedback
             await new Promise(resolve => setTimeout(resolve, 1000));
-            
-            // Clean URL and switch view to login (null currentUser shows login screen)
             window.history.replaceState({}, '', '/');
           }
         } catch (err) {
@@ -124,10 +136,8 @@ const AppContent: React.FC = () => {
     runInit();
   }, []);
 
-  // Pre-fill logic: If we just joined, auto-select the invited staff in dropdown
   useEffect(() => {
     if (staffList.length > 0 && !selectedStaffId) {
-      // Find the most recently added staff (likely the invited one)
       const latestStaff = [...staffList].sort((a, b) => (b.created_at || 0) - (a.created_at || 0))[0];
       if (latestStaff?.id) setSelectedStaffId(latestStaff.id);
     }
