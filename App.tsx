@@ -1,7 +1,7 @@
 import React, { useState, useEffect, ReactNode, Component } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, initSettings } from './db/db';
-import { View, Staff, SaleItem, Product } from './types';
+import { View, Staff, SaleItem } from './types';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import POS from './pages/POS';
@@ -20,6 +20,7 @@ import ActivationPage from './pages/ActivationPage';
 import SetupShop from './pages/SetupShop';
 import LandingPage from './pages/LandingPage';
 import StockAudit from './pages/StockAudit';
+import MasterAdminHub from './pages/MasterAdminHub';
 import LZString from 'lz-string';
 import { 
   AlertTriangle,
@@ -80,15 +81,18 @@ const AppContent: React.FC = () => {
   const [isStaffLock, setIsStaffLock] = useState(localStorage.getItem('isStaffLock') === 'true');
   const [cart, setCart] = useState<SaleItem[]>([]);
   const [parkTrigger, setParkTrigger] = useState(0);
+  
+  // 1. Processing Guard State
+  const [isJoining, setIsJoining] = useState(window.location.search.includes('data='));
 
   const settings = useLiveQuery(() => db.settings.get('app_settings'));
   const staffList = useLiveQuery(() => db.staff.toArray()) || [];
 
   useEffect(() => {
     const runInit = async () => {
-      // 1. Priority Invite Detection
+      // 2. The 'Atomic Join' Logic
       const params = new URLSearchParams(window.location.search);
-      const inviteData = params.get('data') || params.get('invite');
+      const inviteData = params.get('data');
 
       if (inviteData) {
         try {
@@ -96,35 +100,28 @@ const AppContent: React.FC = () => {
           if (decoded) {
             const data = JSON.parse(decoded);
             
-            // Provision the database immediately
             await (db as any).transaction('rw', [db.settings, db.staff], async () => {
               await db.settings.put({
                 id: 'app_settings',
                 shop_name: data.shopName,
-                admin_name: 'Admin', // Default for staff devices
-                admin_pin: '0000',   // Default for staff devices
-                email: '',
-                is_setup_complete: true,
-                bank_name: '',
-                account_number: '',
-                account_name: '',
-                last_used_timestamp: Date.now(),
-                sync_key: data.masterSyncKey,
-                isSubscribed: true, // Staff devices inherit the Boss's status
+                sync_key: data.masterSyncKey, // Database field key alignment
                 admin_whatsapp_number: data.adminWhatsapp,
-                whatsapp_group_link: data.groupLink
+                whatsapp_group_link: data.groupLink,
+                is_setup_complete: true,
+                isSubscribed: true, // Staff inherit Boss's status
+                installationDate: Date.now(),
+                last_used_timestamp: Date.now()
               } as any);
               await db.staff.put(data.staffMember);
             });
 
-            // Clean the URL and redirect to login
-            window.history.replaceState({}, '', '/');
-            setCurrentView('login');
-            setIsInitialized(true);
-            return; 
+            // CRITICAL: Wipe URL and force reload to reset application lifecycle
+            window.location.href = window.location.origin + '/';
+            return;
           }
         } catch (e) {
-          console.error("Invite processing failed:", e);
+          console.error("Atomic Join failed", e);
+          setIsJoining(false);
         }
       }
 
@@ -167,6 +164,24 @@ const AppContent: React.FC = () => {
     } else alert("Invalid PIN");
   };
 
+  // 3. Implement Guard View
+  if (isJoining) {
+    return (
+      <div className="min-h-screen bg-emerald-900 flex flex-col items-center justify-center p-10 text-center space-y-8">
+        <div className="w-24 h-24 border-8 border-white/20 border-t-white rounded-full animate-spin"></div>
+        <div className="space-y-2">
+          <h2 className="text-white font-black text-3xl tracking-tight uppercase">Connecting to Terminal</h2>
+          <p className="text-emerald-400 font-bold uppercase tracking-widest text-xs animate-pulse">Syncing Secure Bridge...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Preserve Master Admin Hub
+  if (window.location.pathname === '/master-control') {
+    return <MasterAdminHub />;
+  }
+
   if (showSplash || !isInitialized) {
     return (
       <div className="min-h-screen bg-emerald-900 flex flex-col items-center justify-center">
@@ -189,7 +204,7 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // FIX: The Landing Page Guard
+  // 4. Fix Landing Page Logic (No Landing if joining or setup complete)
   if (!settings?.is_setup_complete) {
     if (currentView === 'landing') return <LandingPage onStartTrial={() => setCurrentView('setup')} />;
     return <SetupShop onComplete={() => window.location.reload()} />;
