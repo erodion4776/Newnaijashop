@@ -131,8 +131,6 @@ export interface Staff {
 
 export interface Settings {
   id: string; // 'app_settings'
-  terminal_id?: string;
-  referral_code_used?: string;
   shop_name: string;
   admin_name: string;
   admin_pin: string;
@@ -150,11 +148,10 @@ export interface Settings {
   license_expiry?: number;
   installationDate?: number;
   isSubscribed?: boolean;
-  // Fix: Added missing WhatsApp automation fields to resolve property missing errors in SecurityBackups.tsx
   admin_whatsapp_number?: string;
   whatsapp_group_link?: string;
 }
 
-export type View = 'landing' | 'setup' | 'dashboard' | 'pos' | 'inventory' | 'inventory-ledger' | 'debts' | 'settings' | 'staff-management' | 'activity-log' | 'security-backups' | 'transfer-station' | 'expense-tracker' | 'audit-trail' | 'customer-wallets' | 'business-hub' | 'activation' | 'stock-audit';
+export type View = 'landing' | 'setup' | 'login' | 'dashboard' | 'pos' | 'inventory' | 'inventory-ledger' | 'debts' | 'settings' | 'staff-management' | 'activity-log' | 'security-backups' | 'transfer-station' | 'expense-tracker' | 'audit-trail' | 'customer-wallets' | 'business-hub' | 'activation' | 'stock-audit';
 
 export type SyncStatus = 'offline' | 'connecting' | 'live' | 'reconnecting' | 'failed';

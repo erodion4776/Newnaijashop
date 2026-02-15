@@ -20,6 +20,7 @@ import ActivationPage from './pages/ActivationPage';
 import SetupShop from './pages/SetupShop';
 import LandingPage from './pages/LandingPage';
 import StockAudit from './pages/StockAudit';
+import LZString from 'lz-string';
 import { 
   AlertTriangle,
   ShieldAlert,
@@ -85,13 +86,51 @@ const AppContent: React.FC = () => {
 
   useEffect(() => {
     const runInit = async () => {
+      // 1. Priority Invite Detection
+      const params = new URLSearchParams(window.location.search);
+      const inviteData = params.get('data') || params.get('invite');
+
+      if (inviteData) {
+        try {
+          const decoded = LZString.decompressFromEncodedURIComponent(inviteData);
+          if (decoded) {
+            const data = JSON.parse(decoded);
+            
+            // Provision the database immediately
+            await (db as any).transaction('rw', [db.settings, db.staff], async () => {
+              await db.settings.put({
+                id: 'app_settings',
+                shop_name: data.shopName,
+                admin_name: 'Admin', // Default for staff devices
+                admin_pin: '0000',   // Default for staff devices
+                email: '',
+                is_setup_complete: true,
+                bank_name: '',
+                account_number: '',
+                account_name: '',
+                last_used_timestamp: Date.now(),
+                sync_key: data.masterSyncKey,
+                isSubscribed: true, // Staff devices inherit the Boss's status
+                admin_whatsapp_number: data.adminWhatsapp,
+                whatsapp_group_link: data.groupLink
+              } as any);
+              await db.staff.put(data.staffMember);
+            });
+
+            // Clean the URL and redirect to login
+            window.history.replaceState({}, '', '/');
+            setCurrentView('login');
+            setIsInitialized(true);
+            return; 
+          }
+        } catch (e) {
+          console.error("Invite processing failed:", e);
+        }
+      }
+
       await initSettings();
       const currentSettings = await db.settings.get('app_settings');
       
-      /**
-       * GLOBAL SYNC KEY FIX:
-       * Initialize Relay with master sync key if available.
-       */
       if (currentSettings?.sync_key) {
         RelayService.init(currentSettings.sync_key);
       }
@@ -150,7 +189,8 @@ const AppContent: React.FC = () => {
     );
   }
 
-  if (!settings?.is_setup_complete || staffList.length === 0) {
+  // FIX: The Landing Page Guard
+  if (!settings?.is_setup_complete) {
     if (currentView === 'landing') return <LandingPage onStartTrial={() => setCurrentView('setup')} />;
     return <SetupShop onComplete={() => window.location.reload()} />;
   }
