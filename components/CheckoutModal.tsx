@@ -157,8 +157,11 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
         }
       });
 
-      // DATA TRIGGER: Broadcast to other terminals immediately
-      RelayService.send('new-sale', saleData);
+      /**
+       * STAFF BROADCAST FIX:
+       * Push the sale to Admin terminal immediately.
+       */
+      RelayService.sendSale(saleData);
 
       setIsProcessing(false);
       onComplete(saleData, lowItems);
@@ -173,7 +176,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
       
     } catch (error) {
       console.error("Critical Transaction Error:", error);
-      alert(`Error: ${error instanceof Error ? error.message : 'Transaction failed.'}`);
+      alert(`Error: ${error instanceof Error ? error.message : 'Transaction failed. Inventory remains unchanged.'}`);
       setIsProcessing(false);
     }
   };
@@ -198,7 +201,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
           <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Apply Discount / Jara (₦)</label>
           <input 
             type="number" 
-            placeholder="0" 
+            placeholder="Enter discount amount..." 
             className="w-full bg-transparent font-black text-lg outline-none text-emerald-600"
             value={discount || ''}
             onChange={(e) => setDiscount(Math.max(0, Number(e.target.value)))}
@@ -208,10 +211,10 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
       <div className="grid grid-cols-2 gap-3">
         {[
-          { id: 'cash' as PaymentMethod, label: 'Cash', icon: Wallet },
-          { id: 'transfer' as PaymentMethod, label: 'Transfer', icon: Building2 },
-          { id: 'pos' as PaymentMethod, label: 'POS Card', icon: CreditCard },
-          { id: 'split' as PaymentMethod, label: 'Split Pay', icon: Calculator }
+          { id: 'cash' as PaymentMethod, label: 'Cash', icon: Wallet, color: 'emerald' },
+          { id: 'transfer' as PaymentMethod, label: 'Transfer', icon: Building2, color: 'blue' },
+          { id: 'pos' as PaymentMethod, label: 'POS Card', icon: CreditCard, color: 'purple' },
+          { id: 'split' as PaymentMethod, label: 'Split Pay', icon: Calculator, color: 'amber' }
         ].map(method => (
           <button
             key={method.id}
@@ -276,7 +279,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
     <div className="space-y-6 animate-in slide-in-from-right duration-300">
       <div className="text-center">
         <h3 className="text-2xl font-black text-slate-900">Customer Details</h3>
-        <p className="text-xs text-slate-400 font-medium">Optional</p>
+        <p className="text-xs text-slate-400 font-medium">Optional for records</p>
       </div>
 
       <div className="space-y-4">
@@ -284,13 +287,19 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
           <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2">
             <UserIcon size={12} /> Full Name
           </label>
-          <input type="text" placeholder="e.g. Chinedu" className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
+          <input type="text" placeholder="e.g. Chinedu Okafor" className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
         </div>
         <div>
           <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2">
             <Phone size={12} /> WhatsApp Number
           </label>
           <input type="tel" placeholder="080..." className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} />
+        </div>
+        <div>
+          <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2">
+            <Calendar size={12} /> Sale Date (Adjustment)
+          </label>
+          <input type="datetime-local" className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold" value={saleDate} onChange={(e) => setSaleDate(e.target.value)} />
         </div>
       </div>
 
@@ -309,6 +318,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
     <div className="space-y-6 animate-in slide-in-from-right duration-300">
       <div className="text-center">
         <h3 className="text-2xl font-black text-slate-900">Final Verification</h3>
+        <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mt-1">Review items before saving</p>
       </div>
 
       <div className="bg-slate-50 rounded-[2.5rem] p-6 space-y-4 border border-slate-200 shadow-inner">
@@ -328,8 +338,18 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
           ))}
         </div>
 
-        <div className="pt-4 border-t border-slate-200">
-          <div className="flex justify-between items-center font-black">
+        <div className="pt-4 border-t border-slate-200 space-y-2">
+          <div className="flex justify-between items-center">
+            <span className="text-slate-400 text-[10px] font-black uppercase">Subtotal</span>
+            <span className="text-sm font-bold text-slate-600">₦{total.toLocaleString()}</span>
+          </div>
+          {discount > 0 && (
+            <div className="flex justify-between items-center">
+              <span className="text-rose-400 text-[10px] font-black uppercase">Discount (Jara)</span>
+              <span className="text-sm font-black text-rose-600">-₦{discount.toLocaleString()}</span>
+            </div>
+          )}
+          <div className="flex justify-between items-center font-black mt-2">
             <span className="text-slate-900 uppercase text-xs">Total Paid</span>
             <span className="text-3xl text-emerald-600">₦{finalTotal.toLocaleString()}</span>
           </div>
@@ -337,7 +357,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <button onClick={() => setStep('details')} disabled={isProcessing} className="py-4 bg-slate-100 text-slate-500 rounded-2xl font-black text-xs uppercase tracking-widest">
+        <button onClick={() => setStep('details')} disabled={isProcessing} className="py-4 bg-slate-100 text-slate-500 rounded-2xl font-black text-xs uppercase tracking-widest disabled:opacity-50">
           Back
         </button>
         <button onClick={handleCompleteSale} disabled={isProcessing} className="py-4 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50">
@@ -373,7 +393,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
         <div className="px-8 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-center gap-2 opacity-30">
            <Zap size={12} className="text-emerald-600" />
-           <span className="text-[8px] font-black uppercase tracking-widest">Relay Terminal Ready</span>
+           <span className="text-[8px] font-black uppercase tracking-widest">Terminal Transaction Engine v3.3</span>
         </div>
       </div>
     </div>

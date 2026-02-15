@@ -87,9 +87,15 @@ const AppContent: React.FC = () => {
     const runInit = async () => {
       await initSettings();
       const currentSettings = await db.settings.get('app_settings');
+      
+      /**
+       * GLOBAL SYNC KEY FIX:
+       * Initialize Relay with master sync key if available.
+       */
       if (currentSettings?.sync_key) {
         RelayService.init(currentSettings.sync_key);
       }
+      
       setIsInitialized(true);
     };
     runInit();

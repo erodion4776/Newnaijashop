@@ -4,66 +4,97 @@ import Pusher from 'pusher-js';
 const PUSHER_KEY = (import.meta as any).env?.VITE_PUSHER_KEY || '8448b11165606d156641';
 const PUSHER_CLUSTER = (import.meta as any).env?.VITE_PUSHER_CLUSTER || 'mt1';
 
+// Debugging Mode as requested
+Pusher.logToConsole = true;
+
 class RelayService {
   private pusher: Pusher | null = null;
   private channel: any = null;
+  private currentStatus: string = 'disconnected';
 
   /**
-   * Initializes the Pusher connection with a local authorizer bypass.
-   * This allows direct client-to-client events on private channels without a backend.
+   * Initializes the Pusher connection with a Manual Client-Side Authorizer.
+   * This is mandatory for private- channels without a server.
    */
-  public init(shopKey: string) {
+  public init(masterSyncKey: string) {
     if (this.pusher) return;
 
     this.pusher = new Pusher(PUSHER_KEY, {
       cluster: PUSHER_CLUSTER,
       forceTLS: true,
+      authEndpoint: 'http://localhost', // Required but bypassed by authorizer
       authorizer: (channel) => ({
         authorize: (socketId: string, callback: Function) => {
           /**
-           * THE MAGIC BYPASS:
-           * We sign the request locally using the public key.
-           * Pusher accepts this because 'Client Events' are enabled in the dashboard.
+           * THE HANDSHAKE FIX:
+           * We manually sign the request locally to bypass the server.
+           * Format: key:socketId
            */
-          callback(null, { auth: `${PUSHER_KEY}:${socketId}` });
+          callback(false, { auth: `${PUSHER_KEY}:${socketId}` });
         }
       })
     });
 
-    // Sanitize key for channel naming (alphanumeric only)
-    const sanitizedKey = shopKey.replace(/[^a-z0-9]/g, '').toLowerCase();
+    // Handle connection state changes for UI dot
+    this.pusher.connection.bind('state_change', (states: any) => {
+      this.currentStatus = states.current;
+      console.log(`[Relay] Connection State: ${states.current}`);
+    });
+
+    // Sanitize key for channel naming
+    const sanitizedKey = masterSyncKey.replace(/[^a-z0-9]/g, '').toLowerCase();
     
-    // STRICT REQUIREMENT: private- prefix for client events
-    this.channel = this.pusher.subscribe(`private-shop-${sanitizedKey}`);
+    // STRICT REQUIREMENT: private- prefix
+    const channelName = `private-shop-${sanitizedKey}`;
+    this.channel = this.pusher.subscribe(channelName);
     
-    console.log(`[Relay] Syncing with Room: private-shop-${sanitizedKey}`);
+    this.channel.bind('pusher:subscription_succeeded', () => {
+      console.log(`[Relay] Subscribed successfully to: ${channelName}`);
+    });
+
+    this.channel.bind('pusher:subscription_error', (status: any) => {
+      console.error(`[Relay] Subscription failed:`, status);
+    });
   }
 
+  // Fix: Added generic send method to resolve 'Property send does not exist' errors in SyncProvider.tsx
   /**
-   * BROADCAST EVENT
-   * Automatically adds the 'client-' prefix required by Pusher for client events.
+   * GENERIC BROADCAST
+   * Sends data via the private channel.
    */
   public send(eventName: string, data: any) {
     if (this.channel?.subscribed) {
       try {
-        const prefixedEvent = eventName.startsWith('client-') ? eventName : `client-${eventName}`;
-        this.channel.trigger(prefixedEvent, data);
-        console.log(`[Relay] Broadcasted: ${prefixedEvent}`);
+        // STRICT REQUIREMENT: client- prefix
+        const fullEventName = eventName.startsWith('client-') ? eventName : `client-${eventName}`;
+        console.log(`[Relay] Triggering event: ${fullEventName}`, data);
+        this.channel.trigger(fullEventName, data);
       } catch (e) {
-        console.error("[Relay] Broadcast failed:", e);
+        console.error(`[Relay] Broadcast of ${eventName} failed:`, e);
       }
+    } else {
+      console.warn(`[Relay] Cannot send ${eventName}: Channel not subscribed`);
     }
   }
 
   /**
-   * LISTEN FOR EVENT
-   * Automatically binds to the 'client-' prefixed version of the event name.
+   * STAFF BROADCAST
+   * Sends sale data to Admin via the private channel.
+   */
+  public sendSale(saleData: any) {
+    // Fix: Refactored to use the generic send method to ensure consistency and satisfy property existence
+    this.send('new-sale', saleData);
+  }
+
+  /**
+   * LISTEN FOR EVENT (Unified helper)
    */
   public listen(eventName: string, callback: (data: any) => void) {
     if (!this.channel) return;
-    const prefixedEvent = eventName.startsWith('client-') ? eventName : `client-${eventName}`;
-    this.channel.bind(prefixedEvent, (data: any) => {
-      console.log(`[Relay] Received: ${prefixedEvent}`);
+    // Map generic events to client-prefixed versions for convenience
+    const fullEventName = eventName.startsWith('client-') ? eventName : `client-${eventName}`;
+    this.channel.bind(fullEventName, (data: any) => {
+      console.log(`[Relay] Incoming Event: ${fullEventName}`);
       callback(data);
     });
   }
@@ -76,7 +107,7 @@ class RelayService {
   }
 
   /**
-   * Cleanup resources on logout
+   * Cleanup
    */
   public disconnect() {
     if (this.pusher) {
