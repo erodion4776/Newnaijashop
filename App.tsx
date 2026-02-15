@@ -72,6 +72,9 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 }
 
 const AppContent: React.FC = () => {
+  // 1. Interrupt the Render (Hard Guard)
+  const hasInvite = window.location.search.includes('data=');
+
   const [currentView, setCurrentView] = useState<View>('landing');
   const [isInitialized, setIsInitialized] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
@@ -81,52 +84,59 @@ const AppContent: React.FC = () => {
   const [isStaffLock, setIsStaffLock] = useState(localStorage.getItem('isStaffLock') === 'true');
   const [cart, setCart] = useState<SaleItem[]>([]);
   const [parkTrigger, setParkTrigger] = useState(0);
-  
-  // 1. Add Processing State for Invite Guard
-  const [isJoining, setIsJoining] = useState(window.location.search.includes('data='));
 
   const settings = useLiveQuery(() => db.settings.get('app_settings'));
   const staffList = useLiveQuery(() => db.staff.toArray()) || [];
 
-  useEffect(() => {
-    // 2. The 'Atomic Join' Logic
-    const params = new URLSearchParams(window.location.search);
-    const inviteData = params.get('data');
+  if (hasInvite && !isInitialized) {
+    return (
+      <div className="min-h-screen bg-emerald-900 flex flex-col items-center justify-center text-white font-black text-2xl animate-pulse text-center p-10">
+        PROVISIONING YOUR TERMINAL...
+        <br/>
+        <span className="text-sm font-medium opacity-50 uppercase tracking-widest mt-4 block">Please wait while we connect you to the shop</span>
+      </div>
+    );
+  }
 
-    if (inviteData) {
-      const runJoin = async () => {
+  useEffect(() => {
+    const runInit = async () => {
+      // 2. Atomic Join & Reboot
+      const params = new URLSearchParams(window.location.search);
+      const inviteData = params.get('data');
+
+      if (inviteData) {
         try {
           const decoded = LZString.decompressFromEncodedURIComponent(inviteData);
-          if (!decoded) throw new Error("Could not decompress invite data");
-          const data = JSON.parse(decoded);
+          if (decoded) {
+            const data = JSON.parse(decoded);
+            
+            await (db as any).transaction('rw', [db.settings, db.staff], async () => {
+              await db.settings.put({
+                id: 'app_settings',
+                shop_name: data.shopName,
+                sync_key: data.masterSyncKey,
+                admin_whatsapp_number: data.adminWhatsapp,
+                whatsapp_group_link: data.groupLink,
+                is_setup_complete: true,
+                isSubscribed: true, // Staff inherit Boss's status
+                installationDate: Date.now(),
+                last_used_timestamp: Date.now()
+              } as any);
+              
+              if (data.staffMember) {
+                await db.staff.put(data.staffMember);
+              }
+            });
 
-          await (db as any).transaction('rw', [db.settings, db.staff], async () => {
-            await db.settings.put({
-              id: 'app_settings',
-              shop_name: data.shopName,
-              sync_key: data.masterSyncKey,
-              admin_whatsapp_number: data.adminWhatsapp,
-              whatsapp_group_link: data.groupLink,
-              is_setup_complete: true,
-              isSubscribed: true, // Staff inherit Boss's license
-              last_used_timestamp: Date.now(),
-              installationDate: Date.now()
-            } as any);
-            await db.staff.put(data.staffMember);
-          });
-
-          // CRITICAL: Wipe the URL and FORCE RELOAD the entire app to initialize correctly
-          window.location.href = window.location.origin + '/';
+            // CRITICAL: Wipe URL and force reload to reset application lifecycle
+            window.location.href = window.location.origin + '/';
+            return;
+          }
         } catch (e) {
-          console.error("Join failed", e);
-          setIsJoining(false);
+          console.error("Atomic Join failed", e);
         }
-      };
-      runJoin();
-      return; // Stop the rest of the initialization if we are joining
-    }
+      }
 
-    const runInit = async () => {
       await initSettings();
       const currentSettings = await db.settings.get('app_settings');
       
@@ -166,15 +176,6 @@ const AppContent: React.FC = () => {
     } else alert("Invalid PIN");
   };
 
-  // 3. Implement the Guard View
-  if (isJoining) {
-    return (
-      <div className="min-h-screen bg-emerald-900 flex items-center justify-center text-white font-black text-2xl animate-pulse">
-        CONNECTING TO TERMINAL...
-      </div>
-    );
-  }
-
   // Preserve Master Admin Hub
   if (window.location.pathname === '/master-control') {
     return <MasterAdminHub />;
@@ -202,8 +203,8 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // 4. Fix Landing Page Logic: Ensure it doesn't show if joining or setup is complete
-  if (!settings?.is_setup_complete) {
+  // 3. Fix Landing Page Condition (Prevent flicker during invite)
+  if (!settings?.is_setup_complete && !hasInvite) {
     if (currentView === 'landing') return <LandingPage onStartTrial={() => setCurrentView('setup')} />;
     return <SetupShop onComplete={() => window.location.reload()} />;
   }
